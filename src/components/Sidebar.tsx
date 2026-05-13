@@ -68,7 +68,7 @@ export function Sidebar() {
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="sidebar-logo" aria-label="TNG">
-          <TngLogo variant="mark" height={26} color="#ffffff" />
+          <TngLogo variant="mark" height={40} />
         </div>
         <div>
           <div className="sidebar-title">Stadtnetz CRM</div>

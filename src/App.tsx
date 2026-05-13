@@ -45,7 +45,8 @@ function Shell() {
               })}
             </span>
             <div className="titlebar-brand" title="TNG Stadtnetz GmbH">
-              <TngLogo variant="lockup" height={18} color="var(--tng-blue)" />
+              <TngLogo variant="mark" height={26} />
+              <span>TNG Stadtnetz</span>
             </div>
           </div>
         </header>
