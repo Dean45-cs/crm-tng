@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useRouter, type Route, type RouteName } from '../router';
 import { useAuth } from '../store/useAuth';
-import { TngLogo } from './TngLogo';
+import { TngTile } from './TngLogo';
 
 interface NavItemDef {
   id: RouteName;
@@ -67,9 +67,8 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="sidebar-logo">
-          <TngLogo height={30} color="white" />
-        </div>
+        <TngTile size={40} />
+
         <div>
           <div className="sidebar-title">Stadtnetz CRM</div>
           <div className="sidebar-subtitle">Ausbildung</div>

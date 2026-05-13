@@ -10,7 +10,7 @@ import { Leaderboard } from './pages/Leaderboard';
 import { QuickAddProvider } from './components/QuickAdd';
 import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
-import { TngLogo } from './components/TngLogo';
+import { TngMark } from './components/TngLogo';
 import { Router, useRouter, type RouteName } from './router';
 import { useAuth } from './store/useAuth';
 
@@ -45,7 +45,7 @@ function Shell() {
               })}
             </span>
             <div className="titlebar-brand" title="TNG Stadtnetz GmbH">
-              <TngLogo height={22} color="blue" />
+              <TngMark height={18} color="#0066b3" />
             </div>
           </div>
         </header>

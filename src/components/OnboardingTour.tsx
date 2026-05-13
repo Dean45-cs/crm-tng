@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
 import { useRouter, type Route } from '../router';
-import { TngLogo } from './TngLogo';
+import { TngTile } from './TngLogo';
 
 interface Step {
   title: string;
@@ -181,9 +181,7 @@ export function OnboardingTour() {
 
         {index === 0 && (
           <div className="onboarding-hero-logo">
-            <div className="login-logo-tile" style={{ width: 64, height: 64, borderRadius: 16 }}>
-              <TngLogo height={44} color="white" />
-            </div>
+            <TngTile size={72} radius={18} />
           </div>
         )}
 

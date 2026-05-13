@@ -175,20 +175,10 @@ code {
   padding: 6px 8px 22px;
 }
 
-.sidebar-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 11px;
-  display: grid;
-  place-items: center;
-  box-shadow:
-    0 2px 8px rgba(0, 102, 179, 0.4),
-    0 0 0 1px rgba(0, 0, 0, 0.04);
-  position: relative;
-  overflow: hidden;
+.sidebar-header svg {
+  filter: drop-shadow(0 2px 8px rgba(0, 102, 179, 0.35));
   flex-shrink: 0;
 }
-.sidebar-logo img { border-radius: 11px; }
 .sidebar-title {
   font-size: 14.5px;
   font-weight: 600;
@@ -1435,30 +1425,8 @@ table.crm-table tbody tr:hover { background: var(--bg-card-hover); }
   gap: 14px;
   margin-bottom: 28px;
 }
-.login-logo {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  background: var(--tng-gradient);
-  color: white;
-  font-weight: 800;
-  font-size: 16px;
-  letter-spacing: 0.5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--shadow-tng);
-}
-.login-logo-tile {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-  background: var(--tng-gradient);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--shadow-tng);
-  flex-shrink: 0;
+.login-brand svg {
+  filter: drop-shadow(0 6px 18px rgba(0, 102, 179, 0.35));
 }
 .login-title {
   font-size: 20px;
@@ -2026,6 +1994,9 @@ table.crm-table tbody tr:hover { background: var(--bg-card-hover); }
   display: flex;
   justify-content: center;
   margin: 4px 0 18px;
+}
+.onboarding-hero-logo svg {
+  filter: drop-shadow(0 8px 24px rgba(0, 102, 179, 0.35));
 }
 .onboarding-title {
   margin: 0 0 8px;

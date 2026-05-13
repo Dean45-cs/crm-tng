@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, LockKeyhole, UserRound, Sparkles } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
 import { useStore } from '../store/useStore';
-import { TngLogo } from './TngLogo';
+import { TngTile } from './TngLogo';
 
 type Step = 'name' | 'pin-login' | 'pin-setup-new' | 'pin-setup-confirm';
 
@@ -75,9 +75,7 @@ export function LoginScreen() {
 
       <div className="login-card">
         <div className="login-brand">
-          <div className="login-logo-tile">
-            <TngLogo height={44} color="white" />
-          </div>
+          <TngTile size={64} radius={16} />
           <div>
             <div className="login-title">Stadtnetz CRM</div>
             <div className="login-subtitle">TNG Stadtnetz GmbH · Ausbildung</div>
