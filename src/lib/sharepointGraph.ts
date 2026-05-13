@@ -23,7 +23,7 @@ function buildApp(clientId: string, tenantId: string): PublicClientApplication {
       authority: `https://login.microsoftonline.com/${tenantId}`,
       redirectUri: window.location.origin,
     },
-    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false },
+    cache: { cacheLocation: 'localStorage' },
   };
   _app = new PublicClientApplication(config);
   _clientId = clientId;

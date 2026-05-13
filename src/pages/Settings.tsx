@@ -3,7 +3,7 @@ import { Save, Download, Upload, Trash2, Trophy, Sheet, Loader2, CheckCircle, XC
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { formatCurrency, TARIFF_CONTEXT_LABEL, TARIFF_TYPE_LABEL } from '../lib/utils';
-import { spSignIn, spSignOut, spGetAccount, testConnection } from '../lib/sharepointGraph';
+import { spSignOut, spGetAccount, testConnection } from '../lib/sharepointGraph';
 import type {
   ProductCategory,
   TariffChangeType,
