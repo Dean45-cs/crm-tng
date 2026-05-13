@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type {
   Contract,
   TariffChange,
@@ -11,11 +10,30 @@ import type {
   CustomerOwnership,
 } from '../types';
 import { useAuth } from './useAuth';
+import { getSupabase } from '../lib/supabase';
+import {
+  fetchContracts,
+  fetchTariffChanges,
+  fetchNotes,
+  fetchOwnerships,
+  fetchSettings,
+  insertContract,
+  updateContractRow,
+  deleteContractRow,
+  insertTariffChange,
+  updateTariffChangeRow,
+  deleteTariffChangeRow,
+  insertNote,
+  updateNoteRow,
+  deleteNoteRow,
+  upsertOwnership,
+  upsertUserSettings,
+  upsertSharedSettings,
+} from '../lib/supabaseApi';
 
 const currentUserKey = () => useAuth.getState().currentUserKey ?? undefined;
 
 const DEFAULT_PRODUCTS: ProductInfo[] = [
-  // Privat
   { name: 'Fibrelight', category: 'Privat', commission: 7.5 },
   { name: 'Fibrefamily', category: 'Privat', commission: 10 },
   { name: 'Fibrepro', category: 'Privat', commission: 15 },
@@ -29,13 +47,11 @@ const DEFAULT_PRODUCTS: ProductInfo[] = [
   { name: 'Family1.000', category: 'Privat', commission: 15 },
   { name: 'Max.1.000', category: 'Privat', commission: 20 },
   { name: 'Winback Privat', category: 'Privat', commission: 12.5 },
-  // Business
   { name: 'Lite 1000', category: 'Business', commission: 30 },
   { name: 'Basic 1000', category: 'Business', commission: 40 },
   { name: 'Pro 1000', category: 'Business', commission: 50 },
   { name: 'Premium 1000', category: 'Business', commission: 70 },
   { name: 'Winback Business', category: 'Business', commission: 12.5 },
-  // Zusatz
   { name: 'Waipu TV', category: 'Zusatz', commission: 10 },
   { name: 'Mobilfunk LTE Smart 4G', category: 'Zusatz', commission: 5 },
   { name: 'Mobilfunk LTE Komplett 4G', category: 'Zusatz', commission: 7.5 },
@@ -48,6 +64,18 @@ const DEFAULT_TARIFF_COMMISSION: TariffCommissionMatrix = {
   upgrade: { mvlz_gt3: 5, mvlz_lt3: 7.5, outside_mvlz: 7.5 },
 };
 
+const DEFAULT_SETTINGS: Settings = {
+  products: DEFAULT_PRODUCTS,
+  tariffCommission: DEFAULT_TARIFF_COMMISSION,
+  monthlyTarget: 500,
+  jiraBaseUrl: 'https://jira.tng.de/browse/',
+  agentName: 'Auszubildende:r',
+  spClientId: '',
+  spTenantId: '',
+  spFilePath: '',
+  spSheetName: 'Tabelle1',
+};
+
 interface StoreState {
   contracts: Contract[];
   tariffChanges: TariffChange[];
@@ -55,193 +83,332 @@ interface StoreState {
   settings: Settings;
   customerOwners: Record<string, CustomerOwnership>;
 
-  addContract: (c: Omit<Contract, 'id' | 'createdAt'>) => void;
-  updateContract: (id: string, c: Partial<Contract>) => void;
-  deleteContract: (id: string) => void;
+  /** Wird gesetzt, sobald wir initial alle Daten geladen haben. */
+  loaded: boolean;
+  /** Letzter Fehler aus einer DB-Operation (für Toast / Banner). */
+  lastError: string | null;
 
-  addTariffChange: (t: Omit<TariffChange, 'id' | 'createdAt'>) => void;
-  updateTariffChange: (id: string, t: Partial<TariffChange>) => void;
-  deleteTariffChange: (id: string) => void;
-  markTariffChangeExported: (id: string) => void;
+  /** Lädt alle CRM-Daten für den aktuellen User. */
+  loadAll: () => Promise<void>;
+  /** Setzt den Store zurück (bei Logout). */
+  reset: () => void;
+  /** Abonniert Realtime-Changes auf allen relevanten Tabellen. */
+  subscribeRealtime: () => () => void;
 
-  addNote: (n: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updateNote: (id: string, n: Partial<Note>) => void;
-  deleteNote: (id: string) => void;
+  addContract: (c: Omit<Contract, 'id' | 'createdAt'>) => Promise<void>;
+  updateContract: (id: string, c: Partial<Contract>) => Promise<void>;
+  deleteContract: (id: string) => Promise<void>;
 
-  updateSettings: (s: Partial<Settings>) => void;
-  updateProductCommission: (product: ProductType, commission: number) => void;
-  updateTariffCommission: (matrix: TariffCommissionMatrix) => void;
+  addTariffChange: (t: Omit<TariffChange, 'id' | 'createdAt'>) => Promise<void>;
+  updateTariffChange: (id: string, t: Partial<TariffChange>) => Promise<void>;
+  deleteTariffChange: (id: string) => Promise<void>;
+  markTariffChangeExported: (id: string) => Promise<void>;
 
-  setCustomerOwner: (customerNumber: string, ownerKey: string) => void;
-  shareCustomer: (customerNumber: string, withUserKey: string) => void;
-  unshareCustomer: (customerNumber: string, withUserKey: string) => void;
+  addNote: (n: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateNote: (id: string, n: Partial<Note>) => Promise<void>;
+  deleteNote: (id: string) => Promise<void>;
+
+  updateSettings: (s: Partial<Settings>) => Promise<void>;
+  updateProductCommission: (product: ProductType, commission: number) => Promise<void>;
+  updateTariffCommission: (matrix: TariffCommissionMatrix) => Promise<void>;
+
+  setCustomerOwner: (customerNumber: string, ownerKey: string) => Promise<void>;
+  shareCustomer: (customerNumber: string, withUserKey: string) => Promise<void>;
+  unshareCustomer: (customerNumber: string, withUserKey: string) => Promise<void>;
 }
 
-const uid = () =>
-  Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const reportError = (set: (s: Partial<StoreState>) => void, e: unknown) => {
+  const msg = e instanceof Error ? e.message : String(e);
+  // eslint-disable-next-line no-console
+  console.error('[useStore]', msg);
+  set({ lastError: msg });
+};
 
-export const useStore = create<StoreState>()(
-  persist(
-    (set) => ({
+export const useStore = create<StoreState>()((set, get) => ({
+  contracts: [],
+  tariffChanges: [],
+  notes: [],
+  customerOwners: {},
+  settings: DEFAULT_SETTINGS,
+  loaded: false,
+  lastError: null,
+
+  loadAll: async () => {
+    const uid = useAuth.getState().currentUserKey;
+    try {
+      const [contracts, tariffChanges, notes, owners, settingsRes] = await Promise.all([
+        fetchContracts(),
+        fetchTariffChanges(),
+        fetchNotes(),
+        fetchOwnerships(),
+        uid ? fetchSettings(uid) : Promise.resolve({ user: null, shared: null }),
+      ]);
+
+      const mergedSettings: Settings = {
+        ...DEFAULT_SETTINGS,
+        ...(settingsRes.shared
+          ? {
+              products: settingsRes.shared.products.length
+                ? settingsRes.shared.products
+                : DEFAULT_PRODUCTS,
+              tariffCommission:
+                settingsRes.shared.tariffCommission &&
+                Object.keys(settingsRes.shared.tariffCommission).length > 0
+                  ? settingsRes.shared.tariffCommission
+                  : DEFAULT_TARIFF_COMMISSION,
+            }
+          : {}),
+        ...(settingsRes.user
+          ? {
+              monthlyTarget: settingsRes.user.monthlyTarget,
+              spClientId: settingsRes.user.spClientId,
+              spTenantId: settingsRes.user.spTenantId,
+            }
+          : {}),
+      };
+
+      // Falls noch keine shared_settings existieren, einmalig die Defaults anlegen.
+      if (!settingsRes.shared) {
+        upsertSharedSettings({
+          products: DEFAULT_PRODUCTS,
+          tariffCommission: DEFAULT_TARIFF_COMMISSION,
+        }).catch(() => {});
+      }
+
+      set({
+        contracts,
+        tariffChanges,
+        notes,
+        customerOwners: owners,
+        settings: mergedSettings,
+        loaded: true,
+        lastError: null,
+      });
+    } catch (e) {
+      reportError(set, e);
+      set({ loaded: true });
+    }
+  },
+
+  reset: () =>
+    set({
       contracts: [],
       tariffChanges: [],
       notes: [],
       customerOwners: {},
-      settings: {
-        products: DEFAULT_PRODUCTS,
-        tariffCommission: DEFAULT_TARIFF_COMMISSION,
-        monthlyTarget: 500,
-        jiraBaseUrl: 'https://jira.tng.de/browse/',
-        agentName: 'Auszubildende:r',
-        spClientId: '',
-        spTenantId: '',
-        spFilePath: '',
-        spSheetName: 'Tabelle1',
-      },
-
-      addContract: (c) =>
-        set((s) => ({
-          contracts: [
-            ...s.contracts,
-            {
-              ...c,
-              id: uid(),
-              createdAt: new Date().toISOString(),
-              createdBy: c.createdBy ?? currentUserKey(),
-            },
-          ],
-        })),
-      updateContract: (id, c) =>
-        set((s) => ({
-          contracts: s.contracts.map((x) =>
-            x.id === id ? { ...x, ...c } : x,
-          ),
-        })),
-      deleteContract: (id) =>
-        set((s) => ({ contracts: s.contracts.filter((x) => x.id !== id) })),
-
-      addTariffChange: (t) =>
-        set((s) => ({
-          tariffChanges: [
-            ...s.tariffChanges,
-            {
-              ...t,
-              id: uid(),
-              createdAt: new Date().toISOString(),
-              createdBy: t.createdBy ?? currentUserKey(),
-            },
-          ],
-        })),
-      updateTariffChange: (id, t) =>
-        set((s) => ({
-          tariffChanges: s.tariffChanges.map((x) =>
-            x.id === id ? { ...x, ...t } : x,
-          ),
-        })),
-      deleteTariffChange: (id) =>
-        set((s) => ({
-          tariffChanges: s.tariffChanges.filter((x) => x.id !== id),
-        })),
-      markTariffChangeExported: (id) =>
-        set((s) => ({
-          tariffChanges: s.tariffChanges.map((x) =>
-            x.id === id ? { ...x, exportedAt: new Date().toISOString() } : x,
-          ),
-        })),
-
-      addNote: (n) =>
-        set((s) => ({
-          notes: [
-            ...s.notes,
-            {
-              ...n,
-              id: uid(),
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-          ],
-        })),
-      updateNote: (id, n) =>
-        set((s) => ({
-          notes: s.notes.map((x) =>
-            x.id === id ? { ...x, ...n, updatedAt: new Date().toISOString() } : x,
-          ),
-        })),
-      deleteNote: (id) =>
-        set((s) => ({ notes: s.notes.filter((x) => x.id !== id) })),
-
-      updateSettings: (s) =>
-        set((state) => ({ settings: { ...state.settings, ...s } })),
-      updateProductCommission: (product, commission) =>
-        set((state) => ({
-          settings: {
-            ...state.settings,
-            products: state.settings.products.map((p) =>
-              p.name === product ? { ...p, commission } : p,
-            ),
-          },
-        })),
-      updateTariffCommission: (matrix) =>
-        set((state) => ({
-          settings: { ...state.settings, tariffCommission: matrix },
-        })),
-
-      setCustomerOwner: (kdnr, ownerKey) =>
-        set((state) => {
-          const existing = state.customerOwners[kdnr];
-          return {
-            customerOwners: {
-              ...state.customerOwners,
-              [kdnr]: {
-                owner: ownerKey,
-                sharedWith: (existing?.sharedWith ?? []).filter((k) => k !== ownerKey),
-              },
-            },
-          };
-        }),
-
-      shareCustomer: (kdnr, withUserKey) =>
-        set((state) => {
-          const existing = state.customerOwners[kdnr];
-          if (!existing) return state;
-          if (existing.owner === withUserKey) return state;
-          if (existing.sharedWith.includes(withUserKey)) return state;
-          return {
-            customerOwners: {
-              ...state.customerOwners,
-              [kdnr]: {
-                ...existing,
-                sharedWith: [...existing.sharedWith, withUserKey],
-              },
-            },
-          };
-        }),
-
-      unshareCustomer: (kdnr, withUserKey) =>
-        set((state) => {
-          const existing = state.customerOwners[kdnr];
-          if (!existing) return state;
-          return {
-            customerOwners: {
-              ...state.customerOwners,
-              [kdnr]: {
-                ...existing,
-                sharedWith: existing.sharedWith.filter((k) => k !== withUserKey),
-              },
-            },
-          };
-        }),
+      settings: DEFAULT_SETTINGS,
+      loaded: false,
+      lastError: null,
     }),
-    {
-      name: 'crm-tng-store',
-      version: 4,
-      migrate: (persisted: unknown, version) => {
-        const state = (persisted ?? {}) as Partial<StoreState>;
-        if (version < 4) {
-          return { ...state, customerOwners: state.customerOwners ?? {} } as StoreState;
-        }
-        return state as StoreState;
-      },
-    },
-  ),
-);
+
+  subscribeRealtime: () => {
+    const sb = getSupabase();
+    const channel = sb
+      .channel('crm-tng-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contracts' }, () => {
+        fetchContracts().then((rows) => set({ contracts: rows })).catch(() => {});
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tariff_changes' }, () => {
+        fetchTariffChanges().then((rows) => set({ tariffChanges: rows })).catch(() => {});
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, () => {
+        fetchNotes().then((rows) => set({ notes: rows })).catch(() => {});
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_ownerships' }, () => {
+        fetchOwnerships().then((rows) => set({ customerOwners: rows })).catch(() => {});
+      })
+      .subscribe();
+    return () => {
+      sb.removeChannel(channel);
+    };
+  },
+
+  addContract: async (c) => {
+    try {
+      const created = await insertContract({ ...c, createdBy: c.createdBy ?? currentUserKey() });
+      set((s) => ({ contracts: [created, ...s.contracts] }));
+    } catch (e) {
+      reportError(set, e);
+    }
+  },
+  updateContract: async (id, c) => {
+    const prev = get().contracts;
+    set({ contracts: prev.map((x) => (x.id === id ? { ...x, ...c } : x)) });
+    try {
+      await updateContractRow(id, c);
+    } catch (e) {
+      reportError(set, e);
+      set({ contracts: prev });
+    }
+  },
+  deleteContract: async (id) => {
+    const prev = get().contracts;
+    set({ contracts: prev.filter((x) => x.id !== id) });
+    try {
+      await deleteContractRow(id);
+    } catch (e) {
+      reportError(set, e);
+      set({ contracts: prev });
+    }
+  },
+
+  addTariffChange: async (t) => {
+    try {
+      const created = await insertTariffChange({ ...t, createdBy: t.createdBy ?? currentUserKey() });
+      set((s) => ({ tariffChanges: [created, ...s.tariffChanges] }));
+    } catch (e) {
+      reportError(set, e);
+    }
+  },
+  updateTariffChange: async (id, t) => {
+    const prev = get().tariffChanges;
+    set({ tariffChanges: prev.map((x) => (x.id === id ? { ...x, ...t } : x)) });
+    try {
+      await updateTariffChangeRow(id, t);
+    } catch (e) {
+      reportError(set, e);
+      set({ tariffChanges: prev });
+    }
+  },
+  deleteTariffChange: async (id) => {
+    const prev = get().tariffChanges;
+    set({ tariffChanges: prev.filter((x) => x.id !== id) });
+    try {
+      await deleteTariffChangeRow(id);
+    } catch (e) {
+      reportError(set, e);
+      set({ tariffChanges: prev });
+    }
+  },
+  markTariffChangeExported: async (id) => {
+    const now = new Date().toISOString();
+    const prev = get().tariffChanges;
+    set({
+      tariffChanges: prev.map((x) => (x.id === id ? { ...x, exportedAt: now } : x)),
+    });
+    try {
+      await updateTariffChangeRow(id, { exportedAt: now });
+    } catch (e) {
+      reportError(set, e);
+      set({ tariffChanges: prev });
+    }
+  },
+
+  addNote: async (n) => {
+    try {
+      const created = await insertNote(n, currentUserKey());
+      set((s) => ({ notes: [created, ...s.notes] }));
+    } catch (e) {
+      reportError(set, e);
+    }
+  },
+  updateNote: async (id, n) => {
+    const prev = get().notes;
+    const now = new Date().toISOString();
+    set({ notes: prev.map((x) => (x.id === id ? { ...x, ...n, updatedAt: now } : x)) });
+    try {
+      await updateNoteRow(id, n);
+    } catch (e) {
+      reportError(set, e);
+      set({ notes: prev });
+    }
+  },
+  deleteNote: async (id) => {
+    const prev = get().notes;
+    set({ notes: prev.filter((x) => x.id !== id) });
+    try {
+      await deleteNoteRow(id);
+    } catch (e) {
+      reportError(set, e);
+      set({ notes: prev });
+    }
+  },
+
+  updateSettings: async (patch) => {
+    const prev = get().settings;
+    set({ settings: { ...prev, ...patch } });
+    const uid = currentUserKey();
+    if (!uid) return;
+    try {
+      await upsertUserSettings(uid, patch);
+    } catch (e) {
+      reportError(set, e);
+      set({ settings: prev });
+    }
+  },
+  updateProductCommission: async (product, commission) => {
+    const prev = get().settings;
+    const newProducts = prev.products.map((p) =>
+      p.name === product ? { ...p, commission } : p,
+    );
+    set({ settings: { ...prev, products: newProducts } });
+    try {
+      await upsertSharedSettings({ products: newProducts });
+    } catch (e) {
+      reportError(set, e);
+      set({ settings: prev });
+    }
+  },
+  updateTariffCommission: async (matrix) => {
+    const prev = get().settings;
+    set({ settings: { ...prev, tariffCommission: matrix } });
+    try {
+      await upsertSharedSettings({ tariffCommission: matrix });
+    } catch (e) {
+      reportError(set, e);
+      set({ settings: prev });
+    }
+  },
+
+  setCustomerOwner: async (kdnr, ownerKey) => {
+    const prev = get().customerOwners;
+    const existing = prev[kdnr];
+    const next: CustomerOwnership = {
+      owner: ownerKey,
+      sharedWith: (existing?.sharedWith ?? []).filter((k) => k !== ownerKey),
+    };
+    set({ customerOwners: { ...prev, [kdnr]: next } });
+    try {
+      await upsertOwnership(kdnr, next.owner, next.sharedWith);
+    } catch (e) {
+      reportError(set, e);
+      set({ customerOwners: prev });
+    }
+  },
+
+  shareCustomer: async (kdnr, withUserKey) => {
+    const prev = get().customerOwners;
+    const existing = prev[kdnr];
+    if (!existing) return;
+    if (existing.owner === withUserKey) return;
+    if (existing.sharedWith.includes(withUserKey)) return;
+    const next: CustomerOwnership = {
+      ...existing,
+      sharedWith: [...existing.sharedWith, withUserKey],
+    };
+    set({ customerOwners: { ...prev, [kdnr]: next } });
+    try {
+      await upsertOwnership(kdnr, next.owner, next.sharedWith);
+    } catch (e) {
+      reportError(set, e);
+      set({ customerOwners: prev });
+    }
+  },
+
+  unshareCustomer: async (kdnr, withUserKey) => {
+    const prev = get().customerOwners;
+    const existing = prev[kdnr];
+    if (!existing) return;
+    const next: CustomerOwnership = {
+      ...existing,
+      sharedWith: existing.sharedWith.filter((k) => k !== withUserKey),
+    };
+    set({ customerOwners: { ...prev, [kdnr]: next } });
+    try {
+      await upsertOwnership(kdnr, next.owner, next.sharedWith);
+    } catch (e) {
+      reportError(set, e);
+      set({ customerOwners: prev });
+    }
+  },
+}));

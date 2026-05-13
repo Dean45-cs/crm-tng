@@ -19,6 +19,7 @@ import {
   Cell,
 } from 'recharts';
 import { useStore } from '../store/useStore';
+import { useAuth } from '../store/useAuth';
 import {
   calcContractCommission,
   calcTariffCommission,
@@ -37,6 +38,8 @@ const PIE_COLORS = ['#0066b3', '#00a3e0', '#34c759', '#ff9500', '#a855f7', '#ff3
 
 export function Dashboard() {
   const { contracts, tariffChanges, settings } = useStore();
+  const currentUser = useAuth((s) => s.getCurrentUser());
+  const greetName = currentUser?.displayName ?? settings.agentName;
   const { navigate } = useRouter();
 
   const totalCommission =
@@ -131,7 +134,7 @@ export function Dashboard() {
       <div className="hero-banner">
         <div>
           <div className="hero-greeting">
-            {greeting()}, {settings.agentName} 👋
+            {greeting()}, {greetName} 👋
           </div>
           <div className="hero-sub">
             {new Date().toLocaleDateString('de-DE', {

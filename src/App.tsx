@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { Contracts } from './pages/Contracts';
@@ -10,9 +11,12 @@ import { Leaderboard } from './pages/Leaderboard';
 import { QuickAddProvider } from './components/QuickAdd';
 import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
-import { TngMark } from './components/TngLogo';
+import { SupabaseSetup } from './components/SupabaseSetup';
+import { TngMark, TngTile } from './components/TngLogo';
 import { Router, useRouter, type RouteName } from './router';
 import { useAuth } from './store/useAuth';
+import { useStore } from './store/useStore';
+import { isConfigured } from './lib/supabase';
 
 const TITLES: Record<RouteName, string> = {
   dashboard: 'Dashboard',
@@ -66,12 +70,86 @@ function Shell() {
   );
 }
 
+function LoadingScreen({ label = 'Lade …' }: { label?: string }) {
+  return (
+    <div className="boot-screen">
+      <div className="boot-brand">
+        <TngTile size={72} radius={18} />
+      </div>
+      <div className="boot-spinner" />
+      <div className="boot-label">{label}</div>
+    </div>
+  );
+}
+
+/**
+ * Beim Übergang von der alten Offline-Version: lokal gespeicherte
+ * CRM-Daten einmal löschen, damit die App nicht zwischen lokalen und
+ * Server-Daten mischt. Auth-Tokens und Supabase-Config bleiben.
+ */
+function clearLegacyLocalStores() {
+  const flag = 'crm-tng-legacy-cleared-v1';
+  if (localStorage.getItem(flag)) return;
+  try {
+    localStorage.removeItem('crm-tng-store');
+    localStorage.removeItem('crm-tng-auth');
+  } catch {
+    /* ignore */
+  }
+  localStorage.setItem(flag, '1');
+}
+
 export default function App() {
+  const initializing = useAuth((s) => s.initializing);
   const currentUserKey = useAuth((s) => s.currentUserKey);
   const users = useAuth((s) => s.users);
+  const init = useAuth((s) => s.init);
+
+  const loaded = useStore((s) => s.loaded);
+  const loadAll = useStore((s) => s.loadAll);
+  const subscribeRealtime = useStore((s) => s.subscribeRealtime);
+  const resetStore = useStore((s) => s.reset);
+
+  const [configured, setConfigured] = useState(isConfigured());
+
+  useEffect(() => {
+    if (!configured) return;
+    clearLegacyLocalStores();
+    init();
+  }, [configured, init]);
+
+  useEffect(() => {
+    if (!configured || !currentUserKey) {
+      resetStore();
+      return;
+    }
+    loadAll();
+    const unsub = subscribeRealtime();
+    return () => unsub();
+  }, [configured, currentUserKey, loadAll, subscribeRealtime, resetStore]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const next = isConfigured();
+      if (next !== configured) setConfigured(next);
+    }, 800);
+    return () => clearInterval(t);
+  }, [configured]);
+
+  if (!configured) {
+    return <SupabaseSetup />;
+  }
+
+  if (initializing) {
+    return <LoadingScreen label="Verbinde mit Server …" />;
+  }
 
   if (!currentUserKey) {
     return <LoginScreen />;
+  }
+
+  if (!loaded) {
+    return <LoadingScreen label="Lade deine Daten …" />;
   }
 
   const user = users[currentUserKey];

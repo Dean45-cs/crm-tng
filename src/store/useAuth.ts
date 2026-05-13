@@ -1,175 +1,206 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-
-/**
- * Einfacher Hash für die PIN. Nicht kryptographisch sicher, reicht aber
- * für ein lokales Mehrnutzer-Setup auf demselben Gerät.
- */
-function hashPin(pin: string, salt: string): string {
-  const input = `${salt}::${pin}::tng-crm-v1`;
-  let h1 = 0x811c9dc5;
-  let h2 = 0xdeadbeef;
-  for (let i = 0; i < input.length; i++) {
-    const ch = input.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 0x01000193);
-    h2 = Math.imul(h2 ^ ch, 0x85ebca6b);
-  }
-  const a = (h1 >>> 0).toString(16).padStart(8, '0');
-  const b = (h2 >>> 0).toString(16).padStart(8, '0');
-  return `${a}${b}`;
-}
+import { getSupabase, pinToPassword, nameToEmail } from '../lib/supabase';
+import {
+  fetchAllUsers,
+  upsertUserProfile,
+  updateUserFlags,
+} from '../lib/supabaseApi';
 
 export function normalizeUserKey(name: string): string {
   return name.trim().toLowerCase();
 }
 
 export interface AuthUser {
-  /** Eindeutiger Login-Key (lowercased, getrimmt) */
+  /** UUID des Users (= Supabase auth.users.id) */
   key: string;
-  /** Anzeigename, wie der User ihn eingegeben hat */
   displayName: string;
-  pinHash: string;
+  pinHash: string; // unused mit Supabase, behalten für Type-Kompat
   salt: string;
   createdAt: string;
   lastLoginAt?: string;
-  /** Hat der Nutzer das Onboarding bereits absolviert? */
   onboardingCompleted: boolean;
-  /** Auf Leaderboard sichtbar? */
   leaderboardOptIn: boolean;
 }
 
 interface AuthState {
   users: Record<string, AuthUser>;
   currentUserKey: string | null;
+  /** True solange wir die Auth-Session beim App-Start prüfen */
+  initializing: boolean;
 
-  /** Liefert true, wenn ein User mit diesem Namen bereits existiert */
+  /** Wird einmalig vom App-Bootstrap aufgerufen */
+  init: () => Promise<void>;
+  /** Lädt alle User-Profile aus der DB neu */
+  refreshUsers: () => Promise<void>;
+
   hasUser: (name: string) => boolean;
-  /** Legt einen neuen User an und meldet ihn direkt an */
-  registerUser: (name: string, pin: string) => { ok: true } | { ok: false; error: string };
-  /** Prüft PIN und meldet User an */
-  loginUser: (name: string, pin: string) => { ok: true } | { ok: false; error: string };
-  logout: () => void;
+  registerUser: (name: string, pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  loginUser: (name: string, pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  logout: () => Promise<void>;
   getCurrentUser: () => AuthUser | null;
-  /** Markiert das Onboarding als abgeschlossen für den aktuellen Nutzer */
-  completeOnboarding: () => void;
-  /** Schaltet die Leaderboard-Teilnahme für den aktuellen Nutzer an/aus */
-  setLeaderboardOptIn: (optIn: boolean) => void;
+  completeOnboarding: () => Promise<void>;
+  setLeaderboardOptIn: (optIn: boolean) => Promise<void>;
 }
 
-const randomSalt = () =>
-  Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+export const useAuth = create<AuthState>()((set, get) => ({
+  users: {},
+  currentUserKey: null,
+  initializing: true,
 
-export const useAuth = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      users: {},
-      currentUserKey: null,
+  init: async () => {
+    try {
+      const sb = getSupabase();
+      const { data } = await sb.auth.getSession();
+      const session = data.session;
 
-      hasUser: (name) => {
-        const key = normalizeUserKey(name);
-        return Boolean(get().users[key]);
-      },
+      // Lade alle User-Profile (für Leaderboard, Sharing-Auswahl etc.)
+      let users: Record<string, AuthUser> = {};
+      try {
+        users = await fetchAllUsers();
+      } catch {
+        users = {};
+      }
 
-      registerUser: (name, pin) => {
-        const trimmed = name.trim();
-        if (!trimmed) return { ok: false, error: 'Bitte gib deinen Namen ein.' };
-        if (!/^\d{4}$/.test(pin))
-          return { ok: false, error: 'PIN muss aus genau 4 Ziffern bestehen.' };
+      set({
+        users,
+        currentUserKey: session?.user.id ?? null,
+        initializing: false,
+      });
 
-        const key = normalizeUserKey(trimmed);
-        if (get().users[key])
-          return { ok: false, error: 'Dieser Name ist bereits vergeben.' };
-
-        const salt = randomSalt();
-        const user: AuthUser = {
-          key,
-          displayName: trimmed,
-          pinHash: hashPin(pin, salt),
-          salt,
-          createdAt: new Date().toISOString(),
-          lastLoginAt: new Date().toISOString(),
-          onboardingCompleted: false,
-          leaderboardOptIn: true,
-        };
-        set((s) => ({
-          users: { ...s.users, [key]: user },
-          currentUserKey: key,
-        }));
-        return { ok: true };
-      },
-
-      loginUser: (name, pin) => {
-        const key = normalizeUserKey(name);
-        const user = get().users[key];
-        if (!user) return { ok: false, error: 'Nutzer nicht gefunden.' };
-        if (!/^\d{4}$/.test(pin))
-          return { ok: false, error: 'PIN muss 4 Ziffern haben.' };
-        if (hashPin(pin, user.salt) !== user.pinHash)
-          return { ok: false, error: 'Falsche PIN.' };
-
-        set((s) => ({
-          currentUserKey: key,
-          users: {
-            ...s.users,
-            [key]: { ...user, lastLoginAt: new Date().toISOString() },
-          },
-        }));
-        return { ok: true };
-      },
-
-      logout: () => set({ currentUserKey: null }),
-
-      getCurrentUser: () => {
-        const k = get().currentUserKey;
-        return k ? get().users[k] ?? null : null;
-      },
-
-      completeOnboarding: () =>
-        set((s) => {
-          if (!s.currentUserKey) return s;
-          const u = s.users[s.currentUserKey];
-          if (!u) return s;
-          return {
-            users: {
-              ...s.users,
-              [s.currentUserKey]: { ...u, onboardingCompleted: true },
-            },
-          };
-        }),
-
-      setLeaderboardOptIn: (optIn) =>
-        set((s) => {
-          if (!s.currentUserKey) return s;
-          const u = s.users[s.currentUserKey];
-          if (!u) return s;
-          return {
-            users: {
-              ...s.users,
-              [s.currentUserKey]: { ...u, leaderboardOptIn: optIn },
-            },
-          };
-        }),
-    }),
-    {
-      name: 'crm-tng-auth',
-      version: 2,
-      migrate: (persisted: unknown, version) => {
-        const state = (persisted ?? {}) as Partial<AuthState>;
-        if (version < 2 && state.users) {
-          const migrated: Record<string, AuthUser> = {};
-          for (const [k, u] of Object.entries(state.users)) {
-            const user = u as AuthUser;
-            migrated[k] = {
-              ...user,
-              // bestehende User überspringen die Tour
-              onboardingCompleted: user.onboardingCompleted ?? true,
-              leaderboardOptIn: user.leaderboardOptIn ?? true,
-            };
-          }
-          return { ...state, users: migrated } as AuthState;
+      // Auth-State-Changes abonnieren
+      sb.auth.onAuthStateChange((_event, sess) => {
+        set({ currentUserKey: sess?.user.id ?? null });
+        if (sess) {
+          fetchAllUsers().then((u) => set({ users: u })).catch(() => {});
         }
-        return state as AuthState;
-      },
-    },
-  ),
-);
+      });
+    } catch (e) {
+      console.error('Auth init failed', e);
+      set({ initializing: false });
+    }
+  },
+
+  refreshUsers: async () => {
+    try {
+      const users = await fetchAllUsers();
+      set({ users });
+    } catch (e) {
+      console.error('refreshUsers failed', e);
+    }
+  },
+
+  hasUser: (name) => {
+    const k = normalizeUserKey(name);
+    return Object.values(get().users).some((u) => normalizeUserKey(u.displayName) === k);
+  },
+
+  registerUser: async (name, pin) => {
+    const trimmed = name.trim();
+    if (!trimmed) return { ok: false, error: 'Bitte gib deinen Namen ein.' };
+    if (!/^\d{4}$/.test(pin)) return { ok: false, error: 'PIN muss aus genau 4 Ziffern bestehen.' };
+
+    const sb = getSupabase();
+    const email = nameToEmail(trimmed);
+    const password = pinToPassword(trimmed, pin);
+    const key = normalizeUserKey(trimmed);
+
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password,
+      options: { data: { display_name: trimmed } },
+    });
+    if (error) {
+      if (error.message.toLowerCase().includes('already')) {
+        return { ok: false, error: 'Dieser Name ist bereits vergeben.' };
+      }
+      return { ok: false, error: error.message };
+    }
+    const uid = data.user?.id;
+    if (!uid) return { ok: false, error: 'Registrierung fehlgeschlagen.' };
+
+    // Wenn Email-Bestätigung an ist, ggf. direkt einloggen
+    if (!data.session) {
+      const { error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+      if (signInErr) return { ok: false, error: signInErr.message };
+    }
+
+    try {
+      await upsertUserProfile(uid, key, trimmed);
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+
+    await get().refreshUsers();
+    set({ currentUserKey: uid });
+    return { ok: true };
+  },
+
+  loginUser: async (name, pin) => {
+    const sb = getSupabase();
+    const email = nameToEmail(name);
+    const password = pinToPassword(name, pin);
+
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) {
+      if (error.message.toLowerCase().includes('invalid')) {
+        return { ok: false, error: 'Falscher Name oder PIN.' };
+      }
+      return { ok: false, error: error.message };
+    }
+    const uid = data.user?.id;
+    if (!uid) return { ok: false, error: 'Login fehlgeschlagen.' };
+
+    // last_login_at aktualisieren
+    try {
+      await upsertUserProfile(uid, normalizeUserKey(name), name.trim());
+    } catch {
+      /* ignore */
+    }
+    await get().refreshUsers();
+    set({ currentUserKey: uid });
+    return { ok: true };
+  },
+
+  logout: async () => {
+    const sb = getSupabase();
+    await sb.auth.signOut();
+    set({ currentUserKey: null });
+  },
+
+  getCurrentUser: () => {
+    const k = get().currentUserKey;
+    return k ? get().users[k] ?? null : null;
+  },
+
+  completeOnboarding: async () => {
+    const uid = get().currentUserKey;
+    if (!uid) return;
+    try {
+      await updateUserFlags(uid, { onboardingCompleted: true });
+      const u = get().users[uid];
+      if (u) {
+        set((s) => ({
+          users: { ...s.users, [uid]: { ...u, onboardingCompleted: true } },
+        }));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  },
+
+  setLeaderboardOptIn: async (optIn) => {
+    const uid = get().currentUserKey;
+    if (!uid) return;
+    try {
+      await updateUserFlags(uid, { leaderboardOptIn: optIn });
+      const u = get().users[uid];
+      if (u) {
+        set((s) => ({
+          users: { ...s.users, [uid]: { ...u, leaderboardOptIn: optIn } },
+        }));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  },
+}));

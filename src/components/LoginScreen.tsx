@@ -1,19 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, LockKeyhole, UserRound, Sparkles } from 'lucide-react';
+import { ArrowRight, LockKeyhole, UserRound, Sparkles, Loader2 } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
-import { useStore } from '../store/useStore';
 import { TngTile } from './TngLogo';
 
 type Step = 'name' | 'pin-login' | 'pin-setup-new' | 'pin-setup-confirm';
 
 export function LoginScreen() {
   const { hasUser, registerUser, loginUser, users } = useAuth();
-  const { updateSettings } = useStore();
 
   const [name, setName] = useState('');
   const [step, setStep] = useState<Step>('name');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const knownUsers = Object.values(users).sort((a, b) =>
     (b.lastLoginAt ?? b.createdAt).localeCompare(a.lastLoginAt ?? a.createdAt),
@@ -31,15 +30,16 @@ export function LoginScreen() {
     setStep(hasUser(value) ? 'pin-login' : 'pin-setup-new');
   };
 
-  const handlePinComplete = (entered: string) => {
+  const handlePinComplete = async (entered: string) => {
     if (step === 'pin-login') {
-      const res = loginUser(name, entered);
+      setBusy(true);
+      const res = await loginUser(name, entered);
+      setBusy(false);
       if (!res.ok) {
         setError(res.error);
         setPin('');
         return;
       }
-      updateSettings({ agentName: name.trim() });
     } else if (step === 'pin-setup-new') {
       setPin(entered);
       setError(null);
@@ -51,14 +51,15 @@ export function LoginScreen() {
         setStep('pin-setup-new');
         return;
       }
-      const res = registerUser(name, entered);
+      setBusy(true);
+      const res = await registerUser(name, entered);
+      setBusy(false);
       if (!res.ok) {
         setError(res.error);
         setPin('');
         setStep('pin-setup-new');
         return;
       }
-      updateSettings({ agentName: name.trim() });
     }
   };
 
@@ -102,6 +103,7 @@ export function LoginScreen() {
             mode={step}
             name={name}
             error={error}
+            busy={busy}
             onComplete={handlePinComplete}
             onBack={goBack}
           />
@@ -193,12 +195,14 @@ function PinStep({
   mode,
   name,
   error,
+  busy,
   onComplete,
   onBack,
 }: {
   mode: 'pin-login' | 'pin-setup-new' | 'pin-setup-confirm';
   name: string;
   error: string | null;
+  busy: boolean;
   onComplete: (pin: string) => void;
   onBack: () => void;
 }) {
@@ -290,13 +294,19 @@ function PinStep({
             autoComplete="one-time-code"
             maxLength={2}
             aria-label={`Ziffer ${i + 1}`}
+            disabled={busy}
           />
         ))}
       </div>
 
-      {error && <div className="login-error">{error}</div>}
+      {busy && (
+        <div className="login-busy">
+          <Loader2 size={14} className="spin" /> Verbinde mit Server …
+        </div>
+      )}
+      {!busy && error && <div className="login-error">{error}</div>}
 
-      <button type="button" className="login-secondary" onClick={onBack}>
+      <button type="button" className="login-secondary" onClick={onBack} disabled={busy}>
         Anderer Name
       </button>
     </>
