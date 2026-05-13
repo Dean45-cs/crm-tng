@@ -9,6 +9,9 @@ import type {
   ProductType,
   TariffCommissionMatrix,
 } from '../types';
+import { useAuth } from './useAuth';
+
+const currentUserKey = () => useAuth.getState().currentUserKey ?? undefined;
 
 const DEFAULT_PRODUCTS: ProductInfo[] = [
   // Privat
@@ -88,7 +91,12 @@ export const useStore = create<StoreState>()(
         set((s) => ({
           contracts: [
             ...s.contracts,
-            { ...c, id: uid(), createdAt: new Date().toISOString() },
+            {
+              ...c,
+              id: uid(),
+              createdAt: new Date().toISOString(),
+              createdBy: c.createdBy ?? currentUserKey(),
+            },
           ],
         })),
       updateContract: (id, c) =>
@@ -104,7 +112,12 @@ export const useStore = create<StoreState>()(
         set((s) => ({
           tariffChanges: [
             ...s.tariffChanges,
-            { ...t, id: uid(), createdAt: new Date().toISOString() },
+            {
+              ...t,
+              id: uid(),
+              createdAt: new Date().toISOString(),
+              createdBy: t.createdBy ?? currentUserKey(),
+            },
           ],
         })),
       updateTariffChange: (id, t) =>

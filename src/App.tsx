@@ -6,8 +6,11 @@ import { Notes } from './pages/Notes';
 import { Settings } from './pages/Settings';
 import { Customers } from './pages/Customers';
 import { CustomerDetail } from './pages/CustomerDetail';
+import { Leaderboard } from './pages/Leaderboard';
 import { QuickAddProvider } from './components/QuickAdd';
 import { LoginScreen } from './components/LoginScreen';
+import { OnboardingTour } from './components/OnboardingTour';
+import { TngLogo } from './components/TngLogo';
 import { Router, useRouter, type RouteName } from './router';
 import { useAuth } from './store/useAuth';
 
@@ -18,6 +21,7 @@ const TITLES: Record<RouteName, string> = {
   notes: 'Notizen',
   customers: 'Kunden',
   customer: 'Kunde',
+  leaderboard: 'Leaderboard',
   settings: 'Einstellungen',
 };
 
@@ -28,14 +32,21 @@ function Shell() {
       <Sidebar />
       <main className="main">
         <header className="titlebar">
-          <h1>{TITLES[route.name]}</h1>
-          <div className="muted">
-            {new Date().toLocaleDateString('de-DE', {
-              weekday: 'long',
-              day: '2-digit',
-              month: 'long',
-              year: 'numeric',
-            })}
+          <div className="row" style={{ gap: 12, alignItems: 'center' }}>
+            <h1>{TITLES[route.name]}</h1>
+          </div>
+          <div className="row" style={{ gap: 14, alignItems: 'center' }}>
+            <span className="muted">
+              {new Date().toLocaleDateString('de-DE', {
+                weekday: 'long',
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric',
+              })}
+            </span>
+            <div className="titlebar-brand" title="TNG Stadtnetz GmbH">
+              <TngLogo variant="lockup" height={18} color="var(--tng-blue)" />
+            </div>
           </div>
         </header>
         <div className="content">
@@ -46,6 +57,7 @@ function Shell() {
             {route.name === 'notes' && <Notes />}
             {route.name === 'customers' && <Customers />}
             {route.name === 'customer' && <CustomerDetail kdnr={route.kdnr} />}
+            {route.name === 'leaderboard' && <Leaderboard />}
             {route.name === 'settings' && <Settings />}
           </div>
         </div>
@@ -56,15 +68,20 @@ function Shell() {
 
 export default function App() {
   const currentUserKey = useAuth((s) => s.currentUserKey);
+  const users = useAuth((s) => s.users);
 
   if (!currentUserKey) {
     return <LoginScreen />;
   }
 
+  const user = users[currentUserKey];
+  const needsOnboarding = user && !user.onboardingCompleted;
+
   return (
     <Router>
       <QuickAddProvider>
         <Shell />
+        {needsOnboarding && <OnboardingTour />}
       </QuickAddProvider>
     </Router>
   );

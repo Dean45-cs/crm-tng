@@ -51,6 +51,8 @@ export interface Contract {
   followUpDate?: string;
   notes?: string;
   createdAt: string;
+  /** Key des angemeldeten Nutzers, der den Vertrag erfasst hat */
+  createdBy?: string;
 }
 
 export interface TariffChange {
@@ -65,6 +67,8 @@ export interface TariffChange {
   jiraTicket: string;
   notes?: string;
   createdAt: string;
+  /** Key des angemeldeten Nutzers, der den Wechsel erfasst hat */
+  createdBy?: string;
 }
 
 export interface Note {

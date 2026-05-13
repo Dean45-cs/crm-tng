@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Save, Download, Upload, Trash2 } from 'lucide-react';
+import { Save, Download, Upload, Trash2, Trophy } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useAuth } from '../store/useAuth';
 import { formatCurrency, TARIFF_CONTEXT_LABEL, TARIFF_TYPE_LABEL } from '../lib/utils';
 import type {
   ProductCategory,
@@ -20,6 +21,9 @@ export function Settings() {
     tariffChanges,
     notes,
   } = useStore();
+
+  const { getCurrentUser, setLeaderboardOptIn } = useAuth();
+  const currentUser = getCurrentUser();
 
   const [agentName, setAgentName] = useState(settings.agentName);
   const [target, setTarget] = useState(settings.monthlyTarget);
@@ -143,6 +147,35 @@ export function Settings() {
           <button className="btn btn-primary" onClick={saveGeneral}>
             <Save size={14} /> Speichern
           </button>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 className="section-title">
+          <Trophy size={14} style={{ marginRight: 6, verticalAlign: '-2px' }} />
+          Leaderboard
+        </h3>
+        <div className="row between" style={{ gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
+              Im Ranking sichtbar sein
+            </div>
+            <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
+              Wenn aktiviert, sehen andere Nutzer deine Provisionssummen im
+              Leaderboard. Ist es aus, bleibst du anonym – du selbst siehst
+              deine Zahlen aber weiterhin.
+            </div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={currentUser?.leaderboardOptIn ?? true}
+              onChange={(e) => setLeaderboardOptIn(e.target.checked)}
+            />
+            <span className="switch-track">
+              <span className="switch-thumb" />
+            </span>
+          </label>
         </div>
       </div>
 

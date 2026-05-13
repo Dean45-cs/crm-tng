@@ -5,10 +5,12 @@ import {
   StickyNote,
   Settings as SettingsIcon,
   Users,
+  Trophy,
   LogOut,
 } from 'lucide-react';
 import { useRouter, type Route, type RouteName } from '../router';
 import { useAuth } from '../store/useAuth';
+import { TngLogo } from './TngLogo';
 
 interface NavItemDef {
   id: RouteName;
@@ -21,6 +23,7 @@ const SECTIONS: { title: string; items: NavItemDef[] }[] = [
     title: 'Übersicht',
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
+      { id: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={16} /> },
     ],
   },
   {
@@ -64,7 +67,9 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="sidebar-logo">TNG</div>
+        <div className="sidebar-logo" aria-label="TNG">
+          <TngLogo variant="mark" height={26} color="#ffffff" />
+        </div>
         <div>
           <div className="sidebar-title">Stadtnetz CRM</div>
           <div className="sidebar-subtitle">Ausbildung</div>
@@ -77,7 +82,7 @@ export function Sidebar() {
           {section.items.map((item) => (
             <div
               key={item.id}
-              className={`sidebar-item ${active === item.id ? 'active' : ''}`}
+              className={`sidebar-item sidebar-item-${item.id} ${active === item.id ? 'active' : ''}`}
               onClick={() => navigate({ name: item.id } as Route)}
             >
               {item.icon}

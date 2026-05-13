@@ -32,6 +32,10 @@ export interface AuthUser {
   salt: string;
   createdAt: string;
   lastLoginAt?: string;
+  /** Hat der Nutzer das Onboarding bereits absolviert? */
+  onboardingCompleted: boolean;
+  /** Auf Leaderboard sichtbar? */
+  leaderboardOptIn: boolean;
 }
 
 interface AuthState {
@@ -46,6 +50,10 @@ interface AuthState {
   loginUser: (name: string, pin: string) => { ok: true } | { ok: false; error: string };
   logout: () => void;
   getCurrentUser: () => AuthUser | null;
+  /** Markiert das Onboarding als abgeschlossen für den aktuellen Nutzer */
+  completeOnboarding: () => void;
+  /** Schaltet die Leaderboard-Teilnahme für den aktuellen Nutzer an/aus */
+  setLeaderboardOptIn: (optIn: boolean) => void;
 }
 
 const randomSalt = () =>
@@ -80,6 +88,8 @@ export const useAuth = create<AuthState>()(
           salt,
           createdAt: new Date().toISOString(),
           lastLoginAt: new Date().toISOString(),
+          onboardingCompleted: false,
+          leaderboardOptIn: true,
         };
         set((s) => ({
           users: { ...s.users, [key]: user },
@@ -113,10 +123,53 @@ export const useAuth = create<AuthState>()(
         const k = get().currentUserKey;
         return k ? get().users[k] ?? null : null;
       },
+
+      completeOnboarding: () =>
+        set((s) => {
+          if (!s.currentUserKey) return s;
+          const u = s.users[s.currentUserKey];
+          if (!u) return s;
+          return {
+            users: {
+              ...s.users,
+              [s.currentUserKey]: { ...u, onboardingCompleted: true },
+            },
+          };
+        }),
+
+      setLeaderboardOptIn: (optIn) =>
+        set((s) => {
+          if (!s.currentUserKey) return s;
+          const u = s.users[s.currentUserKey];
+          if (!u) return s;
+          return {
+            users: {
+              ...s.users,
+              [s.currentUserKey]: { ...u, leaderboardOptIn: optIn },
+            },
+          };
+        }),
     }),
     {
       name: 'crm-tng-auth',
-      version: 1,
+      version: 2,
+      migrate: (persisted: unknown, version) => {
+        const state = (persisted ?? {}) as Partial<AuthState>;
+        if (version < 2 && state.users) {
+          const migrated: Record<string, AuthUser> = {};
+          for (const [k, u] of Object.entries(state.users)) {
+            const user = u as AuthUser;
+            migrated[k] = {
+              ...user,
+              // bestehende User überspringen die Tour
+              onboardingCompleted: user.onboardingCompleted ?? true,
+              leaderboardOptIn: user.leaderboardOptIn ?? true,
+            };
+          }
+          return { ...state, users: migrated } as AuthState;
+        }
+        return state as AuthState;
+      },
     },
   ),
 );

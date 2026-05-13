@@ -7,6 +7,7 @@ export type Route =
   | { name: 'notes' }
   | { name: 'customers' }
   | { name: 'customer'; kdnr: string }
+  | { name: 'leaderboard' }
   | { name: 'settings' };
 
 export type RouteName = Route['name'];
