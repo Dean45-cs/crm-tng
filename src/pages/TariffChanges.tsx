@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
-import { Plus, Search, Pencil, Trash2, Download, ArrowRight } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { Plus, Search, Pencil, Trash2, Download, ArrowRight, Sheet, Loader2, Check } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useAuth } from '../store/useAuth';
 import {
   calcTariffCommission,
   exportCsv,
@@ -11,11 +12,26 @@ import {
 } from '../lib/utils';
 import { JiraLink } from '../components/JiraLink';
 import { useQuickAdd } from '../components/QuickAdd';
+import { exportTariffChange } from '../lib/sharepointGraph';
+import type { TariffChange } from '../types';
 
 export function TariffChanges() {
-  const { tariffChanges, settings, deleteTariffChange } = useStore();
+  const { tariffChanges, settings, deleteTariffChange, markTariffChangeExported } = useStore();
+  const { getCurrentUser } = useAuth();
   const { openNewTariff, editTariff } = useQuickAdd();
   const [search, setSearch] = useState('');
+  const [exporting, setExporting] = useState<string | null>(null);
+  const [bulkExporting, setBulkExporting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const agentName = getCurrentUser()?.displayName ?? settings.agentName;
+  const spConfigured = !!(settings.spClientId && settings.spTenantId && settings.spFilePath);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -31,11 +47,13 @@ export function TariffChanges() {
       .sort((a, b) => b.changeDate.localeCompare(a.changeDate));
   }, [tariffChanges, search]);
 
+  const unexported = tariffChanges.filter((t) => !t.exportedAt);
+
   const remove = (id: string) => {
     if (confirm('Tarifwechsel wirklich löschen?')) deleteTariffChange(id);
   };
 
-  const exportData = () => {
+  const exportCsvData = () => {
     exportCsv(
       `tarifwechsel-${new Date().toISOString().slice(0, 10)}.csv`,
       filtered.map((t) => ({
@@ -53,6 +71,49 @@ export function TariffChanges() {
     );
   };
 
+  const handleExport = async (t: TariffChange) => {
+    setExporting(t.id);
+    try {
+      await exportTariffChange(
+        t, agentName,
+        settings.spClientId, settings.spTenantId,
+        settings.spFilePath, settings.spSheetName,
+      );
+      markTariffChangeExported(t.id);
+      setToast('Eintrag erfolgreich in SharePoint-Excel eingetragen.');
+    } catch (e) {
+      setToast(`Fehler: ${(e as Error).message}`);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportAll = async () => {
+    if (unexported.length === 0) return;
+    setBulkExporting(true);
+    let successCount = 0;
+    let lastError = '';
+    for (const t of unexported) {
+      try {
+        await exportTariffChange(
+          t, agentName,
+          settings.spClientId, settings.spTenantId,
+          settings.spFilePath, settings.spSheetName,
+        );
+        markTariffChangeExported(t.id);
+        successCount++;
+      } catch (e) {
+        lastError = (e as Error).message;
+      }
+    }
+    setBulkExporting(false);
+    if (lastError) {
+      setToast(`${successCount} eingetragen, Fehler: ${lastError}`);
+    } else {
+      setToast(`${successCount} Einträge erfolgreich in SharePoint-Excel eingetragen.`);
+    }
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -61,7 +122,18 @@ export function TariffChanges() {
           <p>Sidegrade/VVL oder Upgrade – Provision wird automatisch berechnet.</p>
         </div>
         <div className="row">
-          <button className="btn" onClick={exportData} disabled={filtered.length === 0}>
+          {spConfigured && (
+            <button
+              className="btn sharepoint-btn"
+              onClick={handleExportAll}
+              disabled={bulkExporting || unexported.length === 0}
+              title={unexported.length === 0 ? 'Alle bereits exportiert' : `${unexported.length} neue Einträge exportieren`}
+            >
+              {bulkExporting ? <Loader2 size={14} className="spin" /> : <Sheet size={14} />}
+              {unexported.length > 0 ? `${unexported.length} → Excel` : 'Alle exportiert'}
+            </button>
+          )}
+          <button className="btn" onClick={exportCsvData} disabled={filtered.length === 0}>
             <Download size={14} /> CSV
           </button>
           <button className="btn btn-primary" onClick={openNewTariff}>
@@ -139,6 +211,20 @@ export function TariffChanges() {
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <div className="row end">
+                      {spConfigured && (
+                        <button
+                          className={`btn btn-ghost btn-sm sharepoint-row-btn${t.exportedAt ? ' exported' : ''}`}
+                          title={t.exportedAt ? `Exportiert am ${formatDate(t.exportedAt.slice(0, 10))}` : 'In SharePoint-Excel eintragen'}
+                          onClick={() => handleExport(t)}
+                          disabled={exporting === t.id}
+                        >
+                          {exporting === t.id
+                            ? <Loader2 size={13} className="spin" />
+                            : t.exportedAt
+                              ? <Check size={13} style={{ color: 'var(--green)' }} />
+                              : <Sheet size={13} />}
+                        </button>
+                      )}
                       <button className="btn btn-ghost btn-sm" onClick={() => editTariff(t)}>
                         <Pencil size={13} />
                       </button>
@@ -151,6 +237,12 @@ export function TariffChanges() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {toast && (
+        <div className="sp-toast">
+          {toast}
         </div>
       )}
     </div>

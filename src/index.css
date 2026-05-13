@@ -2017,3 +2017,91 @@ table.crm-table tbody tr:hover { background: var(--bg-card-hover); }
   align-items: center;
   gap: 8px;
 }
+
+/* =================================================================
+   SharePoint Export
+   ================================================================= */
+
+.sharepoint-btn {
+  border-color: #1a7f5a;
+  color: #1a7f5a;
+  background: rgba(26, 127, 90, 0.06);
+}
+.sharepoint-btn:hover:not(:disabled) {
+  background: rgba(26, 127, 90, 0.12);
+  border-color: #168050;
+}
+.sharepoint-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sharepoint-row-btn {
+  color: var(--text-tertiary);
+}
+.sharepoint-row-btn.exported {
+  color: var(--green);
+  opacity: 0.7;
+}
+
+.spin {
+  animation: sp-spin 0.75s linear infinite;
+}
+@keyframes sp-spin {
+  to { transform: rotate(360deg); }
+}
+
+.sp-toast {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  padding: 13px 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.14);
+  z-index: 2000;
+  font-size: 13.5px;
+  max-width: 380px;
+  line-height: 1.45;
+  animation: sp-fadein 0.2s ease;
+}
+@keyframes sp-fadein {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.sp-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 5px 10px;
+}
+.sp-status-ok {
+  color: #1a7f5a;
+  background: rgba(26, 127, 90, 0.09);
+}
+.sp-status-err {
+  color: var(--red);
+  background: rgba(220, 38, 38, 0.08);
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.sp-hint {
+  margin-top: 16px;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.sp-hint code {
+  background: var(--surface-3);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11.5px;
+}

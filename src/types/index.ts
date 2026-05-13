@@ -69,6 +69,8 @@ export interface TariffChange {
   createdAt: string;
   /** Key des angemeldeten Nutzers, der den Wechsel erfasst hat */
   createdBy?: string;
+  /** ISO-Zeitstempel, gesetzt nach erfolgreichem SharePoint-Export */
+  exportedAt?: string;
 }
 
 export interface Note {
@@ -93,6 +95,10 @@ export interface Settings {
   monthlyTarget: number;
   jiraBaseUrl: string;
   agentName: string;
+  spClientId: string;
+  spTenantId: string;
+  spFilePath: string;
+  spSheetName: string;
 }
 
 /** Abgeleitete Kunden-Aggregation aus den Daten */

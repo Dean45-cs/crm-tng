@@ -1,13 +1,15 @@
-import { useState } from 'react';
-import { Save, Download, Upload, Trash2, Trophy } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Save, Download, Upload, Trash2, Trophy, Sheet, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { formatCurrency, TARIFF_CONTEXT_LABEL, TARIFF_TYPE_LABEL } from '../lib/utils';
+import { spSignIn, spSignOut, spGetAccount, testConnection } from '../lib/sharepointGraph';
 import type {
   ProductCategory,
   TariffChangeType,
   TariffContext,
 } from '../types';
+import type { AccountInfo } from '@azure/msal-browser';
 
 const CATS: ProductCategory[] = ['Privat', 'Business', 'Zusatz'];
 
@@ -29,6 +31,52 @@ export function Settings() {
   const [target, setTarget] = useState(settings.monthlyTarget);
   const [jiraBaseUrl, setJiraBaseUrl] = useState(settings.jiraBaseUrl);
   const [saved, setSaved] = useState(false);
+
+  const [spClientId, setSpClientId] = useState(settings.spClientId);
+  const [spTenantId, setSpTenantId] = useState(settings.spTenantId);
+  const [spFilePath, setSpFilePath] = useState(settings.spFilePath);
+  const [spSheetName, setSpSheetName] = useState(settings.spSheetName || 'Tabelle1');
+  const [spAccount, setSpAccount] = useState<AccountInfo | null>(null);
+  const [spLoading, setSpLoading] = useState(false);
+  const [spError, setSpError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (settings.spClientId && settings.spTenantId) {
+      spGetAccount(settings.spClientId, settings.spTenantId)
+        .then(setSpAccount)
+        .catch(() => setSpAccount(null));
+    }
+  }, [settings.spClientId, settings.spTenantId]);
+
+  const saveSharePoint = () => {
+    updateSettings({ spClientId, spTenantId, spFilePath, spSheetName });
+  };
+
+  const connectSharePoint = async () => {
+    setSpLoading(true);
+    setSpError(null);
+    try {
+      saveSharePoint();
+      const { account } = await testConnection(spClientId, spTenantId, spFilePath, spSheetName);
+      setSpAccount(account);
+    } catch (e) {
+      setSpError((e as Error).message);
+    } finally {
+      setSpLoading(false);
+    }
+  };
+
+  const disconnectSharePoint = async () => {
+    setSpLoading(true);
+    try {
+      await spSignOut(settings.spClientId, settings.spTenantId);
+      setSpAccount(null);
+    } catch {
+      setSpAccount(null);
+    } finally {
+      setSpLoading(false);
+    }
+  };
 
   const saveGeneral = () => {
     updateSettings({
@@ -282,6 +330,94 @@ export function Settings() {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 className="section-title">
+          <Sheet size={14} style={{ marginRight: 6, verticalAlign: '-2px' }} />
+          SharePoint Excel-Export
+        </h3>
+        <p className="muted" style={{ marginBottom: 14 }}>
+          Trägt Tarifwechsel per Knopfdruck automatisch in die SharePoint-Excel-Tabelle ein.
+          Einmalig Azure-App-ID eintragen – danach reicht ein Klick.
+        </p>
+
+        <div className="form-grid">
+          <div className="field">
+            <label>Azure Client ID</label>
+            <input
+              value={spClientId}
+              onChange={(e) => setSpClientId(e.target.value)}
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              spellCheck={false}
+            />
+          </div>
+          <div className="field">
+            <label>Azure Tenant ID</label>
+            <input
+              value={spTenantId}
+              onChange={(e) => setSpTenantId(e.target.value)}
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              spellCheck={false}
+            />
+          </div>
+          <div className="field">
+            <label>Dateipfad (relativ zur SharePoint-Bibliothek)</label>
+            <input
+              value={spFilePath}
+              onChange={(e) => setSpFilePath(e.target.value)}
+              placeholder="Allgemein/Tarifwechsel.xlsx"
+              spellCheck={false}
+            />
+          </div>
+          <div className="field">
+            <label>Tabellenblatt</label>
+            <input
+              value={spSheetName}
+              onChange={(e) => setSpSheetName(e.target.value)}
+              placeholder="Tabelle1"
+            />
+          </div>
+        </div>
+
+        <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          {spAccount ? (
+            <>
+              <span className="sp-status sp-status-ok">
+                <CheckCircle size={13} />
+                Verbunden als {spAccount.username}
+              </span>
+              <button className="btn" onClick={disconnectSharePoint} disabled={spLoading}>
+                Abmelden
+              </button>
+            </>
+          ) : (
+            <button
+              className="btn sharepoint-btn"
+              onClick={connectSharePoint}
+              disabled={spLoading || !spClientId || !spTenantId || !spFilePath}
+            >
+              {spLoading ? <Loader2 size={14} className="spin" /> : <Sheet size={14} />}
+              Verbindung testen & anmelden
+            </button>
+          )}
+          {!spAccount && (
+            <button className="btn" onClick={saveSharePoint}>
+              <Save size={14} /> Speichern
+            </button>
+          )}
+          {spError && (
+            <span className="sp-status sp-status-err">
+              <XCircle size={13} /> {spError}
+            </span>
+          )}
+        </div>
+
+        <div className="sp-hint">
+          <strong>Einrichtung (einmalig):</strong> Azure-Portal → App-Registrierungen → Neue Registrierung →
+          Plattform „Single-Page Application", Redirect-URI: <code>{window.location.origin}</code> →
+          API-Berechtigung: <code>Files.ReadWrite</code> (delegiert). Danach Client-ID und Tenant-ID hier eintragen.
         </div>
       </div>
 

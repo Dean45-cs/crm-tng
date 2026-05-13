@@ -60,6 +60,7 @@ interface StoreState {
   addTariffChange: (t: Omit<TariffChange, 'id' | 'createdAt'>) => void;
   updateTariffChange: (id: string, t: Partial<TariffChange>) => void;
   deleteTariffChange: (id: string) => void;
+  markTariffChangeExported: (id: string) => void;
 
   addNote: (n: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateNote: (id: string, n: Partial<Note>) => void;
@@ -85,6 +86,10 @@ export const useStore = create<StoreState>()(
         monthlyTarget: 500,
         jiraBaseUrl: 'https://jira.tng.de/browse/',
         agentName: 'Auszubildende:r',
+        spClientId: '',
+        spTenantId: '',
+        spFilePath: '',
+        spSheetName: 'Tabelle1',
       },
 
       addContract: (c) =>
@@ -129,6 +134,12 @@ export const useStore = create<StoreState>()(
       deleteTariffChange: (id) =>
         set((s) => ({
           tariffChanges: s.tariffChanges.filter((x) => x.id !== id),
+        })),
+      markTariffChangeExported: (id) =>
+        set((s) => ({
+          tariffChanges: s.tariffChanges.map((x) =>
+            x.id === id ? { ...x, exportedAt: new Date().toISOString() } : x,
+          ),
         })),
 
       addNote: (n) =>
