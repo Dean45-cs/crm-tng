@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Modal } from './Modal';
 import { ProductPicker } from './ProductPicker';
-import { today } from '../lib/utils';
+import { formatCurrency, getProductCommission, today } from '../lib/utils';
 import type { Contract, ContractStatus, ProductType } from '../types';
 
 type Draft = Omit<Contract, 'id' | 'createdAt'>;
@@ -10,7 +11,7 @@ type Draft = Omit<Contract, 'id' | 'createdAt'>;
 const emptyDraft = (): Draft => ({
   customerNumber: '',
   customerName: '',
-  product: 'Fibrefamily',
+  products: ['Fibrefamily'],
   contractDate: today(),
   status: 'aktiv',
   jiraTicket: '',
@@ -25,9 +26,10 @@ interface Props {
 }
 
 export function ContractForm({ open, editing, onClose }: Props) {
-  const { addContract, updateContract } = useStore();
+  const { addContract, updateContract, settings } = useStore();
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [showMore, setShowMore] = useState(false);
+  const [addingProduct, setAddingProduct] = useState<ProductType>('Waipu TV');
 
   useEffect(() => {
     if (!open) return;
@@ -35,7 +37,7 @@ export function ContractForm({ open, editing, onClose }: Props) {
       setDraft({
         customerNumber: editing.customerNumber,
         customerName: editing.customerName,
-        product: editing.product,
+        products: editing.products.length > 0 ? editing.products : ['Fibrefamily'],
         contractDate: editing.contractDate,
         status: editing.status,
         jiraTicket: editing.jiraTicket,
@@ -49,18 +51,44 @@ export function ContractForm({ open, editing, onClose }: Props) {
     }
   }, [open, editing]);
 
+  const totalCommission = useMemo(
+    () =>
+      draft.products.reduce(
+        (sum, p) => sum + getProductCommission(settings, p),
+        0,
+      ),
+    [draft.products, settings],
+  );
+
   const valid =
     draft.customerNumber.trim().length > 0 &&
-    draft.customerName.trim().length > 0;
+    draft.customerName.trim().length > 0 &&
+    draft.products.length > 0;
 
   const save = () => {
     if (!valid) return;
-    if (editing) {
-      updateContract(editing.id, draft);
-    } else {
-      addContract(draft);
-    }
+    if (editing) updateContract(editing.id, draft);
+    else addContract(draft);
     onClose();
+  };
+
+  const updateProductAt = (idx: number, p: ProductType) => {
+    setDraft({
+      ...draft,
+      products: draft.products.map((x, i) => (i === idx ? p : x)),
+    });
+  };
+
+  const removeProductAt = (idx: number) => {
+    if (draft.products.length <= 1) return;
+    setDraft({
+      ...draft,
+      products: draft.products.filter((_, i) => i !== idx),
+    });
+  };
+
+  const addProduct = () => {
+    setDraft({ ...draft, products: [...draft.products, addingProduct] });
   };
 
   return (
@@ -68,15 +96,11 @@ export function ContractForm({ open, editing, onClose }: Props) {
       open={open}
       onClose={onClose}
       title={editing ? 'Vertrag bearbeiten' : 'Neuer Vertrag'}
-      subtitle="Nur die wichtigsten Daten – mehr kannst du später ergänzen."
+      subtitle="Mehrere Produkte für einen Bundle-Verkauf einfach hinzufügen."
       footer={
         <>
           <button className="btn" onClick={onClose}>Abbrechen</button>
-          <button
-            className="btn btn-primary"
-            onClick={save}
-            disabled={!valid}
-          >
+          <button className="btn btn-primary" onClick={save} disabled={!valid}>
             Speichern
           </button>
         </>
@@ -104,13 +128,57 @@ export function ContractForm({ open, editing, onClose }: Props) {
             placeholder="Max Mustermann"
           />
         </div>
+
         <div className="field full">
-          <label>Produkt</label>
-          <ProductPicker
-            value={draft.product}
-            onChange={(p: ProductType) => setDraft({ ...draft, product: p })}
-          />
+          <label>Produkte ({draft.products.length})</label>
+          <div className="bundle-list">
+            {draft.products.map((p, i) => (
+              <div key={i} className="bundle-row">
+                <div style={{ flex: 1 }}>
+                  <ProductPicker
+                    value={p}
+                    onChange={(np) => updateProductAt(i, np)}
+                  />
+                </div>
+                {draft.products.length > 1 && (
+                  <button
+                    className="icon-btn"
+                    type="button"
+                    onClick={() => removeProductAt(i)}
+                    title="Produkt entfernen"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+            <div className="bundle-row">
+              <div style={{ flex: 1 }}>
+                <ProductPicker
+                  value={addingProduct}
+                  onChange={(p) => setAddingProduct(p)}
+                />
+              </div>
+              <button
+                className="btn btn-sm"
+                type="button"
+                onClick={addProduct}
+                title="Produkt hinzufügen"
+              >
+                <Plus size={13} /> Hinzufügen
+              </button>
+            </div>
+          </div>
+          <div className="bundle-total">
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              Gesamtprovision
+            </span>
+            <strong style={{ color: 'var(--tng-blue-dark)' }}>
+              {formatCurrency(totalCommission)}
+            </strong>
+          </div>
         </div>
+
         <div className="field">
           <label>Jira-Vorgang</label>
           <input

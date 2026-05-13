@@ -17,7 +17,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from 'recharts';
 import { useStore } from '../store/useStore';
 import {
@@ -31,11 +30,14 @@ import {
 } from '../lib/utils';
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
+import { FollowUpInbox } from '../components/FollowUpInbox';
+import { useRouter } from '../router';
 
 const PIE_COLORS = ['#0066b3', '#00a3e0', '#34c759', '#ff9500', '#a855f7', '#ff3b30', '#5856d6', '#ffcc00'];
 
 export function Dashboard() {
   const { contracts, tariffChanges, settings } = useStore();
+  const { navigate } = useRouter();
 
   const totalCommission =
     contracts.reduce((sum, c) => sum + calcContractCommission(c, settings), 0) +
@@ -51,7 +53,6 @@ export function Dashboard() {
   const target = settings.monthlyTarget || 0;
   const targetProgress = target > 0 ? Math.min(100, (monthCommission / target) * 100) : 0;
 
-  // last 6 months chart
   const chartData = Array.from({ length: 6 }, (_, i) => {
     const offset = -5 + i;
     const refDate = new Date();
@@ -73,10 +74,11 @@ export function Dashboard() {
     };
   });
 
-  // product distribution
   const productMap = new Map<string, number>();
   contracts.forEach((c) => {
-    productMap.set(c.product, (productMap.get(c.product) ?? 0) + 1);
+    c.products.forEach((p) => {
+      productMap.set(p, (productMap.get(p) ?? 0) + 1);
+    });
   });
   const productData = Array.from(productMap.entries()).map(([name, value]) => ({
     name,
@@ -87,16 +89,25 @@ export function Dashboard() {
 
   const recent = [
     ...contracts.map((c) => ({
+      kind: 'contract' as const,
+      id: c.id,
+      kdnr: c.customerNumber,
       type: 'Vertrag' as const,
       date: c.contractDate,
       customer: c.customerName,
       customerNumber: c.customerNumber,
-      product: c.product,
+      product:
+        c.products.length === 1
+          ? c.products[0]
+          : `${c.products[0]} +${c.products.length - 1}`,
       jira: c.jiraTicket,
       commission: calcContractCommission(c, settings),
       status: c.status,
     })),
     ...tariffChanges.map((t) => ({
+      kind: 'tariff' as const,
+      id: t.id,
+      kdnr: t.customerNumber,
       type: 'Tarifwechsel' as const,
       date: t.changeDate,
       customer: t.customerName,
@@ -117,10 +128,36 @@ export function Dashboard() {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="hero-banner">
         <div>
-          <h2>Dashboard</h2>
-          <p>Willkommen zurück, {settings.agentName}.</p>
+          <div className="hero-greeting">
+            {greeting()}, {settings.agentName} 👋
+          </div>
+          <div className="hero-sub">
+            {new Date().toLocaleDateString('de-DE', {
+              weekday: 'long',
+              day: '2-digit',
+              month: 'long',
+              year: 'numeric',
+            })}
+          </div>
+        </div>
+        <div className="hero-target">
+          <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+            <Target size={14} />
+            <span style={{ fontSize: 12.5, fontWeight: 500 }}>
+              Monatsziel · {Math.round(targetProgress)} %
+            </span>
+          </div>
+          <div className="hero-progress">
+            <div
+              className="hero-progress-bar"
+              style={{ width: `${targetProgress}%` }}
+            />
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>
+            {formatCurrency(monthCommission)} / {formatCurrency(target)}
+          </div>
         </div>
       </div>
 
@@ -163,132 +200,109 @@ export function Dashboard() {
             </h3>
             <span className="muted">Letzte 6 Monate</span>
           </div>
-          <div style={{ width: '100%', height: 250 }}>
+          <div style={{ width: '100%', height: 260 }}>
             <ResponsiveContainer>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.07)" vertical={false} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} />
-                <YAxis axisLine={false} tickLine={false} fontSize={12} />
+              <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
+                <YAxis axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
                 <Tooltip
                   cursor={{ fill: 'rgba(0,102,179,0.05)' }}
                   contentStyle={{
                     background: 'var(--bg-card)',
                     border: '1px solid var(--border)',
-                    borderRadius: 10,
+                    borderRadius: 12,
                     fontSize: 12,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
                   }}
                   formatter={(value) => formatCurrency(Number(value ?? 0))}
                 />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="Neuvertrag" stackId="a" fill="#0066b3" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Tarifwechsel" stackId="a" fill="#00a3e0" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="Tarifwechsel" stackId="a" fill="#00a3e0" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="card">
-          <div className="row between" style={{ marginBottom: 6 }}>
-            <h3 className="section-title" style={{ margin: 0 }}>
-              <Target size={14} style={{ marginRight: 6, verticalAlign: '-2px' }} />
-              Monatsziel
-            </h3>
-            <span className="muted">{Math.round(targetProgress)}%</span>
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.4px' }}>
-            {formatCurrency(monthCommission)}
-          </div>
-          <div className="muted" style={{ marginBottom: 14 }}>
-            von {formatCurrency(target)}
-          </div>
-          <div className="progress">
-            <div className="progress-bar" style={{ width: `${targetProgress}%` }} />
-          </div>
-          <div className="muted" style={{ marginTop: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
-            <Trophy size={13} />
-            {targetProgress >= 100
-              ? 'Ziel erreicht! 🎉'
-              : `Noch ${formatCurrency(Math.max(0, target - monthCommission))} bis zum Ziel`}
-          </div>
+        <FollowUpInbox />
+      </div>
 
-          {productData.length > 0 && (
-            <div style={{ marginTop: 20 }}>
-              <h3 className="section-title">Produktverteilung</h3>
-              <div style={{ width: '100%', height: 180 }}>
-                <ResponsiveContainer>
-                  <PieChart>
-                    <Pie
-                      data={productData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={62}
-                      innerRadius={36}
-                      paddingAngle={2}
-                    >
-                      {productData.map((_, i) => (
-                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        background: 'var(--bg-card)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 10,
-                        fontSize: 12,
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
+      <div className="grid-2" style={{ marginBottom: 16 }}>
+        <div className="card">
+          <h3 className="section-title">Zuletzt erfasst</h3>
+          {recent.length === 0 ? (
+            <div className="empty-inline">
+              <span>Noch keine Vorgänge.</span>
+            </div>
+          ) : (
+            <div className="recent-list">
+              {recent.map((r) => (
+                <button
+                  key={`${r.kind}-${r.id}`}
+                  className="recent-item"
+                  onClick={() => navigate({ name: 'customer', kdnr: r.kdnr })}
+                >
+                  <div className={`recent-bullet ${r.type === 'Vertrag' ? 'bullet-blue' : 'bullet-orange'}`} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="row between" style={{ gap: 8 }}>
+                      <div className="recent-name">{r.customer}</div>
+                      <div className="recent-amount">{formatCurrency(r.commission)}</div>
+                    </div>
+                    <div className="recent-meta">
+                      <span className="muted" style={{ fontSize: 11.5 }}>
+                        {formatDate(r.date)} · {r.product}
+                      </span>
+                      {r.jira && <JiraLink ticket={r.jira} />}
+                      <StatusBadge status={r.status} />
+                    </div>
+                  </div>
+                </button>
+              ))}
             </div>
           )}
         </div>
-      </div>
 
-      <div className="card">
-        <h3 className="section-title">Zuletzt erfasst</h3>
-        {recent.length === 0 ? (
-          <div className="muted">Noch keine Vorgänge vorhanden.</div>
-        ) : (
-          <div className="table-wrap" style={{ border: 'none' }}>
-            <table className="crm-table">
-              <thead>
-                <tr>
-                  <th>Datum</th>
-                  <th>Typ</th>
-                  <th>Kunde</th>
-                  <th>KdNr.</th>
-                  <th>Produkt</th>
-                  <th>Status</th>
-                  <th>Jira</th>
-                  <th style={{ textAlign: 'right' }}>Provision</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((r, i) => (
-                  <tr key={i}>
-                    <td>{formatDate(r.date)}</td>
-                    <td>
-                      <span className={`badge ${r.type === 'Vertrag' ? 'badge-blue' : 'badge-orange'}`}>
-                        {r.type}
-                      </span>
-                    </td>
-                    <td>{r.customer}</td>
-                    <td><code style={{ fontSize: 12 }}>{r.customerNumber}</code></td>
-                    <td>{r.product}</td>
-                    <td><StatusBadge status={r.status} /></td>
-                    <td><JiraLink ticket={r.jira} /></td>
-                    <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                      {formatCurrency(r.commission)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <div className="card">
+          <h3 className="section-title">
+            <Trophy size={14} style={{ marginRight: 6, verticalAlign: '-2px' }} />
+            Produktverteilung
+          </h3>
+          {productData.length === 0 ? (
+            <div className="empty-inline" style={{ minHeight: 200 }}>
+              <span>Keine Produkte verkauft.</span>
+            </div>
+          ) : (
+            <div style={{ width: '100%', height: 240 }}>
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie
+                    data={productData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={86}
+                    innerRadius={50}
+                    paddingAngle={2}
+                  >
+                    {productData.map((_, i) => (
+                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                      fontSize: 12,
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -315,4 +329,13 @@ function StatCard({
       {delta && <div className="delta">{delta}</div>}
     </div>
   );
+}
+
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 5) return 'Gute Nacht';
+  if (hour < 11) return 'Guten Morgen';
+  if (hour < 17) return 'Hallo';
+  if (hour < 22) return 'Guten Abend';
+  return 'Gute Nacht';
 }

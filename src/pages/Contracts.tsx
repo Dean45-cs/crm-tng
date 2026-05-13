@@ -28,7 +28,7 @@ export function Contracts() {
           : c.customerName.toLowerCase().includes(q) ||
             c.customerNumber.toLowerCase().includes(q) ||
             c.jiraTicket.toLowerCase().includes(q) ||
-            c.product.toLowerCase().includes(q),
+            c.products.some((p) => p.toLowerCase().includes(q)),
       )
       .sort((a, b) => b.contractDate.localeCompare(a.contractDate));
   }, [contracts, search, statusFilter]);
@@ -44,7 +44,7 @@ export function Contracts() {
         Datum: formatDate(c.contractDate),
         Kundennummer: c.customerNumber,
         Kunde: c.customerName,
-        Produkt: c.product,
+        Produkte: c.products.join(' + '),
         Status: c.status,
         Jira: c.jiraTicket,
         Wiedervorlage: formatDate(c.followUpDate),
@@ -59,7 +59,7 @@ export function Contracts() {
       <div className="page-header">
         <div>
           <h2>Verträge</h2>
-          <p>Verkaufte Verträge und Neuabschlüsse verwalten.</p>
+          <p>Verkaufte Verträge und Neuabschlüsse – auch als Bundle.</p>
         </div>
         <div className="row">
           <button className="btn" onClick={exportData} disabled={filtered.length === 0}>
@@ -71,7 +71,7 @@ export function Contracts() {
         </div>
       </div>
 
-      <div className="card" style={{ padding: 14, marginBottom: 14 }}>
+      <div className="card-soft" style={{ padding: 14, marginBottom: 16 }}>
         <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="search-bar">
             <Search size={14} />
@@ -84,13 +84,7 @@ export function Contracts() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as 'alle' | ContractStatus)}
-            style={{
-              padding: '7px 10px',
-              borderRadius: 8,
-              border: '1px solid var(--border-strong)',
-              background: 'var(--bg-card)',
-              fontSize: 13,
-            }}
+            className="select-pill"
           >
             <option value="alle">Alle Status</option>
             <option value="offen">Offen</option>
@@ -104,7 +98,7 @@ export function Contracts() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="card empty">
+        <div className="card-soft empty">
           <h3>Noch keine Verträge</h3>
           <p>Tippe unten rechts auf <strong>+</strong> oder hier:</p>
           <button className="btn btn-primary" onClick={openNewContract} style={{ marginTop: 12 }}>
@@ -119,7 +113,7 @@ export function Contracts() {
                 <th>Datum</th>
                 <th>KdNr.</th>
                 <th>Kunde</th>
-                <th>Produkt</th>
+                <th>Produkte</th>
                 <th>Status</th>
                 <th>Jira</th>
                 <th>Wiedervorlage</th>
@@ -128,38 +122,46 @@ export function Contracts() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c) => {
-                const cat = settings.products.find((p) => p.name === c.product)?.category;
-                return (
-                  <tr key={c.id}>
-                    <td>{formatDate(c.contractDate)}</td>
-                    <td><code style={{ fontSize: 12 }}>{c.customerNumber}</code></td>
-                    <td>{c.customerName}</td>
-                    <td>
-                      <div className="row" style={{ gap: 6 }}>
-                        {cat && <span className={`cat-chip cat-${cat}`}>{cat}</span>}
-                        <span>{c.product}</span>
-                      </div>
-                    </td>
-                    <td><StatusBadge status={c.status} /></td>
-                    <td><JiraLink ticket={c.jiraTicket} /></td>
-                    <td>{formatDate(c.followUpDate)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                      {formatCurrency(calcContractCommission(c, settings))}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div className="row end">
-                        <button className="btn btn-ghost btn-sm" onClick={() => editContract(c)}>
-                          <Pencil size={13} />
-                        </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => remove(c.id)}>
-                          <Trash2 size={13} color="var(--red)" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {filtered.map((c) => (
+                <tr key={c.id}>
+                  <td>{formatDate(c.contractDate)}</td>
+                  <td><code style={{ fontSize: 12 }}>{c.customerNumber}</code></td>
+                  <td>{c.customerName}</td>
+                  <td>
+                    <div className="product-chips">
+                      {c.products.slice(0, 2).map((p) => {
+                        const cat = settings.products.find((x) => x.name === p)?.category;
+                        return (
+                          <span key={p} className={`product-chip cat-${cat}`}>
+                            {p}
+                          </span>
+                        );
+                      })}
+                      {c.products.length > 2 && (
+                        <span className="product-chip product-chip-more">
+                          +{c.products.length - 2}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td><StatusBadge status={c.status} /></td>
+                  <td><JiraLink ticket={c.jiraTicket} /></td>
+                  <td>{formatDate(c.followUpDate)}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                    {formatCurrency(calcContractCommission(c, settings))}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <div className="row end">
+                      <button className="btn btn-ghost btn-sm" onClick={() => editContract(c)}>
+                        <Pencil size={13} />
+                      </button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => remove(c.id)}>
+                        <Trash2 size={13} color="var(--red)" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

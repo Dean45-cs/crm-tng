@@ -157,7 +157,7 @@ export const useStore = create<StoreState>()(
     }),
     {
       name: 'crm-tng-store',
-      version: 2,
+      version: 3,
     },
   ),
 );

@@ -36,11 +36,6 @@ export interface ProductInfo {
   commission: number;
 }
 
-/**
- * Tarifwechsel-Logik nach TNG Provisionskatalog:
- * - Sidegrade/VVL: > 3M Restlaufzeit = 0€, < 3M = 5€, außerhalb MVLZ = 5€
- * - Upgrade:        > 3M Restlaufzeit = 5€, < 3M = 7,50€, außerhalb MVLZ = 7,50€
- */
 export type TariffChangeType = 'sidegrade' | 'upgrade';
 export type TariffContext = 'mvlz_gt3' | 'mvlz_lt3' | 'outside_mvlz';
 
@@ -48,7 +43,8 @@ export interface Contract {
   id: string;
   customerNumber: string;
   customerName: string;
-  product: ProductType;
+  /** Ein Vertrag kann mehrere Produkte enthalten (Bundle-Verkauf) */
+  products: ProductType[];
   contractDate: string;
   status: ContractStatus;
   jiraTicket: string;
@@ -93,4 +89,15 @@ export interface Settings {
   monthlyTarget: number;
   jiraBaseUrl: string;
   agentName: string;
+}
+
+/** Abgeleitete Kunden-Aggregation aus den Daten */
+export interface CustomerSummary {
+  customerNumber: string;
+  customerName: string;
+  contractCount: number;
+  tariffChangeCount: number;
+  noteCount: number;
+  totalCommission: number;
+  lastActivity: string;
 }

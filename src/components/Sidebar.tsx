@@ -4,23 +4,50 @@ import {
   ArrowLeftRight,
   StickyNote,
   Settings as SettingsIcon,
+  Users,
 } from 'lucide-react';
-import type { Page } from '../App';
+import { useRouter, type Route, type RouteName } from '../router';
 
-interface Props {
-  current: Page;
-  onChange: (page: Page) => void;
+interface NavItemDef {
+  id: RouteName;
+  label: string;
+  icon: React.ReactNode;
 }
 
-const NAV: { id: Page; label: string; icon: React.ReactNode }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
-  { id: 'contracts', label: 'Verträge', icon: <FileSignature size={16} /> },
-  { id: 'tariff', label: 'Tarifwechsel', icon: <ArrowLeftRight size={16} /> },
-  { id: 'notes', label: 'Notizen', icon: <StickyNote size={16} /> },
-  { id: 'settings', label: 'Einstellungen', icon: <SettingsIcon size={16} /> },
+const SECTIONS: { title: string; items: NavItemDef[] }[] = [
+  {
+    title: 'Übersicht',
+    items: [
+      { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
+    ],
+  },
+  {
+    title: 'Verkauf',
+    items: [
+      { id: 'contracts', label: 'Verträge', icon: <FileSignature size={16} /> },
+      { id: 'tariff', label: 'Tarifwechsel', icon: <ArrowLeftRight size={16} /> },
+      { id: 'notes', label: 'Notizen', icon: <StickyNote size={16} /> },
+    ],
+  },
+  {
+    title: 'Stamm',
+    items: [
+      { id: 'customers', label: 'Kunden', icon: <Users size={16} /> },
+    ],
+  },
+  {
+    title: 'System',
+    items: [
+      { id: 'settings', label: 'Einstellungen', icon: <SettingsIcon size={16} /> },
+    ],
+  },
 ];
 
-export function Sidebar({ current, onChange }: Props) {
+export function Sidebar() {
+  const { route, navigate } = useRouter();
+  const active: RouteName =
+    route.name === 'customer' ? 'customers' : route.name;
+
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -31,59 +58,25 @@ export function Sidebar({ current, onChange }: Props) {
         </div>
       </div>
 
-      <div className="sidebar-section">Übersicht</div>
-      {NAV.slice(0, 1).map((item) => (
-        <NavItem
-          key={item.id}
-          item={item}
-          active={current === item.id}
-          onClick={() => onChange(item.id)}
-        />
-      ))}
-
-      <div className="sidebar-section">Verkauf</div>
-      {NAV.slice(1, 4).map((item) => (
-        <NavItem
-          key={item.id}
-          item={item}
-          active={current === item.id}
-          onClick={() => onChange(item.id)}
-        />
-      ))}
-
-      <div className="sidebar-section">System</div>
-      {NAV.slice(4).map((item) => (
-        <NavItem
-          key={item.id}
-          item={item}
-          active={current === item.id}
-          onClick={() => onChange(item.id)}
-        />
+      {SECTIONS.map((section) => (
+        <div key={section.title}>
+          <div className="sidebar-section">{section.title}</div>
+          {section.items.map((item) => (
+            <div
+              key={item.id}
+              className={`sidebar-item ${active === item.id ? 'active' : ''}`}
+              onClick={() => navigate({ name: item.id } as Route)}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </div>
+          ))}
+        </div>
       ))}
 
       <div className="sidebar-footer">
-        TNG Stadtnetz GmbH · CRM v1.0
+        TNG Stadtnetz GmbH · CRM v1.2
       </div>
     </aside>
-  );
-}
-
-function NavItem({
-  item,
-  active,
-  onClick,
-}: {
-  item: { id: Page; label: string; icon: React.ReactNode };
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <div
-      className={`sidebar-item ${active ? 'active' : ''}`}
-      onClick={onClick}
-    >
-      {item.icon}
-      <span>{item.label}</span>
-    </div>
   );
 }
