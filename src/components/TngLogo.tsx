@@ -52,6 +52,7 @@ export function TngTile({
   const r = radius ?? Math.round(size * 0.22);
   const gradId = nextId();
   const shineId = nextId();
+  const innerId = nextId();
   const clipId = nextId();
   // Radius im 600er-Koordinatensystem
   const r600 = (r / size) * 600;
@@ -67,14 +68,18 @@ export function TngTile({
     >
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#0a4f8c" />
-          <stop offset="55%" stopColor="#0066b3" />
-          <stop offset="100%" stopColor="#1e7cc6" />
+          <stop offset="0%" stopColor="#0c4f8c" />
+          <stop offset="48%" stopColor="#0066b3" />
+          <stop offset="100%" stopColor="#2491d6" />
         </linearGradient>
-        <radialGradient id={shineId} cx="25%" cy="20%" r="80%">
-          <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
-          <stop offset="60%" stopColor="rgba(255,255,255,0)" />
+        <radialGradient id={shineId} cx="22%" cy="18%" r="78%">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.28)" />
+          <stop offset="55%" stopColor="rgba(255,255,255,0)" />
         </radialGradient>
+        <linearGradient id={innerId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.20)" />
+          <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+        </linearGradient>
         <clipPath id={clipId}>
           <rect width="600" height="600" rx={r600} ry={r600} />
         </clipPath>
@@ -84,8 +89,20 @@ export function TngTile({
         <rect width="600" height="600" fill="#ffffff" />
         {/* Tile-Gradient mit even-odd-Aussparung des Logos */}
         <LogoPaths fill={`url(#${gradId})`} />
-        {/* Subtiles Glanzlicht oben links */}
+        {/* Glanzlicht oben links */}
         <rect width="600" height="600" fill={`url(#${shineId})`} pointerEvents="none" />
+        {/* Innerer oberer Schein für Tiefe */}
+        <rect width="600" height="14" fill={`url(#${innerId})`} pointerEvents="none" />
+        {/* Sehr feiner innerer Rand */}
+        <rect
+          x="0.5" y="0.5"
+          width="599" height="599"
+          rx={r600} ry={r600}
+          fill="none"
+          stroke="rgba(0,0,0,0.08)"
+          strokeWidth="1"
+          pointerEvents="none"
+        />
       </g>
     </svg>
   );

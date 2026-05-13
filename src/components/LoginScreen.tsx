@@ -78,7 +78,7 @@ export function LoginScreen() {
           <TngTile size={64} radius={16} />
           <div>
             <div className="login-title">Stadtnetz CRM</div>
-            <div className="login-subtitle">TNG Stadtnetz GmbH · Ausbildung</div>
+            <div className="login-subtitle">TNG Stadtnetz GmbH</div>
           </div>
         </div>
 

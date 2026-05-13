@@ -71,7 +71,7 @@ export function Sidebar() {
 
         <div>
           <div className="sidebar-title">Stadtnetz CRM</div>
-          <div className="sidebar-subtitle">Ausbildung</div>
+          <div className="sidebar-subtitle">TNG Stadtnetz GmbH</div>
         </div>
       </div>
 
@@ -110,7 +110,7 @@ export function Sidebar() {
       )}
 
       <div className="sidebar-footer">
-        TNG Stadtnetz GmbH · CRM v1.2
+        CRM v1.3 · 2026
       </div>
     </aside>
   );
