@@ -5,8 +5,10 @@ import {
   StickyNote,
   Settings as SettingsIcon,
   Users,
+  LogOut,
 } from 'lucide-react';
 import { useRouter, type Route, type RouteName } from '../router';
+import { useAuth } from '../store/useAuth';
 
 interface NavItemDef {
   id: RouteName;
@@ -45,8 +47,19 @@ const SECTIONS: { title: string; items: NavItemDef[] }[] = [
 
 export function Sidebar() {
   const { route, navigate } = useRouter();
+  const { getCurrentUser, logout } = useAuth();
+  const currentUser = getCurrentUser();
   const active: RouteName =
     route.name === 'customer' ? 'customers' : route.name;
+
+  const initials = currentUser
+    ? currentUser.displayName
+        .split(/\s+/)
+        .map((p) => p[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase()
+    : '';
 
   return (
     <aside className="sidebar">
@@ -73,6 +86,24 @@ export function Sidebar() {
           ))}
         </div>
       ))}
+
+      {currentUser && (
+        <div className="sidebar-user">
+          <div className="sidebar-user-avatar">{initials}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="sidebar-user-name">{currentUser.displayName}</div>
+            <div className="sidebar-user-role">Angemeldet</div>
+          </div>
+          <button
+            className="sidebar-user-logout"
+            onClick={logout}
+            title="Abmelden"
+            aria-label="Abmelden"
+          >
+            <LogOut size={14} />
+          </button>
+        </div>
+      )}
 
       <div className="sidebar-footer">
         TNG Stadtnetz GmbH · CRM v1.2

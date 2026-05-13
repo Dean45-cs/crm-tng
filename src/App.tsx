@@ -7,7 +7,9 @@ import { Settings } from './pages/Settings';
 import { Customers } from './pages/Customers';
 import { CustomerDetail } from './pages/CustomerDetail';
 import { QuickAddProvider } from './components/QuickAdd';
+import { LoginScreen } from './components/LoginScreen';
 import { Router, useRouter, type RouteName } from './router';
+import { useAuth } from './store/useAuth';
 
 const TITLES: Record<RouteName, string> = {
   dashboard: 'Dashboard',
@@ -53,6 +55,12 @@ function Shell() {
 }
 
 export default function App() {
+  const currentUserKey = useAuth((s) => s.currentUserKey);
+
+  if (!currentUserKey) {
+    return <LoginScreen />;
+  }
+
   return (
     <Router>
       <QuickAddProvider>
