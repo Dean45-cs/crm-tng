@@ -8,6 +8,7 @@ import type {
   ProductInfo,
   ProductType,
   TariffCommissionMatrix,
+  CustomerOwnership,
 } from '../types';
 import { useAuth } from './useAuth';
 
@@ -52,6 +53,7 @@ interface StoreState {
   tariffChanges: TariffChange[];
   notes: Note[];
   settings: Settings;
+  customerOwners: Record<string, CustomerOwnership>;
 
   addContract: (c: Omit<Contract, 'id' | 'createdAt'>) => void;
   updateContract: (id: string, c: Partial<Contract>) => void;
@@ -69,6 +71,10 @@ interface StoreState {
   updateSettings: (s: Partial<Settings>) => void;
   updateProductCommission: (product: ProductType, commission: number) => void;
   updateTariffCommission: (matrix: TariffCommissionMatrix) => void;
+
+  setCustomerOwner: (customerNumber: string, ownerKey: string) => void;
+  shareCustomer: (customerNumber: string, withUserKey: string) => void;
+  unshareCustomer: (customerNumber: string, withUserKey: string) => void;
 }
 
 const uid = () =>
@@ -80,6 +86,7 @@ export const useStore = create<StoreState>()(
       contracts: [],
       tariffChanges: [],
       notes: [],
+      customerOwners: {},
       settings: {
         products: DEFAULT_PRODUCTS,
         tariffCommission: DEFAULT_TARIFF_COMMISSION,
@@ -178,10 +185,63 @@ export const useStore = create<StoreState>()(
         set((state) => ({
           settings: { ...state.settings, tariffCommission: matrix },
         })),
+
+      setCustomerOwner: (kdnr, ownerKey) =>
+        set((state) => {
+          const existing = state.customerOwners[kdnr];
+          return {
+            customerOwners: {
+              ...state.customerOwners,
+              [kdnr]: {
+                owner: ownerKey,
+                sharedWith: (existing?.sharedWith ?? []).filter((k) => k !== ownerKey),
+              },
+            },
+          };
+        }),
+
+      shareCustomer: (kdnr, withUserKey) =>
+        set((state) => {
+          const existing = state.customerOwners[kdnr];
+          if (!existing) return state;
+          if (existing.owner === withUserKey) return state;
+          if (existing.sharedWith.includes(withUserKey)) return state;
+          return {
+            customerOwners: {
+              ...state.customerOwners,
+              [kdnr]: {
+                ...existing,
+                sharedWith: [...existing.sharedWith, withUserKey],
+              },
+            },
+          };
+        }),
+
+      unshareCustomer: (kdnr, withUserKey) =>
+        set((state) => {
+          const existing = state.customerOwners[kdnr];
+          if (!existing) return state;
+          return {
+            customerOwners: {
+              ...state.customerOwners,
+              [kdnr]: {
+                ...existing,
+                sharedWith: existing.sharedWith.filter((k) => k !== withUserKey),
+              },
+            },
+          };
+        }),
     }),
     {
       name: 'crm-tng-store',
-      version: 3,
+      version: 4,
+      migrate: (persisted: unknown, version) => {
+        const state = (persisted ?? {}) as Partial<StoreState>;
+        if (version < 4) {
+          return { ...state, customerOwners: state.customerOwners ?? {} } as StoreState;
+        }
+        return state as StoreState;
+      },
     },
   ),
 );

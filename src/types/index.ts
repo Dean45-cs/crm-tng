@@ -111,3 +111,11 @@ export interface CustomerSummary {
   totalCommission: number;
   lastActivity: string;
 }
+
+/** Wer einen Kunden besitzt und mit wem er geteilt wird */
+export interface CustomerOwnership {
+  /** User-Key des Besitzers */
+  owner: string;
+  /** User-Keys, mit denen der Kunde geteilt wird */
+  sharedWith: string[];
+}

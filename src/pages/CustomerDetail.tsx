@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Plus,
@@ -9,8 +9,14 @@ import {
   Pencil,
   Trash2,
   Calendar,
+  Share2,
+  Crown,
+  Lock,
+  UserIcon,
+  Globe,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useAuth } from '../store/useAuth';
 import { useRouter } from '../router';
 import {
   calcContractCommission,
@@ -20,20 +26,32 @@ import {
   TARIFF_CONTEXT_LABEL,
   TARIFF_TYPE_LABEL,
 } from '../lib/utils';
+import { getEffectiveOwnership, canViewCustomer } from '../lib/customerOwnership';
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
 import { useQuickAdd } from '../components/QuickAdd';
+import { CustomerShareDialog } from '../components/CustomerShareDialog';
 
 interface Props {
   kdnr: string;
 }
 
 export function CustomerDetail({ kdnr }: Props) {
-  const { contracts, tariffChanges, notes, settings, deleteContract, deleteTariffChange, deleteNote } =
+  const { contracts, tariffChanges, notes, settings, customerOwners, deleteContract, deleteTariffChange, deleteNote } =
     useStore();
+  const { currentUserKey, users } = useAuth();
   const { navigate } = useRouter();
   const { openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote } =
     useQuickAdd();
+  const [shareOpen, setShareOpen] = useState(false);
+
+  const ownership = useMemo(
+    () => getEffectiveOwnership(kdnr, customerOwners, contracts, tariffChanges, notes),
+    [kdnr, customerOwners, contracts, tariffChanges, notes],
+  );
+  const canView = canViewCustomer(kdnr, currentUserKey, customerOwners, contracts, tariffChanges, notes);
+  const isOwner = ownership.owner === currentUserKey;
+  const ownerUser = ownership.owner ? users[ownership.owner] : null;
 
   const contractsList = useMemo(
     () => contracts.filter((c) => c.customerNumber === kdnr).sort((a, b) => b.contractDate.localeCompare(a.contractDate)),
@@ -78,6 +96,31 @@ export function CustomerDetail({ kdnr }: Props) {
     );
   }
 
+  if (!canView) {
+    return (
+      <div>
+        <button
+          className="btn btn-ghost"
+          onClick={() => navigate({ name: 'customers' })}
+          style={{ marginBottom: 16 }}
+        >
+          <ArrowLeft size={14} /> Zurück
+        </button>
+        <div className="card-soft empty">
+          <Lock size={28} strokeWidth={1.5} style={{ opacity: 0.45 }} />
+          <h3>Kein Zugriff auf diesen Kunden</h3>
+          <p>
+            {ownerUser
+              ? <>Dieser Kunde gehört <strong>{ownerUser.displayName}</strong> und wurde nicht mit dir geteilt.</>
+              : <>Dieser Kunde ist einer:m anderen Kolleg:in zugeordnet und wurde nicht mit dir geteilt.</>}
+            <br />
+            Bitte um Freigabe oder schau in „Meine Kunden" nach deinen eigenen Vorgängen.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <button
@@ -96,6 +139,25 @@ export function CustomerDetail({ kdnr }: Props) {
           </h2>
           <div className="muted" style={{ marginTop: 4 }}>
             Kundennummer <code>{kdnr}</code>
+          </div>
+          <div className="customer-owner-row" style={{ marginTop: 10 }}>
+            {ownership.owner === null ? (
+              <span className="customer-owner-tag unowned">
+                <Globe size={11} /> Verwaist – noch kein:e Besitzer:in
+              </span>
+            ) : isOwner ? (
+              <span className="customer-owner-tag mine">
+                <Crown size={11} /> Du bist Besitzer:in
+                {ownership.sharedWith.length > 0 && (
+                  <> · geteilt mit {ownership.sharedWith.length} {ownership.sharedWith.length === 1 ? 'Person' : 'Personen'}</>
+                )}
+              </span>
+            ) : (
+              <span className="customer-owner-tag shared">
+                <UserIcon size={11} /> Besitzer:in: {ownerUser?.displayName ?? ownership.owner}
+                {ownership.sharedWith.includes(currentUserKey ?? '') && <> · mit dir geteilt</>}
+              </span>
+            )}
           </div>
         </div>
         <div className="customer-hero-stats">
@@ -119,7 +181,18 @@ export function CustomerDetail({ kdnr }: Props) {
         <button className="btn" onClick={openNewNote}>
           <Plus size={14} /> Notiz
         </button>
+        <button className="btn" onClick={() => setShareOpen(true)} style={{ marginLeft: 'auto' }}>
+          <Share2 size={14} /> Teilen
+        </button>
       </div>
+
+      {shareOpen && (
+        <CustomerShareDialog
+          customerNumber={kdnr}
+          customerName={customerName}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
 
       <Section
         icon={<FileSignature size={15} />}

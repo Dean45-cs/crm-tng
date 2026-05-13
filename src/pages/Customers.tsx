@@ -1,40 +1,88 @@
 import { useMemo, useState } from 'react';
-import { Search, ChevronRight, Users } from 'lucide-react';
+import { Search, ChevronRight, Users, User as UserIcon, Share2, Globe } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useAuth } from '../store/useAuth';
 import {
   buildCustomerSummaries,
   formatCurrency,
   formatDate,
 } from '../lib/utils';
+import {
+  filterCustomersByOwnership,
+  getEffectiveOwnership,
+  type OwnershipMode,
+} from '../lib/customerOwnership';
 import { useRouter } from '../router';
 
 export function Customers() {
-  const { contracts, tariffChanges, notes, settings } = useStore();
+  const { contracts, tariffChanges, notes, settings, customerOwners } = useStore();
+  const { currentUserKey, users } = useAuth();
   const { navigate } = useRouter();
   const [search, setSearch] = useState('');
+  const [mode, setMode] = useState<OwnershipMode>('mine');
 
-  const customers = useMemo(
+  const allCustomers = useMemo(
     () => buildCustomerSummaries(contracts, tariffChanges, notes, settings),
     [contracts, tariffChanges, notes, settings],
   );
 
+  const visibleCustomers = useMemo(
+    () =>
+      filterCustomersByOwnership(
+        allCustomers, currentUserKey, mode,
+        customerOwners, contracts, tariffChanges, notes,
+      ),
+    [allCustomers, currentUserKey, mode, customerOwners, contracts, tariffChanges, notes],
+  );
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    if (!q) return customers;
-    return customers.filter(
+    if (!q) return visibleCustomers;
+    return visibleCustomers.filter(
       (c) =>
         c.customerNumber.toLowerCase().includes(q) ||
         c.customerName.toLowerCase().includes(q),
     );
-  }, [customers, search]);
+  }, [visibleCustomers, search]);
+
+  // Counts pro Modus für die Tab-Badges
+  const counts = useMemo(() => {
+    const mine = filterCustomersByOwnership(allCustomers, currentUserKey, 'mine', customerOwners, contracts, tariffChanges, notes).length;
+    const shared = filterCustomersByOwnership(allCustomers, currentUserKey, 'shared', customerOwners, contracts, tariffChanges, notes).length;
+    return { mine, shared, all: allCustomers.length };
+  }, [allCustomers, currentUserKey, customerOwners, contracts, tariffChanges, notes]);
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h2>Kunden</h2>
-          <p>Alle Kunden mit zusammengefassten Vorgängen und Provision.</p>
+          <p>Deine Kunden und alle, mit denen Kolleg:innen dich verknüpft haben.</p>
         </div>
+      </div>
+
+      <div className="ownership-tabs">
+        <button
+          className={`ownership-tab ${mode === 'mine' ? 'active' : ''}`}
+          onClick={() => setMode('mine')}
+        >
+          <UserIcon size={13} /> Meine Kunden
+          <span className="ownership-tab-count">{counts.mine}</span>
+        </button>
+        <button
+          className={`ownership-tab ${mode === 'shared' ? 'active' : ''}`}
+          onClick={() => setMode('shared')}
+        >
+          <Share2 size={13} /> Mit mir geteilt
+          <span className="ownership-tab-count">{counts.shared}</span>
+        </button>
+        <button
+          className={`ownership-tab ${mode === 'all' ? 'active' : ''}`}
+          onClick={() => setMode('all')}
+        >
+          <Globe size={13} /> Alle
+          <span className="ownership-tab-count">{counts.all}</span>
+        </button>
       </div>
 
       <div className="card-soft" style={{ padding: 14, marginBottom: 16 }}>
@@ -56,48 +104,82 @@ export function Customers() {
       {filtered.length === 0 ? (
         <div className="card-soft empty">
           <Users size={28} strokeWidth={1.5} style={{ opacity: 0.4 }} />
-          <h3>Noch keine Kunden</h3>
-          <p>Sobald du Verträge, Tarifwechsel oder Notizen mit Kundennummer anlegst, erscheinen sie hier.</p>
+          <h3>
+            {mode === 'mine' && 'Noch keine eigenen Kunden'}
+            {mode === 'shared' && 'Niemand hat bisher Kunden mit dir geteilt'}
+            {mode === 'all' && 'Noch keine Kunden'}
+          </h3>
+          <p>
+            {mode === 'mine' && 'Sobald du einen Vertrag oder Tarifwechsel anlegst, erscheint der Kunde automatisch hier.'}
+            {mode === 'shared' && 'Bitte deine Kolleg:innen, dich in einer Kundenkarte als Teilnehmer hinzuzufügen.'}
+            {mode === 'all' && 'Sobald jemand Verträge, Tarifwechsel oder Notizen mit Kundennummer anlegt, erscheinen sie hier.'}
+          </p>
         </div>
       ) : (
         <div className="customer-grid">
-          {filtered.map((c) => (
-            <button
-              key={c.customerNumber}
-              className="customer-card"
-              onClick={() => navigate({ name: 'customer', kdnr: c.customerNumber })}
-            >
-              <div className="customer-avatar">
-                {(c.customerName || c.customerNumber).slice(0, 2).toUpperCase()}
-              </div>
-              <div className="customer-card-body">
-                <div className="customer-name">{c.customerName || '–'}</div>
-                <div className="customer-kdnr">
-                  KdNr. <code>{c.customerNumber}</code>
+          {filtered.map((c) => {
+            const ownership = getEffectiveOwnership(
+              c.customerNumber, customerOwners, contracts, tariffChanges, notes,
+            );
+            const ownerUser = ownership.owner ? users[ownership.owner] : null;
+            const isMine = ownership.owner === currentUserKey;
+            const isShared = !isMine && ownership.owner !== null;
+            return (
+              <button
+                key={c.customerNumber}
+                className="customer-card"
+                onClick={() => navigate({ name: 'customer', kdnr: c.customerNumber })}
+              >
+                <div className="customer-avatar">
+                  {(c.customerName || c.customerNumber).slice(0, 2).toUpperCase()}
                 </div>
-                <div className="customer-meta">
-                  <span>
-                    <strong>{c.contractCount}</strong> Verträge
-                  </span>
-                  <span>
-                    <strong>{c.tariffChangeCount}</strong> Wechsel
-                  </span>
-                  <span>
-                    <strong>{c.noteCount}</strong> Notizen
-                  </span>
+                <div className="customer-card-body">
+                  <div className="customer-name">{c.customerName || '–'}</div>
+                  <div className="customer-kdnr">
+                    KdNr. <code>{c.customerNumber}</code>
+                  </div>
+                  <div className="customer-meta">
+                    <span>
+                      <strong>{c.contractCount}</strong> Verträge
+                    </span>
+                    <span>
+                      <strong>{c.tariffChangeCount}</strong> Wechsel
+                    </span>
+                    <span>
+                      <strong>{c.noteCount}</strong> Notizen
+                    </span>
+                  </div>
+                  <div className="customer-owner-row">
+                    {ownership.owner === null ? (
+                      <span className="customer-owner-tag unowned">
+                        <Globe size={10} /> Verwaist
+                      </span>
+                    ) : isMine ? (
+                      <span className="customer-owner-tag mine">
+                        <UserIcon size={10} /> Du
+                        {ownership.sharedWith.length > 0 && (
+                          <> · geteilt mit {ownership.sharedWith.length}</>
+                        )}
+                      </span>
+                    ) : (
+                      <span className={`customer-owner-tag ${isShared && ownership.sharedWith.includes(currentUserKey ?? '') ? 'shared' : ''}`}>
+                        <UserIcon size={10} /> {ownerUser?.displayName ?? ownership.owner}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="customer-card-right">
-                <div className="customer-commission">
-                  {formatCurrency(c.totalCommission)}
+                <div className="customer-card-right">
+                  <div className="customer-commission">
+                    {formatCurrency(c.totalCommission)}
+                  </div>
+                  <div className="muted" style={{ fontSize: 11.5 }}>
+                    {formatDate(c.lastActivity)}
+                  </div>
+                  <ChevronRight size={16} className="customer-chevron" />
                 </div>
-                <div className="muted" style={{ fontSize: 11.5 }}>
-                  {formatDate(c.lastActivity)}
-                </div>
-                <ChevronRight size={16} className="customer-chevron" />
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
