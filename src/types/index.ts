@@ -1,21 +1,54 @@
 export type ContractStatus = 'offen' | 'aktiv' | 'storniert';
 
+export type ProductCategory = 'Privat' | 'Business' | 'Zusatz';
+
 export type ProductType =
-  | 'Glasfaser 100'
-  | 'Glasfaser 250'
-  | 'Glasfaser 500'
-  | 'Glasfaser 1000'
-  | 'Glasfaser 2000'
-  | 'TV-Paket'
-  | 'Telefon-Flat'
-  | 'Mobilfunk';
+  // Privat
+  | 'Fibrelight'
+  | 'Fibrefamily'
+  | 'Fibrepro'
+  | 'Flott50'
+  | 'Flott300'
+  | 'Flott500'
+  | 'Surf100'
+  | 'Surf1.000'
+  | 'Smart300'
+  | 'Smart1.000'
+  | 'Family1.000'
+  | 'Max.1.000'
+  | 'Winback Privat'
+  // Business
+  | 'Lite 1000'
+  | 'Basic 1000'
+  | 'Pro 1000'
+  | 'Premium 1000'
+  | 'Winback Business'
+  // Zusatz
+  | 'Waipu TV'
+  | 'Mobilfunk LTE Smart 4G'
+  | 'Mobilfunk LTE Komplett 4G'
+  | 'Mobilfunk LTE Smart 5G'
+  | 'Mobilfunk LTE Komplett 5G';
+
+export interface ProductInfo {
+  name: ProductType;
+  category: ProductCategory;
+  commission: number;
+}
+
+/**
+ * Tarifwechsel-Logik nach TNG Provisionskatalog:
+ * - Sidegrade/VVL: > 3M Restlaufzeit = 0€, < 3M = 5€, außerhalb MVLZ = 5€
+ * - Upgrade:        > 3M Restlaufzeit = 5€, < 3M = 7,50€, außerhalb MVLZ = 7,50€
+ */
+export type TariffChangeType = 'sidegrade' | 'upgrade';
+export type TariffContext = 'mvlz_gt3' | 'mvlz_lt3' | 'outside_mvlz';
 
 export interface Contract {
   id: string;
   customerNumber: string;
   customerName: string;
   product: ProductType;
-  monthlyPrice: number;
   contractDate: string;
   status: ContractStatus;
   jiraTicket: string;
@@ -28,10 +61,10 @@ export interface TariffChange {
   id: string;
   customerNumber: string;
   customerName: string;
-  oldProduct: ProductType;
-  newProduct: ProductType;
-  oldPrice: number;
-  newPrice: number;
+  changeType: TariffChangeType;
+  context: TariffContext;
+  oldProduct?: ProductType;
+  newProduct?: ProductType;
   changeDate: string;
   jiraTicket: string;
   notes?: string;
@@ -49,14 +82,14 @@ export interface Note {
   updatedAt: string;
 }
 
-export interface CommissionRate {
-  product: ProductType;
-  newContract: number;
-  tariffChange: number;
+export interface TariffCommissionMatrix {
+  sidegrade: { mvlz_gt3: number; mvlz_lt3: number; outside_mvlz: number };
+  upgrade: { mvlz_gt3: number; mvlz_lt3: number; outside_mvlz: number };
 }
 
 export interface Settings {
-  commissionRates: CommissionRate[];
+  products: ProductInfo[];
+  tariffCommission: TariffCommissionMatrix;
   monthlyTarget: number;
   jiraBaseUrl: string;
   agentName: string;

@@ -5,20 +5,44 @@ import type {
   TariffChange,
   Note,
   Settings,
+  ProductInfo,
   ProductType,
-  CommissionRate,
+  TariffCommissionMatrix,
 } from '../types';
 
-const DEFAULT_RATES: CommissionRate[] = [
-  { product: 'Glasfaser 100', newContract: 40, tariffChange: 15 },
-  { product: 'Glasfaser 250', newContract: 60, tariffChange: 20 },
-  { product: 'Glasfaser 500', newContract: 80, tariffChange: 25 },
-  { product: 'Glasfaser 1000', newContract: 110, tariffChange: 35 },
-  { product: 'Glasfaser 2000', newContract: 150, tariffChange: 50 },
-  { product: 'TV-Paket', newContract: 25, tariffChange: 10 },
-  { product: 'Telefon-Flat', newContract: 20, tariffChange: 8 },
-  { product: 'Mobilfunk', newContract: 30, tariffChange: 12 },
+const DEFAULT_PRODUCTS: ProductInfo[] = [
+  // Privat
+  { name: 'Fibrelight', category: 'Privat', commission: 7.5 },
+  { name: 'Fibrefamily', category: 'Privat', commission: 10 },
+  { name: 'Fibrepro', category: 'Privat', commission: 15 },
+  { name: 'Flott50', category: 'Privat', commission: 7.5 },
+  { name: 'Flott300', category: 'Privat', commission: 10 },
+  { name: 'Flott500', category: 'Privat', commission: 15 },
+  { name: 'Surf100', category: 'Privat', commission: 7.5 },
+  { name: 'Surf1.000', category: 'Privat', commission: 10 },
+  { name: 'Smart300', category: 'Privat', commission: 7.5 },
+  { name: 'Smart1.000', category: 'Privat', commission: 10 },
+  { name: 'Family1.000', category: 'Privat', commission: 15 },
+  { name: 'Max.1.000', category: 'Privat', commission: 20 },
+  { name: 'Winback Privat', category: 'Privat', commission: 12.5 },
+  // Business
+  { name: 'Lite 1000', category: 'Business', commission: 30 },
+  { name: 'Basic 1000', category: 'Business', commission: 40 },
+  { name: 'Pro 1000', category: 'Business', commission: 50 },
+  { name: 'Premium 1000', category: 'Business', commission: 70 },
+  { name: 'Winback Business', category: 'Business', commission: 12.5 },
+  // Zusatz
+  { name: 'Waipu TV', category: 'Zusatz', commission: 10 },
+  { name: 'Mobilfunk LTE Smart 4G', category: 'Zusatz', commission: 5 },
+  { name: 'Mobilfunk LTE Komplett 4G', category: 'Zusatz', commission: 7.5 },
+  { name: 'Mobilfunk LTE Smart 5G', category: 'Zusatz', commission: 5 },
+  { name: 'Mobilfunk LTE Komplett 5G', category: 'Zusatz', commission: 7.5 },
 ];
+
+const DEFAULT_TARIFF_COMMISSION: TariffCommissionMatrix = {
+  sidegrade: { mvlz_gt3: 0, mvlz_lt3: 5, outside_mvlz: 5 },
+  upgrade: { mvlz_gt3: 5, mvlz_lt3: 7.5, outside_mvlz: 7.5 },
+};
 
 interface StoreState {
   contracts: Contract[];
@@ -39,7 +63,8 @@ interface StoreState {
   deleteNote: (id: string) => void;
 
   updateSettings: (s: Partial<Settings>) => void;
-  updateCommissionRate: (product: ProductType, rate: Partial<CommissionRate>) => void;
+  updateProductCommission: (product: ProductType, commission: number) => void;
+  updateTariffCommission: (matrix: TariffCommissionMatrix) => void;
 }
 
 const uid = () =>
@@ -52,8 +77,9 @@ export const useStore = create<StoreState>()(
       tariffChanges: [],
       notes: [],
       settings: {
-        commissionRates: DEFAULT_RATES,
-        monthlyTarget: 1500,
+        products: DEFAULT_PRODUCTS,
+        tariffCommission: DEFAULT_TARIFF_COMMISSION,
+        monthlyTarget: 500,
         jiraBaseUrl: 'https://jira.tng.de/browse/',
         agentName: 'Auszubildende:r',
       },
@@ -115,16 +141,23 @@ export const useStore = create<StoreState>()(
 
       updateSettings: (s) =>
         set((state) => ({ settings: { ...state.settings, ...s } })),
-      updateCommissionRate: (product, rate) =>
+      updateProductCommission: (product, commission) =>
         set((state) => ({
           settings: {
             ...state.settings,
-            commissionRates: state.settings.commissionRates.map((r) =>
-              r.product === product ? { ...r, ...rate } : r,
+            products: state.settings.products.map((p) =>
+              p.name === product ? { ...p, commission } : p,
             ),
           },
         })),
+      updateTariffCommission: (matrix) =>
+        set((state) => ({
+          settings: { ...state.settings, tariffCommission: matrix },
+        })),
     }),
-    { name: 'crm-tng-store' },
+    {
+      name: 'crm-tng-store',
+      version: 2,
+    },
   ),
 );

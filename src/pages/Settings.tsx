@@ -1,13 +1,21 @@
 import { useState } from 'react';
-import { Save, RotateCcw, Download, Upload, Trash2 } from 'lucide-react';
+import { Save, Download, Upload, Trash2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { formatCurrency } from '../lib/utils';
+import { formatCurrency, TARIFF_CONTEXT_LABEL, TARIFF_TYPE_LABEL } from '../lib/utils';
+import type {
+  ProductCategory,
+  TariffChangeType,
+  TariffContext,
+} from '../types';
+
+const CATS: ProductCategory[] = ['Privat', 'Business', 'Zusatz'];
 
 export function Settings() {
   const {
     settings,
     updateSettings,
-    updateCommissionRate,
+    updateProductCommission,
+    updateTariffCommission,
     contracts,
     tariffChanges,
     notes,
@@ -56,7 +64,7 @@ export function Settings() {
         const data = JSON.parse(reader.result as string);
         if (!confirm('Aktuelle Daten überschreiben?')) return;
         const raw = localStorage.getItem('crm-tng-store');
-        const state = raw ? JSON.parse(raw) : { state: {}, version: 0 };
+        const state = raw ? JSON.parse(raw) : { state: {}, version: 2 };
         state.state = {
           contracts: data.contracts ?? [],
           tariffChanges: data.tariffChanges ?? [],
@@ -78,12 +86,26 @@ export function Settings() {
     window.location.reload();
   };
 
+  const updateMatrix = (
+    type: TariffChangeType,
+    ctx: TariffContext,
+    value: number,
+  ) => {
+    updateTariffCommission({
+      ...settings.tariffCommission,
+      [type]: {
+        ...settings.tariffCommission[type],
+        [ctx]: value,
+      },
+    });
+  };
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h2>Einstellungen</h2>
-          <p>Provisionssätze, Ziele und Daten verwalten.</p>
+          <p>Provisionssätze (TNG Provisionskatalog), Monatsziel und Daten.</p>
         </div>
       </div>
 
@@ -102,7 +124,7 @@ export function Settings() {
             <label>Monatsziel (€)</label>
             <input
               type="number"
-              step="50"
+              step="10"
               value={target}
               onChange={(e) => setTarget(parseFloat(e.target.value) || 0)}
             />
@@ -114,9 +136,6 @@ export function Settings() {
               onChange={(e) => setJiraBaseUrl(e.target.value)}
               placeholder="https://jira.tng.de/browse/"
             />
-            <span className="muted" style={{ fontSize: 11.5 }}>
-              Ticketnummern werden an diese URL gehängt (z.B. TNG-1234).
-            </span>
           </div>
         </div>
         <div className="row end" style={{ marginTop: 14 }}>
@@ -128,70 +147,104 @@ export function Settings() {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="row between" style={{ marginBottom: 4 }}>
-          <h3 className="section-title" style={{ margin: 0 }}>Provisionssätze</h3>
-          <span className="muted">In Euro pro Vorgang</span>
-        </div>
+        <h3 className="section-title">Provision pro Produkt</h3>
         <p className="muted" style={{ marginBottom: 14 }}>
-          Konfiguriere deine Provision je Produkt für Neuabschlüsse und Tarifwechsel.
+          Werte aus dem TNG-Provisionskatalog (Version 1.2 ab 01.03.2026). Du kannst sie anpassen.
+        </p>
+
+        {CATS.map((cat) => (
+          <div key={cat} style={{ marginBottom: 18 }}>
+            <div className="row" style={{ marginBottom: 8, gap: 8 }}>
+              <span className={`cat-chip cat-${cat}`}>{cat}</span>
+            </div>
+            <div className="table-wrap">
+              <table className="crm-table">
+                <thead>
+                  <tr>
+                    <th>Produkt</th>
+                    <th style={{ textAlign: 'right', width: 160 }}>Provision (€)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {settings.products
+                    .filter((p) => p.category === cat)
+                    .map((p) => (
+                      <tr key={p.name}>
+                        <td>{p.name}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={p.commission}
+                            onChange={(e) =>
+                              updateProductCommission(
+                                p.name,
+                                parseFloat(e.target.value) || 0,
+                              )
+                            }
+                            style={{
+                              width: 100,
+                              padding: '5px 8px',
+                              borderRadius: 6,
+                              border: '1px solid var(--border-strong)',
+                              textAlign: 'right',
+                              background: 'var(--bg-card)',
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 className="section-title">Provision Tarifwechsel</h3>
+        <p className="muted" style={{ marginBottom: 14 }}>
+          Provisionsmatrix nach Wechselart und MVLZ-Situation.
         </p>
         <div className="table-wrap">
           <table className="crm-table">
             <thead>
               <tr>
-                <th>Produkt</th>
-                <th style={{ textAlign: 'right' }}>Neuvertrag (€)</th>
-                <th style={{ textAlign: 'right' }}>Tarifwechsel (€)</th>
-                <th style={{ textAlign: 'right' }}>Vorschau</th>
+                <th>Wechselart</th>
+                {(['mvlz_gt3', 'mvlz_lt3', 'outside_mvlz'] as TariffContext[]).map((c) => (
+                  <th key={c} style={{ textAlign: 'right' }}>
+                    {TARIFF_CONTEXT_LABEL[c]}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {settings.commissionRates.map((r) => (
-                <tr key={r.product}>
-                  <td>{r.product}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={r.newContract}
-                      onChange={(e) =>
-                        updateCommissionRate(r.product, {
-                          newContract: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      style={{
-                        width: 90,
-                        padding: '5px 8px',
-                        borderRadius: 6,
-                        border: '1px solid var(--border-strong)',
-                        textAlign: 'right',
-                        background: 'var(--bg-card)',
-                      }}
-                    />
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={r.tariffChange}
-                      onChange={(e) =>
-                        updateCommissionRate(r.product, {
-                          tariffChange: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      style={{
-                        width: 90,
-                        padding: '5px 8px',
-                        borderRadius: 6,
-                        border: '1px solid var(--border-strong)',
-                        textAlign: 'right',
-                        background: 'var(--bg-card)',
-                      }}
-                    />
-                  </td>
-                  <td style={{ textAlign: 'right' }} className="muted">
-                    {formatCurrency(r.newContract)} / {formatCurrency(r.tariffChange)}
-                  </td>
+              {(['sidegrade', 'upgrade'] as TariffChangeType[]).map((t) => (
+                <tr key={t}>
+                  <td>{TARIFF_TYPE_LABEL[t]}</td>
+                  {(['mvlz_gt3', 'mvlz_lt3', 'outside_mvlz'] as TariffContext[]).map((c) => (
+                    <td key={c} style={{ textAlign: 'right' }}>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={settings.tariffCommission[t][c]}
+                        onChange={(e) =>
+                          updateMatrix(t, c, parseFloat(e.target.value) || 0)
+                        }
+                        style={{
+                          width: 90,
+                          padding: '5px 8px',
+                          borderRadius: 6,
+                          border: '1px solid var(--border-strong)',
+                          textAlign: 'right',
+                          background: 'var(--bg-card)',
+                        }}
+                      />
+                      <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>
+                        {formatCurrency(settings.tariffCommission[t][c])}
+                      </span>
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -202,8 +255,8 @@ export function Settings() {
       <div className="card">
         <h3 className="section-title">Daten</h3>
         <p className="muted" style={{ marginBottom: 14 }}>
-          Aktuelle Datenbestände: {contracts.length} Verträge, {tariffChanges.length} Tarifwechsel,{' '}
-          {notes.length} Notizen. Alle Daten werden lokal in deinem Browser gespeichert.
+          {contracts.length} Verträge · {tariffChanges.length} Tarifwechsel · {notes.length} Notizen.
+          Daten liegen lokal im Browser.
         </p>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <button className="btn" onClick={exportAll}>
@@ -220,17 +273,6 @@ export function Settings() {
           </label>
           <button className="btn btn-danger" onClick={clearAll}>
             <Trash2 size={14} /> Alle Daten löschen
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
-              if (confirm('Provisionssätze auf Standard zurücksetzen?')) {
-                window.location.reload();
-              }
-            }}
-            style={{ display: 'none' }}
-          >
-            <RotateCcw size={14} /> Reset
           </button>
         </div>
       </div>

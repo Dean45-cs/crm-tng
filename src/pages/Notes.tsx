@@ -1,26 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Plus, Search, Pencil, Trash2, User, Calendar } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import type { Note } from '../types';
 import { formatDate } from '../lib/utils';
-import { Modal } from '../components/Modal';
 import { JiraLink } from '../components/JiraLink';
-
-type Draft = Omit<Note, 'id' | 'createdAt' | 'updatedAt'>;
-
-const emptyDraft = (): Draft => ({
-  customerNumber: '',
-  customerName: '',
-  title: '',
-  content: '',
-  jiraTicket: '',
-});
+import { useQuickAdd } from '../components/QuickAdd';
 
 export function Notes() {
-  const { notes, addNote, updateNote, deleteNote } = useStore();
-  const [open, setOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft>(emptyDraft());
+  const { notes, deleteNote } = useStore();
+  const { openNewNote, editNote } = useQuickAdd();
   const [search, setSearch] = useState('');
 
   const filtered = useMemo(() => {
@@ -38,34 +25,6 @@ export function Notes() {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }, [notes, search]);
 
-  const openNew = () => {
-    setEditingId(null);
-    setDraft(emptyDraft());
-    setOpen(true);
-  };
-
-  const openEdit = (n: Note) => {
-    setEditingId(n.id);
-    setDraft({
-      customerNumber: n.customerNumber ?? '',
-      customerName: n.customerName ?? '',
-      title: n.title,
-      content: n.content,
-      jiraTicket: n.jiraTicket ?? '',
-    });
-    setOpen(true);
-  };
-
-  const save = () => {
-    if (!draft.title.trim() || !draft.content.trim()) return;
-    if (editingId) {
-      updateNote(editingId, draft);
-    } else {
-      addNote(draft);
-    }
-    setOpen(false);
-  };
-
   const remove = (id: string) => {
     if (confirm('Notiz wirklich löschen?')) deleteNote(id);
   };
@@ -77,7 +36,7 @@ export function Notes() {
           <h2>Notizen</h2>
           <p>Schnelle Notizen zu Kunden, Vorgängen und Verkäufen.</p>
         </div>
-        <button className="btn btn-primary" onClick={openNew}>
+        <button className="btn btn-primary" onClick={openNewNote}>
           <Plus size={14} /> Neue Notiz
         </button>
       </div>
@@ -101,8 +60,8 @@ export function Notes() {
       {filtered.length === 0 ? (
         <div className="card empty">
           <h3>Keine Notizen</h3>
-          <p>Halte hier wichtige Infos zu deinen Kunden fest.</p>
-          <button className="btn btn-primary" onClick={openNew} style={{ marginTop: 12 }}>
+          <p>Tippe unten rechts auf <strong>+</strong> oder hier:</p>
+          <button className="btn btn-primary" onClick={openNewNote} style={{ marginTop: 12 }}>
             <Plus size={14} /> Neue Notiz
           </button>
         </div>
@@ -113,7 +72,7 @@ export function Notes() {
               <div className="row between">
                 <h4>{n.title}</h4>
                 <div className="row" style={{ gap: 2 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => openEdit(n)}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => editNote(n)}>
                     <Pencil size={12} />
                   </button>
                   <button className="btn btn-ghost btn-sm" onClick={() => remove(n.id)}>
@@ -139,66 +98,6 @@ export function Notes() {
           ))}
         </div>
       )}
-
-      <Modal
-        open={open}
-        onClose={() => setOpen(false)}
-        title={editingId ? 'Notiz bearbeiten' : 'Neue Notiz'}
-        footer={
-          <>
-            <button className="btn" onClick={() => setOpen(false)}>
-              Abbrechen
-            </button>
-            <button className="btn btn-primary" onClick={save}>
-              Speichern
-            </button>
-          </>
-        }
-      >
-        <div className="form-grid">
-          <div className="field full">
-            <label>Titel *</label>
-            <input
-              value={draft.title}
-              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-              placeholder="z.B. Rückruf wegen Glasfaserausbau"
-            />
-          </div>
-          <div className="field">
-            <label>Kundennummer</label>
-            <input
-              value={draft.customerNumber}
-              onChange={(e) => setDraft({ ...draft, customerNumber: e.target.value })}
-              placeholder="optional"
-            />
-          </div>
-          <div className="field">
-            <label>Kundenname</label>
-            <input
-              value={draft.customerName}
-              onChange={(e) => setDraft({ ...draft, customerName: e.target.value })}
-              placeholder="optional"
-            />
-          </div>
-          <div className="field full">
-            <label>Jira-Vorgang</label>
-            <input
-              value={draft.jiraTicket}
-              onChange={(e) => setDraft({ ...draft, jiraTicket: e.target.value })}
-              placeholder="z.B. TNG-1234"
-            />
-          </div>
-          <div className="field full">
-            <label>Inhalt *</label>
-            <textarea
-              rows={6}
-              value={draft.content}
-              onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-              placeholder="Was ist passiert? Was muss erledigt werden?"
-            />
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

@@ -101,7 +101,12 @@ export function Dashboard() {
       date: t.changeDate,
       customer: t.customerName,
       customerNumber: t.customerNumber,
-      product: `${t.oldProduct} → ${t.newProduct}`,
+      product:
+        t.oldProduct && t.newProduct
+          ? `${t.oldProduct} → ${t.newProduct}`
+          : t.changeType === 'upgrade'
+            ? 'Upgrade'
+            : 'Sidegrade / VVL',
       jira: t.jiraTicket,
       commission: calcTariffCommission(t, settings),
       status: 'aktiv' as const,

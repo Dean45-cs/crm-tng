@@ -1,4 +1,11 @@
-import type { Contract, TariffChange, Settings, ProductType } from '../types';
+import type {
+  Contract,
+  TariffChange,
+  Settings,
+  ProductType,
+  TariffChangeType,
+  TariffContext,
+} from '../types';
 
 export const formatCurrency = (value: number): string =>
   new Intl.NumberFormat('de-DE', {
@@ -15,26 +22,37 @@ export const formatDate = (iso?: string): string => {
   });
 };
 
-export const getRateFor = (
+export const today = (): string => new Date().toISOString().slice(0, 10);
+
+export const TARIFF_TYPE_LABEL: Record<TariffChangeType, string> = {
+  sidegrade: 'Sidegrade / VVL',
+  upgrade: 'Upgrade',
+};
+
+export const TARIFF_CONTEXT_LABEL: Record<TariffContext, string> = {
+  mvlz_gt3: 'Restlaufzeit > 3 Monate',
+  mvlz_lt3: 'Restlaufzeit < 3 Monate',
+  outside_mvlz: 'Außerhalb MVLZ',
+};
+
+export const getProductCommission = (
   settings: Settings,
   product: ProductType,
-): { newContract: number; tariffChange: number } => {
-  const rate = settings.commissionRates.find((r) => r.product === product);
-  return rate ?? { newContract: 0, tariffChange: 0 };
-};
+): number => settings.products.find((p) => p.name === product)?.commission ?? 0;
 
 export const calcContractCommission = (
   contract: Contract,
   settings: Settings,
 ): number => {
   if (contract.status === 'storniert') return 0;
-  return getRateFor(settings, contract.product).newContract;
+  return getProductCommission(settings, contract.product);
 };
 
 export const calcTariffCommission = (
   change: TariffChange,
   settings: Settings,
-): number => getRateFor(settings, change.newProduct).tariffChange;
+): number =>
+  settings.tariffCommission[change.changeType]?.[change.context] ?? 0;
 
 export const isSameMonth = (iso: string, ref = new Date()): boolean => {
   const d = new Date(iso);
