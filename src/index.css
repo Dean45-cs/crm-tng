@@ -1449,6 +1449,17 @@ table.crm-table tbody tr:hover { background: var(--bg-card-hover); }
   justify-content: center;
   box-shadow: var(--shadow-tng);
 }
+.login-logo-tile {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--tng-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-tng);
+  flex-shrink: 0;
+}
 .login-title {
   font-size: 20px;
   font-weight: 700;
@@ -1647,17 +1658,11 @@ table.crm-table tbody tr:hover { background: var(--bg-card-hover); }
 .titlebar-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px 4px 4px;
-  border-radius: 999px;
+  padding: 5px 10px;
+  border-radius: var(--r-sm);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  letter-spacing: -0.1px;
 }
-.titlebar-brand img { border-radius: 6px; }
 
 /* =================================================================
    Switch (toggle)

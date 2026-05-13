@@ -75,7 +75,9 @@ export function LoginScreen() {
 
       <div className="login-card">
         <div className="login-brand">
-          <TngLogo variant="full" height={64} />
+          <div className="login-logo-tile">
+            <TngLogo height={44} color="white" />
+          </div>
           <div>
             <div className="login-title">Stadtnetz CRM</div>
             <div className="login-subtitle">TNG Stadtnetz GmbH · Ausbildung</div>

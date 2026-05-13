@@ -181,7 +181,9 @@ export function OnboardingTour() {
 
         {index === 0 && (
           <div className="onboarding-hero-logo">
-            <TngLogo variant="full" height={64} />
+            <div className="login-logo-tile" style={{ width: 64, height: 64, borderRadius: 16 }}>
+              <TngLogo height={44} color="white" />
+            </div>
           </div>
         )}
 

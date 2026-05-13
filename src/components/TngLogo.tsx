@@ -1,47 +1,45 @@
 /**
  * TNG Stadtnetz Markenzeichen.
+ * Lädt das Original-SVG aus /public/tng-logo.svg und passt
+ * die Farbe per CSS-Filter an den jeweiligen Hintergrund an.
  *
- * Verwendet die Original-Logodatei aus /public/tng-logo.png.
- * Falls die Datei fehlt, fällt ein einfacher Text-Fallback ein.
- *
- * Drei Layout-Varianten:
- *   - 'mark'   : Quadratisches Tile (Sidebar, kleine Stellen)
- *   - 'lockup' : Horizontale Markendarstellung (Titlebar)
- *   - 'full'   : Großes Tile für Login / Onboarding
+ * color-Varianten:
+ *   'white'  – weißes Logo (für blaue/dunkle Flächen)
+ *   'blue'   – TNG-Blau Logo (für helle Flächen)
+ *   'dark'   – Schwarz (Original)
  */
-
-const LOGO_SRC = '/tng-logo.png';
-
 export function TngLogo({
-  variant = 'lockup',
-  height = 28,
-  rounded = true,
+  height = 32,
+  color = 'white',
+  style: extraStyle,
 }: {
-  variant?: 'mark' | 'lockup' | 'full';
   height?: number;
-  rounded?: boolean;
-  /** Wird nur noch akzeptiert, damit alte Aufrufe nicht crashen. */
-  color?: string;
+  color?: 'white' | 'blue' | 'dark';
+  /** Wird nicht mehr benötigt, nur für Abwärtskompatibilität */
+  variant?: string;
+  style?: React.CSSProperties;
 }) {
-  const sizing: React.CSSProperties =
-    variant === 'mark'
-      ? { width: height, height, borderRadius: rounded ? height * 0.24 : 0 }
-      : variant === 'full'
-        ? { height, width: height, borderRadius: rounded ? height * 0.22 : 0 }
-        : { height, width: 'auto', borderRadius: rounded ? height * 0.22 : 0 };
+  const filter =
+    color === 'white'
+      ? 'brightness(0) invert(1)'
+      : color === 'blue'
+        ? 'brightness(0) saturate(100%) invert(23%) sepia(90%) saturate(1200%) hue-rotate(191deg) brightness(95%)'
+        : 'none';
 
   return (
     <img
-      src={LOGO_SRC}
+      src="/tng-logo.svg"
       alt="TNG Stadtnetz"
+      draggable={false}
       style={{
         display: 'block',
-        objectFit: 'cover',
+        width: height,
+        height: height,
+        objectFit: 'contain',
         userSelect: 'none',
-        pointerEvents: 'none',
-        ...sizing,
+        filter,
+        ...extraStyle,
       }}
-      draggable={false}
     />
   );
 }
