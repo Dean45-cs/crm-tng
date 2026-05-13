@@ -5,6 +5,7 @@ import {
   ArrowLeftRight,
   Target,
   Trophy,
+  Printer,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -145,21 +146,31 @@ export function Dashboard() {
             })}
           </div>
         </div>
-        <div className="hero-target">
-          <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-            <Target size={14} />
-            <span style={{ fontSize: 12.5, fontWeight: 500 }}>
-              Monatsziel · {Math.round(targetProgress)} %
-            </span>
-          </div>
-          <div className="hero-progress">
-            <div
-              className="hero-progress-bar"
-              style={{ width: `${targetProgress}%` }}
-            />
-          </div>
-          <div style={{ fontSize: 12, opacity: 0.85 }}>
-            {formatCurrency(monthCommission)} / {formatCurrency(target)}
+        <div className="hero-right">
+          <button
+            className="hero-report-btn"
+            onClick={() => navigate({ name: 'report' })}
+            title="Druckansicht des Monatsabschlusses öffnen"
+          >
+            <Printer size={13} />
+            <span>Monatsbericht</span>
+          </button>
+          <div className="hero-target">
+            <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+              <Target size={14} />
+              <span style={{ fontSize: 12.5, fontWeight: 500 }}>
+                Monatsziel · {Math.round(targetProgress)} %
+              </span>
+            </div>
+            <div className="hero-progress">
+              <div
+                className="hero-progress-bar"
+                style={{ width: `${targetProgress}%` }}
+              />
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>
+              {formatCurrency(monthCommission)} / {formatCurrency(target)}
+            </div>
           </div>
         </div>
       </div>

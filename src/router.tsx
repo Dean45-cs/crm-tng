@@ -8,7 +8,8 @@ export type Route =
   | { name: 'customers' }
   | { name: 'customer'; kdnr: string }
   | { name: 'leaderboard' }
-  | { name: 'settings' };
+  | { name: 'settings' }
+  | { name: 'report' };
 
 export type RouteName = Route['name'];
 

@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Plus, Search, Pencil, Trash2, Download } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  Pencil,
+  Trash2,
+  Download,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+} from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { ContractStatus } from '../types';
 import {
@@ -12,15 +21,38 @@ import { JiraLink } from '../components/JiraLink';
 import { StatusBadge } from '../components/StatusBadge';
 import { useQuickAdd } from '../components/QuickAdd';
 
+type SortKey = 'date' | 'customer' | 'commission';
+type SortDir = 'asc' | 'desc';
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ChevronsUpDown size={12} className="sort-icon" />;
+  return dir === 'desc' ? (
+    <ChevronDown size={12} className="sort-icon active" />
+  ) : (
+    <ChevronUp size={12} className="sort-icon active" />
+  );
+}
+
 export function Contracts() {
   const { contracts, settings, deleteContract } = useStore();
   const { openNewContract, editContract } = useQuickAdd();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'alle' | ContractStatus>('alle');
+  const [sortKey, setSortKey] = useState<SortKey>('date');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return [...contracts]
+    const list = contracts
       .filter((c) => statusFilter === 'alle' || c.status === statusFilter)
       .filter((c) =>
         !q
@@ -29,9 +61,27 @@ export function Contracts() {
             c.customerNumber.toLowerCase().includes(q) ||
             c.jiraTicket.toLowerCase().includes(q) ||
             c.products.some((p) => p.toLowerCase().includes(q)),
-      )
-      .sort((a, b) => b.contractDate.localeCompare(a.contractDate));
-  }, [contracts, search, statusFilter]);
+      );
+
+    const sign = sortDir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      if (sortKey === 'date') return sign * a.contractDate.localeCompare(b.contractDate);
+      if (sortKey === 'customer') return sign * a.customerName.localeCompare(b.customerName, 'de');
+      const ca = calcContractCommission(a, settings);
+      const cb = calcContractCommission(b, settings);
+      return sign * (ca - cb);
+    });
+  }, [contracts, search, statusFilter, sortKey, sortDir, settings]);
+
+  const filteredTotal = useMemo(
+    () => filtered.reduce((s, c) => s + calcContractCommission(c, settings), 0),
+    [filtered, settings],
+  );
+
+  const storniertCount = useMemo(
+    () => filtered.filter((c) => c.status === 'storniert').length,
+    [filtered],
+  );
 
   const remove = (id: string) => {
     if (confirm('Vertrag wirklich löschen?')) deleteContract(id);
@@ -91,8 +141,27 @@ export function Contracts() {
             <option value="aktiv">Aktiv</option>
             <option value="storniert">Storniert</option>
           </select>
-          <div className="muted" style={{ marginLeft: 'auto' }}>
-            {filtered.length} von {contracts.length}
+          <div
+            className="row"
+            style={{ marginLeft: 'auto', gap: 12, alignItems: 'center' }}
+          >
+            {statusFilter === 'alle' && storniertCount > 0 && (
+              <span className="badge badge-red" style={{ fontSize: 11 }}>
+                {storniertCount} storniert
+              </span>
+            )}
+            <span className="muted">
+              {filtered.length} von {contracts.length}
+            </span>
+            <span
+              style={{
+                fontWeight: 600,
+                color: 'var(--tng-blue-dark)',
+                fontSize: 13,
+              }}
+            >
+              Σ {formatCurrency(filteredTotal)}
+            </span>
           </div>
         </div>
       </div>
@@ -110,20 +179,39 @@ export function Contracts() {
           <table className="crm-table">
             <thead>
               <tr>
-                <th>Datum</th>
+                <th>
+                  <button className="sort-th" onClick={() => toggleSort('date')}>
+                    Datum <SortIcon active={sortKey === 'date'} dir={sortDir} />
+                  </button>
+                </th>
                 <th>KdNr.</th>
-                <th>Kunde</th>
+                <th>
+                  <button className="sort-th" onClick={() => toggleSort('customer')}>
+                    Kunde <SortIcon active={sortKey === 'customer'} dir={sortDir} />
+                  </button>
+                </th>
                 <th>Produkte</th>
                 <th>Status</th>
                 <th>Jira</th>
                 <th>Wiedervorlage</th>
-                <th style={{ textAlign: 'right' }}>Provision</th>
+                <th style={{ textAlign: 'right' }}>
+                  <button
+                    className="sort-th"
+                    onClick={() => toggleSort('commission')}
+                    style={{ marginLeft: 'auto' }}
+                  >
+                    Provision <SortIcon active={sortKey === 'commission'} dir={sortDir} />
+                  </button>
+                </th>
                 <th />
               </tr>
             </thead>
             <tbody>
               {filtered.map((c) => (
-                <tr key={c.id}>
+                <tr
+                  key={c.id}
+                  className={c.status === 'storniert' ? 'row-storniert' : ''}
+                >
                   <td>{formatDate(c.contractDate)}</td>
                   <td><code style={{ fontSize: 12 }}>{c.customerNumber}</code></td>
                   <td>{c.customerName}</td>
@@ -163,6 +251,17 @@ export function Contracts() {
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="table-footer-row">
+                <td colSpan={7} style={{ textAlign: 'right' }}>
+                  {filtered.length} Vertrag{filtered.length !== 1 ? 'sätze' : ''} · Provision gesamt
+                </td>
+                <td style={{ textAlign: 'right', color: 'var(--tng-blue-dark)' }}>
+                  {formatCurrency(filteredTotal)}
+                </td>
+                <td />
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Bell, ChevronRight, CalendarClock } from 'lucide-react';
+import { Bell, ChevronRight, CalendarClock, Check } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import {
   formatDate,
@@ -20,6 +20,7 @@ const BUCKET_CLASS: Record<FollowUpBucket, string> = {
 
 export function FollowUpInbox() {
   const contracts = useStore((s) => s.contracts);
+  const updateContract = useStore((s) => s.updateContract);
   const { navigate } = useRouter();
 
   const grouped = useMemo(() => {
@@ -43,6 +44,10 @@ export function FollowUpInbox() {
   }, [contracts]);
 
   const total = BUCKET_ORDER.reduce((s, k) => s + grouped[k].length, 0);
+
+  const markDone = (id: string) => {
+    updateContract(id, { followUpDate: '' });
+  };
 
   return (
     <div className="card">
@@ -72,23 +77,34 @@ export function FollowUpInbox() {
                   <span className="followup-count">{items.length}</span>
                 </div>
                 {items.slice(0, 5).map((c) => (
-                  <button
-                    key={c.id}
-                    className="followup-item"
-                    onClick={() =>
-                      navigate({ name: 'customer', kdnr: c.customerNumber })
-                    }
-                  >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div className="followup-name">{c.customerName || '–'}</div>
-                      <div className="followup-meta">
-                        <code style={{ fontSize: 11 }}>{c.customerNumber}</code>
-                        <span>·</span>
-                        <span>{formatDate(c.followUpDate)}</span>
+                  <div key={c.id} className="followup-item-wrap">
+                    <button
+                      className="followup-item"
+                      onClick={() =>
+                        navigate({ name: 'customer', kdnr: c.customerNumber })
+                      }
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div className="followup-name">{c.customerName || '–'}</div>
+                        <div className="followup-meta">
+                          <code style={{ fontSize: 11 }}>{c.customerNumber}</code>
+                          <span>·</span>
+                          <span>{formatDate(c.followUpDate)}</span>
+                        </div>
                       </div>
-                    </div>
-                    <ChevronRight size={14} style={{ color: 'var(--text-tertiary)' }} />
-                  </button>
+                      <ChevronRight size={14} style={{ color: 'var(--text-tertiary)' }} />
+                    </button>
+                    <button
+                      className="followup-done-btn"
+                      title="Wiedervorlage abschließen"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        markDone(c.id);
+                      }}
+                    >
+                      <Check size={13} />
+                    </button>
+                  </div>
                 ))}
                 {items.length > 5 && (
                   <div className="muted" style={{ fontSize: 12, padding: '6px 10px' }}>

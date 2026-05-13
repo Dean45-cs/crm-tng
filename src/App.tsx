@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { WifiOff } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { Contracts } from './pages/Contracts';
@@ -8,6 +9,7 @@ import { Settings } from './pages/Settings';
 import { Customers } from './pages/Customers';
 import { CustomerDetail } from './pages/CustomerDetail';
 import { Leaderboard } from './pages/Leaderboard';
+import { MonthlyReport } from './pages/MonthlyReport';
 import { QuickAddProvider } from './components/QuickAdd';
 import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
@@ -27,10 +29,16 @@ const TITLES: Record<RouteName, string> = {
   customer: 'Kunde',
   leaderboard: 'Leaderboard',
   settings: 'Einstellungen',
+  report: 'Monatsbericht',
 };
 
 function Shell() {
   const { route } = useRouter();
+
+  if (route.name === 'report') {
+    return <MonthlyReport />;
+  }
+
   return (
     <div className="app">
       <Sidebar />
@@ -78,6 +86,27 @@ function LoadingScreen({ label = 'Lade …' }: { label?: string }) {
       </div>
       <div className="boot-spinner" />
       <div className="boot-label">{label}</div>
+    </div>
+  );
+}
+
+function OfflineBanner() {
+  const [offline, setOffline] = useState(!navigator.onLine);
+  useEffect(() => {
+    const on = () => setOffline(false);
+    const off = () => setOffline(true);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+  if (!offline) return null;
+  return (
+    <div className="offline-banner">
+      <WifiOff size={13} />
+      <span>Keine Verbindung – Änderungen werden gespeichert, sobald du wieder online bist.</span>
     </div>
   );
 }
@@ -158,6 +187,7 @@ export default function App() {
   return (
     <Router>
       <QuickAddProvider>
+        <OfflineBanner />
         <Shell />
         {needsOnboarding && <OnboardingTour />}
       </QuickAddProvider>

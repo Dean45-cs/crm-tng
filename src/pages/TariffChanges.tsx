@@ -1,5 +1,18 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Plus, Search, Pencil, Trash2, Download, ArrowRight, Sheet, Loader2, Check } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  Pencil,
+  Trash2,
+  Download,
+  ArrowRight,
+  Sheet,
+  Loader2,
+  Check,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+} from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import {
@@ -15,6 +28,18 @@ import { useQuickAdd } from '../components/QuickAdd';
 import { exportTariffChange } from '../lib/sharepointGraph';
 import type { TariffChange } from '../types';
 
+type SortKey = 'date' | 'customer' | 'commission';
+type SortDir = 'asc' | 'desc';
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ChevronsUpDown size={12} className="sort-icon" />;
+  return dir === 'desc' ? (
+    <ChevronDown size={12} className="sort-icon active" />
+  ) : (
+    <ChevronUp size={12} className="sort-icon active" />
+  );
+}
+
 export function TariffChanges() {
   const { tariffChanges, settings, deleteTariffChange, markTariffChangeExported } = useStore();
   const { getCurrentUser } = useAuth();
@@ -23,6 +48,8 @@ export function TariffChanges() {
   const [exporting, setExporting] = useState<string | null>(null);
   const [bulkExporting, setBulkExporting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('date');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   const agentName = getCurrentUser()?.displayName ?? settings.agentName;
   const spConfigured = !!(settings.spClientId && settings.spTenantId && settings.spFilePath);
@@ -33,19 +60,40 @@ export function TariffChanges() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+  };
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return [...tariffChanges]
-      .filter((t) =>
-        !q
-          ? true
-          : t.customerName.toLowerCase().includes(q) ||
-            t.customerNumber.toLowerCase().includes(q) ||
-            t.jiraTicket.toLowerCase().includes(q) ||
-            TARIFF_TYPE_LABEL[t.changeType].toLowerCase().includes(q),
-      )
-      .sort((a, b) => b.changeDate.localeCompare(a.changeDate));
-  }, [tariffChanges, search]);
+    const list = tariffChanges.filter((t) =>
+      !q
+        ? true
+        : t.customerName.toLowerCase().includes(q) ||
+          t.customerNumber.toLowerCase().includes(q) ||
+          t.jiraTicket.toLowerCase().includes(q) ||
+          TARIFF_TYPE_LABEL[t.changeType].toLowerCase().includes(q),
+    );
+
+    const sign = sortDir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      if (sortKey === 'date') return sign * a.changeDate.localeCompare(b.changeDate);
+      if (sortKey === 'customer') return sign * a.customerName.localeCompare(b.customerName, 'de');
+      const ca = calcTariffCommission(a, settings);
+      const cb = calcTariffCommission(b, settings);
+      return sign * (ca - cb);
+    });
+  }, [tariffChanges, search, sortKey, sortDir, settings]);
+
+  const filteredTotal = useMemo(
+    () => filtered.reduce((s, t) => s + calcTariffCommission(t, settings), 0),
+    [filtered, settings],
+  );
 
   const unexported = tariffChanges.filter((t) => !t.exportedAt);
 
@@ -152,8 +200,22 @@ export function TariffChanges() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="muted" style={{ marginLeft: 'auto' }}>
-            {filtered.length} von {tariffChanges.length}
+          <div
+            className="row"
+            style={{ marginLeft: 'auto', gap: 12, alignItems: 'center' }}
+          >
+            <span className="muted">
+              {filtered.length} von {tariffChanges.length}
+            </span>
+            <span
+              style={{
+                fontWeight: 600,
+                color: 'var(--tng-blue-dark)',
+                fontSize: 13,
+              }}
+            >
+              Σ {formatCurrency(filteredTotal)}
+            </span>
           </div>
         </div>
       </div>
@@ -171,14 +233,30 @@ export function TariffChanges() {
           <table className="crm-table">
             <thead>
               <tr>
-                <th>Datum</th>
+                <th>
+                  <button className="sort-th" onClick={() => toggleSort('date')}>
+                    Datum <SortIcon active={sortKey === 'date'} dir={sortDir} />
+                  </button>
+                </th>
                 <th>KdNr.</th>
-                <th>Kunde</th>
+                <th>
+                  <button className="sort-th" onClick={() => toggleSort('customer')}>
+                    Kunde <SortIcon active={sortKey === 'customer'} dir={sortDir} />
+                  </button>
+                </th>
                 <th>Art</th>
                 <th>MVLZ</th>
                 <th>Tarife</th>
                 <th>Jira</th>
-                <th style={{ textAlign: 'right' }}>Provision</th>
+                <th style={{ textAlign: 'right' }}>
+                  <button
+                    className="sort-th"
+                    onClick={() => toggleSort('commission')}
+                    style={{ marginLeft: 'auto' }}
+                  >
+                    Provision <SortIcon active={sortKey === 'commission'} dir={sortDir} />
+                  </button>
+                </th>
                 <th />
               </tr>
             </thead>
@@ -236,6 +314,17 @@ export function TariffChanges() {
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="table-footer-row">
+                <td colSpan={7} style={{ textAlign: 'right' }}>
+                  {filtered.length} Tarifwechsel · Provision gesamt
+                </td>
+                <td style={{ textAlign: 'right', color: 'var(--tng-blue-dark)' }}>
+                  {formatCurrency(filteredTotal)}
+                </td>
+                <td />
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

@@ -2515,3 +2515,416 @@ table.crm-table td[style*="text-align: right"] {
   animation: spin 0.9s linear infinite;
   color: var(--tng-blue);
 }
+
+/* ===========================================================
+   Sortable Table Headers
+   =========================================================== */
+.sort-th {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+.sort-th:hover {
+  color: var(--tng-blue);
+}
+.sort-icon {
+  opacity: 0.4;
+  transition: opacity 0.15s, color 0.15s;
+}
+.sort-icon.active {
+  opacity: 1;
+  color: var(--tng-blue);
+}
+
+/* Table footer with totals */
+.crm-table tfoot td {
+  padding: 12px 16px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  background: var(--bg-soft, rgba(0, 102, 179, 0.025));
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+}
+.crm-table tfoot td:nth-last-child(2) {
+  font-weight: 700;
+  font-size: 13.5px;
+}
+
+/* Storniert row styling */
+.crm-table tr.row-storniert td {
+  opacity: 0.55;
+}
+.crm-table tr.row-storniert td:nth-child(3),
+.crm-table tr.row-storniert td:nth-child(8) {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-tertiary);
+}
+
+/* ===========================================================
+   Typeahead Dropdown (ContractForm + TariffChangeForm)
+   =========================================================== */
+.typeahead-wrap {
+  position: relative;
+}
+.typeahead-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  z-index: 200;
+  overflow: hidden;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.typeahead-item {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 9px 12px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.typeahead-item:last-child {
+  border-bottom: none;
+}
+.typeahead-item:hover,
+.typeahead-item:focus {
+  background: rgba(0, 102, 179, 0.06);
+  outline: none;
+}
+.typeahead-kdnr {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--tng-blue-dark);
+  background: rgba(0, 102, 179, 0.08);
+  padding: 2px 7px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+.typeahead-name {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===========================================================
+   FollowUp "Done" Quick-Action
+   =========================================================== */
+.followup-item-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border-radius: 9px;
+  position: relative;
+}
+.followup-item-wrap .followup-item {
+  flex: 1;
+  min-width: 0;
+}
+.followup-done-btn {
+  flex-shrink: 0;
+  width: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.followup-item-wrap:hover .followup-done-btn {
+  opacity: 1;
+}
+.followup-done-btn:hover {
+  background: rgba(52, 199, 89, 0.12);
+  color: var(--green, #34c759);
+}
+
+/* ===========================================================
+   Offline Banner
+   =========================================================== */
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9000;
+  background: linear-gradient(90deg, #ff9500, #ff7a00);
+  color: white;
+  padding: 7px 16px;
+  font-size: 12.5px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(255, 122, 0, 0.25);
+  letter-spacing: 0.1px;
+}
+
+/* ===========================================================
+   Dashboard Hero – Monatsbericht-Button
+   =========================================================== */
+.hero-right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+}
+.hero-report-btn {
+  background: rgba(255, 255, 255, 0.18);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s, transform 0.1s;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.hero-report-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+.hero-report-btn:active {
+  transform: scale(0.97);
+}
+
+/* ===========================================================
+   Monthly Report Page
+   =========================================================== */
+.report-shell {
+  background: var(--bg-app, #f5f5f7);
+  min-height: 100vh;
+  padding: 28px 24px 56px;
+}
+.report-actions {
+  max-width: 880px;
+  margin: 0 auto 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.report-page {
+  max-width: 880px;
+  margin: 0 auto;
+  background: white;
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  padding: 40px 44px 48px;
+  color: #1c1c1e;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 2px solid #0066b3;
+  padding-bottom: 20px;
+  margin-bottom: 28px;
+}
+.report-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: #1c1c1e;
+}
+.report-subtitle {
+  font-size: 14.5px;
+  color: #6b6b70;
+  margin-top: 4px;
+}
+.report-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.report-brand-name {
+  font-size: 11.5px;
+  color: #6b6b70;
+  letter-spacing: 0.3px;
+}
+.report-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 28px;
+}
+.report-kpi {
+  border: 1px solid #e6e6ea;
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #fafafc;
+}
+.report-kpi-label {
+  font-size: 11px;
+  color: #6b6b70;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.report-kpi-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0066b3;
+  letter-spacing: -0.3px;
+}
+.report-kpi-sub {
+  font-size: 11px;
+  color: #6b6b70;
+  margin-top: 4px;
+}
+.report-section {
+  margin-bottom: 28px;
+}
+.report-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1c1c1e;
+  margin: 0 0 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e6e6ea;
+}
+.report-section-meta {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b6b70;
+}
+.report-empty {
+  font-size: 13px;
+  color: #6b6b70;
+  font-style: italic;
+  padding: 12px 0;
+}
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.report-table th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6b6b70;
+  padding: 8px 10px;
+  border-bottom: 1.5px solid #e6e6ea;
+}
+.report-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f0f3;
+  vertical-align: top;
+  color: #1c1c1e;
+}
+.report-table tbody tr:last-child td {
+  border-bottom: 1px solid #e6e6ea;
+}
+.report-table tfoot td {
+  padding: 10px;
+  font-size: 12.5px;
+  border-top: 1.5px solid #0066b3;
+  border-bottom: none;
+  color: #0066b3;
+}
+.report-table code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #4a4a4d;
+}
+.report-grand-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, rgba(0, 102, 179, 0.06), rgba(0, 163, 224, 0.04));
+  border: 1.5px solid rgba(0, 102, 179, 0.18);
+  border-radius: 10px;
+  margin-bottom: 24px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1c1c1e;
+}
+.report-grand-total strong {
+  font-size: 22px;
+  color: #0066b3;
+  letter-spacing: -0.3px;
+}
+.report-footer {
+  text-align: center;
+  font-size: 11.5px;
+  color: #9b9ba0;
+  padding-top: 16px;
+  border-top: 1px solid #e6e6ea;
+}
+
+/* ===========================================================
+   Print Mode
+   =========================================================== */
+@media print {
+  @page {
+    margin: 16mm 14mm;
+    size: A4;
+  }
+  body {
+    background: white !important;
+  }
+  .no-print,
+  .offline-banner,
+  .sidebar,
+  .titlebar {
+    display: none !important;
+  }
+  .report-shell {
+    background: white !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
+  .report-page {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .report-table {
+    page-break-inside: auto;
+  }
+  .report-table tr {
+    page-break-inside: avoid;
+  }
+  .report-section {
+    page-break-inside: avoid;
+  }
+}

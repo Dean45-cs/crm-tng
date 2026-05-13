@@ -26,10 +26,33 @@ interface Props {
 }
 
 export function ContractForm({ open, editing, onClose }: Props) {
-  const { addContract, updateContract, settings } = useStore();
+  const { addContract, updateContract, settings, contracts, tariffChanges } = useStore();
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [showMore, setShowMore] = useState(false);
   const [addingProduct, setAddingProduct] = useState<ProductType>('Waipu TV');
+  const [kdnrFocused, setKdnrFocused] = useState(false);
+
+  const knownCustomers = useMemo(() => {
+    const map = new Map<string, string>();
+    contracts.forEach((c) => {
+      if (c.customerNumber && c.customerName) map.set(c.customerNumber, c.customerName);
+    });
+    tariffChanges.forEach((t) => {
+      if (t.customerNumber && t.customerName && !map.has(t.customerNumber)) {
+        map.set(t.customerNumber, t.customerName);
+      }
+    });
+    return Array.from(map.entries()).map(([kdnr, name]) => ({ kdnr, name }));
+  }, [contracts, tariffChanges]);
+
+  const suggestions = useMemo(() => {
+    const q = draft.customerNumber.trim().toLowerCase();
+    if (!q) return [];
+    return knownCustomers
+      .filter((c) => c.kdnr.toLowerCase().includes(q) || c.name.toLowerCase().includes(q))
+      .filter((c) => c.kdnr !== draft.customerNumber || c.name !== draft.customerName)
+      .slice(0, 6);
+  }, [knownCustomers, draft.customerNumber, draft.customerName]);
 
   useEffect(() => {
     if (!open) return;
@@ -109,14 +132,42 @@ export function ContractForm({ open, editing, onClose }: Props) {
       <div className="form-grid">
         <div className="field">
           <label>Kundennummer *</label>
-          <input
-            autoFocus
-            value={draft.customerNumber}
-            onChange={(e) =>
-              setDraft({ ...draft, customerNumber: e.target.value })
-            }
-            placeholder="z.B. 1234567"
-          />
+          <div className="typeahead-wrap">
+            <input
+              autoFocus
+              value={draft.customerNumber}
+              onChange={(e) =>
+                setDraft({ ...draft, customerNumber: e.target.value })
+              }
+              onFocus={() => setKdnrFocused(true)}
+              onBlur={() => setTimeout(() => setKdnrFocused(false), 150)}
+              placeholder="z.B. 1234567"
+              autoComplete="off"
+            />
+            {kdnrFocused && suggestions.length > 0 && (
+              <div className="typeahead-dropdown">
+                {suggestions.map((s) => (
+                  <button
+                    key={s.kdnr}
+                    type="button"
+                    className="typeahead-item"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setDraft({
+                        ...draft,
+                        customerNumber: s.kdnr,
+                        customerName: s.name,
+                      });
+                      setKdnrFocused(false);
+                    }}
+                  >
+                    <code className="typeahead-kdnr">{s.kdnr}</code>
+                    <span className="typeahead-name">{s.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="field">
           <label>Kunde *</label>
