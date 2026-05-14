@@ -1,22 +1,12 @@
 import { ExternalLink } from 'lucide-react';
-import { useStore } from '../store/useStore';
+
+const JIRA_BASE_URL = 'https://jira.ennit.de/browse/';
 
 export function JiraLink({ ticket }: { ticket?: string }) {
-  const baseUrl = useStore((s) => s.settings.jiraBaseUrl);
   if (!ticket) return <span className="muted">–</span>;
-  const href = baseUrl
-    ? `${baseUrl}${ticket.trim()}`
-    : '#';
+  const href = `${JIRA_BASE_URL}${ticket.trim()}`;
   return (
-    <a
-      className="jira-link"
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      onClick={(e) => {
-        if (!baseUrl) e.preventDefault();
-      }}
-    >
+    <a className="jira-link" href={href} target="_blank" rel="noreferrer">
       {ticket}
       <ExternalLink size={11} />
     </a>

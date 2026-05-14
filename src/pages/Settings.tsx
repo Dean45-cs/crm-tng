@@ -29,7 +29,6 @@ export function Settings() {
 
   const [agentName, setAgentName] = useState(settings.agentName);
   const [target, setTarget] = useState(settings.monthlyTarget);
-  const [jiraBaseUrl, setJiraBaseUrl] = useState(settings.jiraBaseUrl);
   const [saved, setSaved] = useState(false);
 
   const [spClientId, setSpClientId] = useState(settings.spClientId);
@@ -82,7 +81,6 @@ export function Settings() {
     updateSettings({
       agentName,
       monthlyTarget: target,
-      jiraBaseUrl,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
@@ -179,14 +177,6 @@ export function Settings() {
               step="10"
               value={target}
               onChange={(e) => setTarget(parseFloat(e.target.value) || 0)}
-            />
-          </div>
-          <div className="field full">
-            <label>Jira Basis-URL</label>
-            <input
-              value={jiraBaseUrl}
-              onChange={(e) => setJiraBaseUrl(e.target.value)}
-              placeholder="https://jira.tng.de/browse/"
             />
           </div>
         </div>
