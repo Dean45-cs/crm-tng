@@ -120,14 +120,16 @@ export function Sidebar() {
         <div key={section.title}>
           <div className="sidebar-section">{section.title}</div>
           {section.items.map((item) => (
-            <div
+            <button
               key={item.id}
+              type="button"
               className={`sidebar-item sidebar-item-${item.id} ${active === item.id ? 'active' : ''}`}
               onClick={() => navigate({ name: item.id } as Route)}
+              aria-current={active === item.id ? 'page' : undefined}
             >
               {item.icon}
               <span>{item.label}</span>
-            </div>
+            </button>
           ))}
         </div>
       ))}

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Trophy, Crown, Medal, Award, EyeOff, Sparkles } from 'lucide-react';
+import { Trophy, Crown, Medal, Award, EyeOff, Sparkles, BarChart3 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import {
@@ -98,7 +98,7 @@ export function Leaderboard() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="widget" style={{ marginBottom: 16 }}>
         <div className="row between" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="row" style={{ gap: 10 }}>
             <div className={`leaderboard-toggle ${myOptIn ? 'on' : 'off'}`}>
@@ -129,7 +129,8 @@ export function Leaderboard() {
       </div>
 
       {visibleRows.length === 0 ? (
-        <div className="card-soft empty">
+        <div className="widget empty">
+          <BarChart3 size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>Noch keine Daten</h3>
           <p>Sobald Verträge oder Tarifwechsel erfasst sind, erscheint hier das Ranking.</p>
         </div>
@@ -137,9 +138,9 @@ export function Leaderboard() {
         <>
           {visibleRows.length >= 3 && <Podium rows={visibleRows.slice(0, 3)} />}
 
-          <div className="card">
+          <div className="widget">
             <div className="row between" style={{ marginBottom: 14 }}>
-              <h3 className="section-title" style={{ margin: 0 }}>
+              <h3 className="widget-title" style={{ margin: 0 }}>
                 Gesamt-Ranking
               </h3>
               <span className="muted">Sortiert nach Provision (Monat)</span>

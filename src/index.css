@@ -144,6 +144,11 @@ input, select, textarea {
   font-size: 14px;
   color: var(--text);
 }
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-quaternary);
+  opacity: 1;
+}
 
 code {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
@@ -225,8 +230,19 @@ code {
   font-weight: 500;
   color: var(--text);
   margin-bottom: 1px;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease;
   user-select: none;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.sidebar-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 102, 179, 0.28);
 }
 .sidebar-item svg {
   color: var(--text-tertiary);
@@ -625,11 +641,11 @@ code {
 
 /* ---------- Tables ---------- */
 .table-wrap {
-  background: var(--bg-card);
-  border-radius: var(--r-lg);
-  border: 1px solid var(--border);
+  background: var(--widget-bg);
+  border-radius: 18px;
+  border: 1px solid var(--widget-border);
   overflow: hidden;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--widget-shadow);
 }
 table.crm-table {
   width: 100%;
@@ -995,16 +1011,17 @@ table.crm-table td[style*="text-align: right"] {
   gap: 14px;
 }
 .note-card {
-  background: var(--bg-card);
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  padding: 14px 16px;
-  transition: box-shadow 0.18s, transform 0.18s;
-  box-shadow: var(--shadow-xs);
+  background: var(--widget-bg);
+  border-radius: 16px;
+  border: 1px solid var(--widget-border);
+  padding: 16px 18px;
+  transition: box-shadow 0.2s ease, transform 0.18s ease, border-color 0.18s;
+  box-shadow: var(--widget-shadow);
 }
 .note-card:hover {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
+  box-shadow: var(--widget-shadow-hover);
+  transform: translateY(-1px);
+  border-color: rgba(0, 102, 179, 0.15);
 }
 .note-card h4 {
   margin: 0 0 4px;
@@ -1070,18 +1087,19 @@ table.crm-table td[style*="text-align: right"] {
   align-items: center;
   gap: 14px;
   text-align: left;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  background: var(--widget-bg);
+  border: 1px solid var(--widget-border);
+  border-radius: 16px;
   padding: 14px 16px;
-  transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
-  box-shadow: var(--shadow-xs);
+  transition: transform 0.18s ease, box-shadow 0.2s ease, border-color 0.18s;
+  box-shadow: var(--widget-shadow);
   width: 100%;
+  cursor: pointer;
 }
 .customer-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--border-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--widget-shadow-hover);
+  border-color: rgba(0, 102, 179, 0.2);
 }
 .customer-card:hover .customer-chevron {
   transform: translateX(2px);
@@ -1150,14 +1168,51 @@ table.crm-table td[style*="text-align: right"] {
 .customer-hero {
   display: flex;
   align-items: center;
-  gap: 18px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xl);
-  padding: 20px 22px;
-  margin-bottom: 18px;
+  gap: 20px;
+  background: var(--widget-bg);
+  border: 1px solid var(--widget-border);
+  border-radius: var(--widget-radius);
+  padding: 22px 24px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--widget-shadow);
+}
+.customer-hero-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.customer-hero-name {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  line-height: 1.15;
+  color: var(--text);
+}
+.customer-hero-kdnr {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.customer-hero-kdnr code {
+  background: rgba(0, 102, 179, 0.08);
+  color: var(--tng-blue-dark);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 1px 8px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+@media (prefers-color-scheme: dark) {
+  .customer-hero-kdnr code {
+    background: rgba(0, 102, 179, 0.18);
+    color: #6cbef0;
+  }
 }
 .customer-hero-avatar {
   width: 56px;
@@ -3001,11 +3056,34 @@ table.crm-table td[style*="text-align: right"] {
   box-shadow: var(--widget-shadow);
   padding: 22px;
   position: relative;
-  transition: transform 0.2s cubic-bezier(0.34, 1.2, 0.64, 1), box-shadow 0.2s ease;
+  transition: box-shadow 0.25s ease, border-color 0.2s ease;
 }
-.widget:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--widget-shadow-hover);
+.widget.empty {
+  padding: 64px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.widget.empty .empty-icon {
+  color: var(--text-quaternary);
+  margin-bottom: 12px;
+  opacity: 0.7;
+}
+.widget.empty h3 {
+  font-size: 16.5px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+.widget.empty p {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  max-width: 360px;
+  margin: 0;
+  line-height: 1.45;
 }
 .widget-title {
   font-size: 11.5px;
@@ -3014,6 +3092,12 @@ table.crm-table td[style*="text-align: right"] {
   text-transform: uppercase;
   letter-spacing: 0.7px;
   margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.widget-title svg {
+  color: var(--text-tertiary);
 }
 
 /* Hero Row (asymmetrisch) */
@@ -3315,4 +3399,27 @@ table.crm-table td[style*="text-align: right"] {
 .sidebar-install-btn svg {
   color: var(--tng-blue);
   flex-shrink: 0;
+}
+
+/* Settings: kompakte Provisions-Inputs */
+.commission-input {
+  width: 100px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  text-align: right;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.commission-input:focus {
+  outline: none;
+  border-color: var(--tng-blue);
+  box-shadow: 0 0 0 3px rgba(0, 102, 179, 0.15);
+}
+.commission-input:hover {
+  border-color: var(--text-quaternary);
 }

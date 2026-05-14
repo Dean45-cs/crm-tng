@@ -12,6 +12,7 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
@@ -190,7 +191,7 @@ export function TariffChanges() {
         </div>
       </div>
 
-      <div className="card" style={{ padding: 14, marginBottom: 14 }}>
+      <div className="widget" style={{ padding: 14, marginBottom: 14 }}>
         <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="search-bar">
             <Search size={14} />
@@ -221,12 +222,23 @@ export function TariffChanges() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="card empty">
-          <h3>Noch keine Tarifwechsel</h3>
-          <p>Tippe unten rechts auf <strong>+</strong> oder hier:</p>
-          <button className="btn btn-primary" onClick={() => openNewTariff()} style={{ marginTop: 12 }}>
-            <Plus size={14} /> Neuer Tarifwechsel
-          </button>
+        <div className="widget empty">
+          <ArrowLeftRight size={32} strokeWidth={1.4} className="empty-icon" />
+          <h3>{search ? 'Keine Treffer' : 'Noch keine Tarifwechsel'}</h3>
+          <p>
+            {search
+              ? 'Versuche es mit einem anderen Suchbegriff.'
+              : 'Erfasse einen Tarifwechsel – Sidegrade oder Upgrade.'}
+          </p>
+          {!search && (
+            <button
+              className="btn btn-primary"
+              onClick={() => openNewTariff()}
+              style={{ marginTop: 14 }}
+            >
+              <Plus size={14} /> Neuer Tarifwechsel
+            </button>
+          )}
         </div>
       ) : (
         <div className="table-wrap">

@@ -88,9 +88,10 @@ export function CustomerDetail({ kdnr }: Props) {
         >
           <ArrowLeft size={14} /> Zurück
         </button>
-        <div className="card-soft empty">
+        <div className="widget empty">
+          <UserIcon size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>Kunde nicht gefunden</h3>
-          <p>Zu KdNr {kdnr} gibt es keine Vorgänge.</p>
+          <p>Zu KdNr <code>{kdnr}</code> gibt es noch keine Vorgänge.</p>
         </div>
       </div>
     );
@@ -106,8 +107,8 @@ export function CustomerDetail({ kdnr }: Props) {
         >
           <ArrowLeft size={14} /> Zurück
         </button>
-        <div className="card-soft empty">
-          <Lock size={28} strokeWidth={1.5} style={{ opacity: 0.45 }} />
+        <div className="widget empty">
+          <Lock size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>Kein Zugriff auf diesen Kunden</h3>
           <p>
             {ownerUser
@@ -133,14 +134,12 @@ export function CustomerDetail({ kdnr }: Props) {
 
       <div className="customer-hero">
         <div className="customer-hero-avatar">{initials}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: 26, letterSpacing: '-0.4px' }}>
-            {customerName || 'Unbenannt'}
-          </h2>
-          <div className="muted" style={{ marginTop: 4 }}>
+        <div className="customer-hero-body">
+          <h2 className="customer-hero-name">{customerName || 'Unbenannt'}</h2>
+          <div className="customer-hero-kdnr">
             Kundennummer <code>{kdnr}</code>
           </div>
-          <div className="customer-owner-row" style={{ marginTop: 10 }}>
+          <div className="customer-owner-row">
             {ownership.owner === null ? (
               <span className="customer-owner-tag unowned">
                 <Globe size={11} /> Verwaist – noch kein:e Besitzer:in

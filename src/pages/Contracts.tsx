@@ -8,6 +8,7 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
+  FileSignature,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { ContractStatus } from '../types';
@@ -121,7 +122,7 @@ export function Contracts() {
         </div>
       </div>
 
-      <div className="card-soft" style={{ padding: 14, marginBottom: 16 }}>
+      <div className="widget" style={{ padding: 14, marginBottom: 16 }}>
         <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="search-bar">
             <Search size={14} />
@@ -167,12 +168,23 @@ export function Contracts() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="card-soft empty">
-          <h3>Noch keine Verträge</h3>
-          <p>Tippe unten rechts auf <strong>+</strong> oder hier:</p>
-          <button className="btn btn-primary" onClick={() => openNewContract()} style={{ marginTop: 12 }}>
-            <Plus size={14} /> Neuer Vertrag
-          </button>
+        <div className="widget empty">
+          <FileSignature size={32} strokeWidth={1.4} className="empty-icon" />
+          <h3>{search || statusFilter !== 'alle' ? 'Keine Treffer' : 'Noch keine Verträge'}</h3>
+          <p>
+            {search || statusFilter !== 'alle'
+              ? 'Versuche es mit einem anderen Suchbegriff oder Filter.'
+              : 'Lege deinen ersten Vertrag an – die Provision wird automatisch berechnet.'}
+          </p>
+          {!search && statusFilter === 'alle' && (
+            <button
+              className="btn btn-primary"
+              onClick={() => openNewContract()}
+              style={{ marginTop: 14 }}
+            >
+              <Plus size={14} /> Neuer Vertrag
+            </button>
+          )}
         </div>
       ) : (
         <div className="table-wrap">

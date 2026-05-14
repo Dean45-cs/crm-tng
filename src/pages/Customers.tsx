@@ -85,7 +85,7 @@ export function Customers() {
         </button>
       </div>
 
-      <div className="card-soft" style={{ padding: 14, marginBottom: 16 }}>
+      <div className="widget" style={{ padding: 14, marginBottom: 16 }}>
         <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="search-bar">
             <Search size={14} />
@@ -102,17 +102,25 @@ export function Customers() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="card-soft empty">
-          <Users size={28} strokeWidth={1.5} style={{ opacity: 0.4 }} />
+        <div className="widget empty">
+          <Users size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>
-            {mode === 'mine' && 'Noch keine eigenen Kunden'}
-            {mode === 'shared' && 'Niemand hat bisher Kunden mit dir geteilt'}
-            {mode === 'all' && 'Noch keine Kunden'}
+            {search
+              ? 'Keine Treffer'
+              : mode === 'mine'
+                ? 'Noch keine eigenen Kunden'
+                : mode === 'shared'
+                  ? 'Niemand hat Kunden mit dir geteilt'
+                  : 'Noch keine Kunden'}
           </h3>
           <p>
-            {mode === 'mine' && 'Sobald du einen Vertrag oder Tarifwechsel anlegst, erscheint der Kunde automatisch hier.'}
-            {mode === 'shared' && 'Bitte deine Kolleg:innen, dich in einer Kundenkarte als Teilnehmer hinzuzufügen.'}
-            {mode === 'all' && 'Sobald jemand Verträge, Tarifwechsel oder Notizen mit Kundennummer anlegt, erscheinen sie hier.'}
+            {search
+              ? 'Versuche es mit einem anderen Suchbegriff.'
+              : mode === 'mine'
+                ? 'Sobald du einen Vertrag oder Tarifwechsel anlegst, erscheint der Kunde automatisch hier.'
+                : mode === 'shared'
+                  ? 'Bitte deine Kolleg:innen, dich in einer Kundenkarte als Teilnehmer hinzuzufügen.'
+                  : 'Sobald jemand Vorgänge mit Kundennummer anlegt, erscheinen sie hier.'}
           </p>
         </div>
       ) : (

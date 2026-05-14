@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Search, Pencil, Trash2, User, Calendar } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, User, Calendar, StickyNote } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { formatDate } from '../lib/utils';
 import { JiraLink } from '../components/JiraLink';
@@ -41,7 +41,7 @@ export function Notes() {
         </button>
       </div>
 
-      <div className="card" style={{ padding: 14, marginBottom: 14 }}>
+      <div className="widget" style={{ padding: 14, marginBottom: 14 }}>
         <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="search-bar">
             <Search size={14} />
@@ -58,12 +58,23 @@ export function Notes() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="card empty">
-          <h3>Keine Notizen</h3>
-          <p>Tippe unten rechts auf <strong>+</strong> oder hier:</p>
-          <button className="btn btn-primary" onClick={() => openNewNote()} style={{ marginTop: 12 }}>
-            <Plus size={14} /> Neue Notiz
-          </button>
+        <div className="widget empty">
+          <StickyNote size={32} strokeWidth={1.4} className="empty-icon" />
+          <h3>{search ? 'Keine Treffer' : 'Noch keine Notizen'}</h3>
+          <p>
+            {search
+              ? 'Versuche es mit einem anderen Suchbegriff.'
+              : 'Hier landen schnelle Notizen zu Kunden, Vorgängen und Tickets.'}
+          </p>
+          {!search && (
+            <button
+              className="btn btn-primary"
+              onClick={() => openNewNote()}
+              style={{ marginTop: 14 }}
+            >
+              <Plus size={14} /> Neue Notiz
+            </button>
+          )}
         </div>
       ) : (
         <div className="notes-grid">

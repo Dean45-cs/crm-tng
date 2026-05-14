@@ -159,8 +159,8 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3 className="section-title">Allgemein</h3>
+      <div className="widget" style={{ marginBottom: 16 }}>
+        <h3 className="widget-title">Allgemein</h3>
         <div className="form-grid">
           <div className="field">
             <label>Dein Name</label>
@@ -188,8 +188,8 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3 className="section-title">
+      <div className="widget" style={{ marginBottom: 16 }}>
+        <h3 className="widget-title">
           <Trophy size={14} style={{ marginRight: 6, verticalAlign: '-2px' }} />
           Leaderboard
         </h3>
@@ -217,8 +217,8 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3 className="section-title">Provision pro Produkt</h3>
+      <div className="widget" style={{ marginBottom: 16 }}>
+        <h3 className="widget-title">Provision pro Produkt</h3>
         <p className="muted" style={{ marginBottom: 14 }}>
           Werte aus dem TNG-Provisionskatalog (Version 1.2 ab 01.03.2026). Du kannst sie anpassen.
         </p>
@@ -246,6 +246,7 @@ export function Settings() {
                           <input
                             type="number"
                             step="0.5"
+                            className="commission-input"
                             value={p.commission}
                             onChange={(e) =>
                               updateProductCommission(
@@ -253,14 +254,6 @@ export function Settings() {
                                 parseFloat(e.target.value) || 0,
                               )
                             }
-                            style={{
-                              width: 100,
-                              padding: '5px 8px',
-                              borderRadius: 6,
-                              border: '1px solid var(--border-strong)',
-                              textAlign: 'right',
-                              background: 'var(--bg-card)',
-                            }}
                           />
                         </td>
                       </tr>
@@ -272,8 +265,8 @@ export function Settings() {
         ))}
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3 className="section-title">Provision Tarifwechsel</h3>
+      <div className="widget" style={{ marginBottom: 16 }}>
+        <h3 className="widget-title">Provision Tarifwechsel</h3>
         <p className="muted" style={{ marginBottom: 14 }}>
           Provisionsmatrix nach Wechselart und MVLZ-Situation.
         </p>
@@ -298,18 +291,11 @@ export function Settings() {
                       <input
                         type="number"
                         step="0.5"
+                        className="commission-input"
                         value={settings.tariffCommission[t][c]}
                         onChange={(e) =>
                           updateMatrix(t, c, parseFloat(e.target.value) || 0)
                         }
-                        style={{
-                          width: 90,
-                          padding: '5px 8px',
-                          borderRadius: 6,
-                          border: '1px solid var(--border-strong)',
-                          textAlign: 'right',
-                          background: 'var(--bg-card)',
-                        }}
                       />
                       <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>
                         {formatCurrency(settings.tariffCommission[t][c])}
@@ -323,8 +309,8 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3 className="section-title">
+      <div className="widget" style={{ marginBottom: 16 }}>
+        <h3 className="widget-title">
           <Sheet size={14} style={{ marginRight: 6, verticalAlign: '-2px' }} />
           SharePoint Excel-Export
         </h3>
@@ -411,8 +397,8 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="card">
-        <h3 className="section-title">Daten</h3>
+      <div className="widget">
+        <h3 className="widget-title">Daten</h3>
         <p className="muted" style={{ marginBottom: 14 }}>
           {contracts.length} Verträge · {tariffChanges.length} Tarifwechsel · {notes.length} Notizen.
           Daten liegen lokal im Browser.

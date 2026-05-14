@@ -65,6 +65,11 @@ export function NoteForm({ open, editing, prefill, onClose }: Props) {
       open={open}
       onClose={onClose}
       title={editing ? 'Notiz bearbeiten' : 'Neue Notiz'}
+      subtitle={
+        editing
+          ? 'Inhalt anpassen und speichern.'
+          : 'Schnelle Notiz zu Vorgängen, Kunden oder Tickets.'
+      }
       footer={
         <>
           <button className="btn" onClick={onClose}>Abbrechen</button>
