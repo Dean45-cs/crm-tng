@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { Modal } from './Modal';
 import type { Note } from '../types';
+import type { QuickAddPrefill } from './QuickAdd';
 
 type Draft = Omit<Note, 'id' | 'createdAt' | 'updatedAt'>;
 
@@ -16,10 +17,11 @@ const emptyDraft = (): Draft => ({
 interface Props {
   open: boolean;
   editing?: Note | null;
+  prefill?: QuickAddPrefill | null;
   onClose: () => void;
 }
 
-export function NoteForm({ open, editing, onClose }: Props) {
+export function NoteForm({ open, editing, prefill, onClose }: Props) {
   const { addNote, updateNote } = useStore();
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [showMore, setShowMore] = useState(false);
@@ -38,10 +40,13 @@ export function NoteForm({ open, editing, onClose }: Props) {
         !!(editing.customerNumber || editing.customerName || editing.jiraTicket),
       );
     } else {
-      setDraft(emptyDraft());
-      setShowMore(false);
+      const base = emptyDraft();
+      if (prefill?.customerNumber) base.customerNumber = prefill.customerNumber;
+      if (prefill?.customerName) base.customerName = prefill.customerName;
+      setDraft(base);
+      setShowMore(!!(prefill?.customerNumber || prefill?.customerName));
     }
-  }, [open, editing]);
+  }, [open, editing, prefill]);
 
   const valid = draft.title.trim().length > 0 && draft.content.trim().length > 0;
 

@@ -172,13 +172,22 @@ export function CustomerDetail({ kdnr }: Props) {
       </div>
 
       <div className="customer-quick-actions">
-        <button className="btn btn-primary" onClick={openNewContract}>
+        <button
+          className="btn btn-primary"
+          onClick={() => openNewContract({ customerNumber: kdnr, customerName })}
+        >
           <Plus size={14} /> Vertrag
         </button>
-        <button className="btn" onClick={openNewTariff}>
+        <button
+          className="btn"
+          onClick={() => openNewTariff({ customerNumber: kdnr, customerName })}
+        >
           <Plus size={14} /> Tarifwechsel
         </button>
-        <button className="btn" onClick={openNewNote}>
+        <button
+          className="btn"
+          onClick={() => openNewNote({ customerNumber: kdnr, customerName })}
+        >
           <Plus size={14} /> Notiz
         </button>
         <button className="btn" onClick={() => setShareOpen(true)} style={{ marginLeft: 'auto' }}>

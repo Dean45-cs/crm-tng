@@ -5,6 +5,7 @@ import { Modal } from './Modal';
 import { ProductPicker } from './ProductPicker';
 import { formatCurrency, getProductCommission, today } from '../lib/utils';
 import type { Contract, ContractStatus, ProductType } from '../types';
+import type { QuickAddPrefill } from './QuickAdd';
 
 type Draft = Omit<Contract, 'id' | 'createdAt'>;
 
@@ -22,10 +23,11 @@ const emptyDraft = (): Draft => ({
 interface Props {
   open: boolean;
   editing?: Contract | null;
+  prefill?: QuickAddPrefill | null;
   onClose: () => void;
 }
 
-export function ContractForm({ open, editing, onClose }: Props) {
+export function ContractForm({ open, editing, prefill, onClose }: Props) {
   const { addContract, updateContract, settings, contracts, tariffChanges } = useStore();
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [showMore, setShowMore] = useState(false);
@@ -69,10 +71,13 @@ export function ContractForm({ open, editing, onClose }: Props) {
       });
       setShowMore(true);
     } else {
-      setDraft(emptyDraft());
+      const base = emptyDraft();
+      if (prefill?.customerNumber) base.customerNumber = prefill.customerNumber;
+      if (prefill?.customerName) base.customerName = prefill.customerName;
+      setDraft(base);
       setShowMore(false);
     }
-  }, [open, editing]);
+  }, [open, editing, prefill]);
 
   const totalCommission = useMemo(
     () =>

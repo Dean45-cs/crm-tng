@@ -14,6 +14,7 @@ import type {
   TariffContext,
   ProductType,
 } from '../types';
+import type { QuickAddPrefill } from './QuickAdd';
 
 type Draft = Omit<TariffChange, 'id' | 'createdAt'>;
 
@@ -32,10 +33,11 @@ const emptyDraft = (): Draft => ({
 interface Props {
   open: boolean;
   editing?: TariffChange | null;
+  prefill?: QuickAddPrefill | null;
   onClose: () => void;
 }
 
-export function TariffChangeForm({ open, editing, onClose }: Props) {
+export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
   const { addTariffChange, updateTariffChange, settings, contracts, tariffChanges } = useStore();
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [showProducts, setShowProducts] = useState(false);
@@ -79,10 +81,13 @@ export function TariffChangeForm({ open, editing, onClose }: Props) {
       });
       setShowProducts(!!editing.oldProduct || !!editing.newProduct);
     } else {
-      setDraft(emptyDraft());
+      const base = emptyDraft();
+      if (prefill?.customerNumber) base.customerNumber = prefill.customerNumber;
+      if (prefill?.customerName) base.customerName = prefill.customerName;
+      setDraft(base);
       setShowProducts(false);
     }
-  }, [open, editing]);
+  }, [open, editing, prefill]);
 
   const commission = useMemo(
     () => settings.tariffCommission[draft.changeType][draft.context],

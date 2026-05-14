@@ -36,7 +36,7 @@ export function Notes() {
           <h2>Notizen</h2>
           <p>Schnelle Notizen zu Kunden, Vorgängen und Verkäufen.</p>
         </div>
-        <button className="btn btn-primary" onClick={openNewNote}>
+        <button className="btn btn-primary" onClick={() => openNewNote()}>
           <Plus size={14} /> Neue Notiz
         </button>
       </div>
@@ -61,7 +61,7 @@ export function Notes() {
         <div className="card empty">
           <h3>Keine Notizen</h3>
           <p>Tippe unten rechts auf <strong>+</strong> oder hier:</p>
-          <button className="btn btn-primary" onClick={openNewNote} style={{ marginTop: 12 }}>
+          <button className="btn btn-primary" onClick={() => openNewNote()} style={{ marginTop: 12 }}>
             <Plus size={14} /> Neue Notiz
           </button>
         </div>

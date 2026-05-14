@@ -184,7 +184,7 @@ export function TariffChanges() {
           <button className="btn" onClick={exportCsvData} disabled={filtered.length === 0}>
             <Download size={14} /> CSV
           </button>
-          <button className="btn btn-primary" onClick={openNewTariff}>
+          <button className="btn btn-primary" onClick={() => openNewTariff()}>
             <Plus size={14} /> Neuer Tarifwechsel
           </button>
         </div>
@@ -224,7 +224,7 @@ export function TariffChanges() {
         <div className="card empty">
           <h3>Noch keine Tarifwechsel</h3>
           <p>Tippe unten rechts auf <strong>+</strong> oder hier:</p>
-          <button className="btn btn-primary" onClick={openNewTariff} style={{ marginTop: 12 }}>
+          <button className="btn btn-primary" onClick={() => openNewTariff()} style={{ marginTop: 12 }}>
             <Plus size={14} /> Neuer Tarifwechsel
           </button>
         </div>

@@ -7,10 +7,15 @@ import type { Contract, Note, TariffChange } from '../types';
 
 type FormKind = 'contract' | 'tariff' | 'note' | null;
 
+export interface QuickAddPrefill {
+  customerNumber: string;
+  customerName: string;
+}
+
 interface QuickAddCtx {
-  openNewContract: () => void;
-  openNewTariff: () => void;
-  openNewNote: () => void;
+  openNewContract: (prefill?: QuickAddPrefill) => void;
+  openNewTariff: (prefill?: QuickAddPrefill) => void;
+  openNewNote: (prefill?: QuickAddPrefill) => void;
   editContract: (c: Contract) => void;
   editTariff: (t: TariffChange) => void;
   editNote: (n: Note) => void;
@@ -29,6 +34,7 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
   const [editingTariff, setEditingTariff] = useState<TariffChange | null>(null);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [prefill, setPrefill] = useState<QuickAddPrefill | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const close = useCallback(() => {
@@ -36,15 +42,31 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
     setEditingContract(null);
     setEditingTariff(null);
     setEditingNote(null);
+    setPrefill(null);
   }, []);
 
   const ctx: QuickAddCtx = {
-    openNewContract: () => { setEditingContract(null); setForm('contract'); setMenuOpen(false); },
-    openNewTariff: () => { setEditingTariff(null); setForm('tariff'); setMenuOpen(false); },
-    openNewNote: () => { setEditingNote(null); setForm('note'); setMenuOpen(false); },
-    editContract: (c) => { setEditingContract(c); setForm('contract'); },
-    editTariff: (t) => { setEditingTariff(t); setForm('tariff'); },
-    editNote: (n) => { setEditingNote(n); setForm('note'); },
+    openNewContract: (p) => {
+      setEditingContract(null);
+      setPrefill(p ?? null);
+      setForm('contract');
+      setMenuOpen(false);
+    },
+    openNewTariff: (p) => {
+      setEditingTariff(null);
+      setPrefill(p ?? null);
+      setForm('tariff');
+      setMenuOpen(false);
+    },
+    openNewNote: (p) => {
+      setEditingNote(null);
+      setPrefill(p ?? null);
+      setForm('note');
+      setMenuOpen(false);
+    },
+    editContract: (c) => { setEditingContract(c); setPrefill(null); setForm('contract'); },
+    editTariff: (t) => { setEditingTariff(t); setPrefill(null); setForm('tariff'); },
+    editNote: (n) => { setEditingNote(n); setPrefill(null); setForm('note'); },
   };
 
   // Cmd/Ctrl + N → Vertrag, Cmd/Ctrl + T → Tarifwechsel, Cmd/Ctrl + Shift + N → Notiz
@@ -78,21 +100,21 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
               icon={<FileSignature size={16} />}
               label="Vertrag"
               hint="⌘N"
-              onClick={ctx.openNewContract}
+              onClick={() => ctx.openNewContract()}
               color="bg-blue"
             />
             <FabItem
               icon={<ArrowLeftRight size={16} />}
               label="Tarifwechsel"
               hint="⌘T"
-              onClick={ctx.openNewTariff}
+              onClick={() => ctx.openNewTariff()}
               color="bg-orange"
             />
             <FabItem
               icon={<StickyNote size={16} />}
               label="Notiz"
               hint="⌘⇧N"
-              onClick={ctx.openNewNote}
+              onClick={() => ctx.openNewNote()}
               color="bg-purple"
             />
           </div>
@@ -110,16 +132,19 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
       <ContractForm
         open={form === 'contract'}
         editing={editingContract}
+        prefill={prefill}
         onClose={close}
       />
       <TariffChangeForm
         open={form === 'tariff'}
         editing={editingTariff}
+        prefill={prefill}
         onClose={close}
       />
       <NoteForm
         open={form === 'note'}
         editing={editingNote}
+        prefill={prefill}
         onClose={close}
       />
     </Ctx.Provider>

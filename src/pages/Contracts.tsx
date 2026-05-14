@@ -115,7 +115,7 @@ export function Contracts() {
           <button className="btn" onClick={exportData} disabled={filtered.length === 0}>
             <Download size={14} /> CSV
           </button>
-          <button className="btn btn-primary" onClick={openNewContract}>
+          <button className="btn btn-primary" onClick={() => openNewContract()}>
             <Plus size={14} /> Neuer Vertrag
           </button>
         </div>
@@ -170,7 +170,7 @@ export function Contracts() {
         <div className="card-soft empty">
           <h3>Noch keine Verträge</h3>
           <p>Tippe unten rechts auf <strong>+</strong> oder hier:</p>
-          <button className="btn btn-primary" onClick={openNewContract} style={{ marginTop: 12 }}>
+          <button className="btn btn-primary" onClick={() => openNewContract()} style={{ marginTop: 12 }}>
             <Plus size={14} /> Neuer Vertrag
           </button>
         </div>
