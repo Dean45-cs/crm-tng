@@ -3243,3 +3243,46 @@ table.crm-table td[style*="text-align: right"] {
   border-radius: 999px;
   transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* Scope toggle (Meine / Alle) im Dashboard-Header */
+.dash-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.scope-toggle {
+  display: inline-flex;
+  background: var(--widget-bg);
+  border: 1px solid var(--widget-border);
+  border-radius: 999px;
+  padding: 3px;
+  box-shadow: var(--widget-shadow);
+  gap: 2px;
+}
+.scope-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  letter-spacing: 0.05px;
+}
+.scope-toggle-btn:hover {
+  color: var(--text);
+}
+.scope-toggle-btn.active {
+  background: var(--tng-gradient);
+  color: white;
+  box-shadow: 0 1px 3px rgba(0, 102, 179, 0.25);
+}
+.scope-toggle-btn.active:hover {
+  color: white;
+}

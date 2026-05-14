@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   TrendingUp,
   FileSignature,
@@ -7,6 +8,8 @@ import {
   Boxes,
   ArrowUpRight,
   ArrowDownRight,
+  User,
+  Users,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -33,11 +36,26 @@ import { JiraLink } from '../components/JiraLink';
 import { FollowUpInbox } from '../components/FollowUpInbox';
 import { useRouter } from '../router';
 
+type Scope = 'mine' | 'all';
+
 export function Dashboard() {
-  const { contracts, tariffChanges, settings } = useStore();
+  const { contracts: allContracts, tariffChanges: allTariffChanges, settings } = useStore();
   const currentUser = useAuth((s) => s.getCurrentUser());
   const greetName = currentUser?.displayName ?? settings.agentName;
   const { navigate } = useRouter();
+
+  const [scope, setScope] = useState<Scope>('mine');
+  const userKey = currentUser?.key;
+
+  // Standardmäßig nur eigene Daten, bei 'all' alle anzeigen
+  const contracts =
+    scope === 'mine' && userKey
+      ? allContracts.filter((c) => c.createdBy === userKey)
+      : allContracts;
+  const tariffChanges =
+    scope === 'mine' && userKey
+      ? allTariffChanges.filter((t) => t.createdBy === userKey)
+      : allTariffChanges;
 
   const totalCommission =
     contracts.reduce((sum, c) => sum + calcContractCommission(c, settings), 0) +
@@ -187,13 +205,39 @@ export function Dashboard() {
             })}
           </div>
         </div>
-        <button
-          className="dash-report-pill"
-          onClick={() => navigate({ name: 'report' })}
-          title="Druckansicht des Monatsabschlusses öffnen"
-        >
-          <Printer size={13} /> Monatsbericht
-        </button>
+        <div className="dash-header-actions">
+          <div
+            className="scope-toggle"
+            role="tablist"
+            aria-label="Datenumfang"
+          >
+            <button
+              role="tab"
+              aria-selected={scope === 'mine'}
+              className={`scope-toggle-btn ${scope === 'mine' ? 'active' : ''}`}
+              onClick={() => setScope('mine')}
+              title="Nur deine Vorgänge"
+            >
+              <User size={12} /> Meine
+            </button>
+            <button
+              role="tab"
+              aria-selected={scope === 'all'}
+              className={`scope-toggle-btn ${scope === 'all' ? 'active' : ''}`}
+              onClick={() => setScope('all')}
+              title="Vorgänge aller Mitarbeitenden"
+            >
+              <Users size={12} /> Alle
+            </button>
+          </div>
+          <button
+            className="dash-report-pill"
+            onClick={() => navigate({ name: 'report' })}
+            title="Druckansicht des Monatsabschlusses öffnen"
+          >
+            <Printer size={13} /> Monatsbericht
+          </button>
+        </div>
       </div>
 
       <div className="widget-row hero-row">
