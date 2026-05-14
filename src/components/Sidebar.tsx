@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   FileSignature,
@@ -7,10 +8,16 @@ import {
   Users,
   Trophy,
   LogOut,
+  Download,
 } from 'lucide-react';
 import { useRouter, type Route, type RouteName } from '../router';
 import { useAuth } from '../store/useAuth';
 import { TngTile } from './TngLogo';
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
 
 interface NavItemDef {
   id: RouteName;
@@ -54,6 +61,40 @@ export function Sidebar() {
   const currentUser = getCurrentUser();
   const active: RouteName =
     route.name === 'customer' ? 'customers' : route.name;
+
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installed, setInstalled] = useState(
+    // bereits installiert? (standalone-Modus erkennen)
+    typeof window !== 'undefined' &&
+      (window.matchMedia('(display-mode: standalone)').matches ||
+        (window.navigator as { standalone?: boolean }).standalone === true),
+  );
+
+  useEffect(() => {
+    const onBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
+  };
 
   const initials = currentUser
     ? currentUser.displayName
@@ -107,6 +148,17 @@ export function Sidebar() {
             <LogOut size={14} />
           </button>
         </div>
+      )}
+
+      {installPrompt && !installed && (
+        <button
+          className="sidebar-install-btn"
+          onClick={handleInstall}
+          title="App auf diesem Gerät installieren"
+        >
+          <Download size={13} />
+          <span>App installieren</span>
+        </button>
       )}
 
       <div className="sidebar-footer">
