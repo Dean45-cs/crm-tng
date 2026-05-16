@@ -133,35 +133,77 @@ create policy "users insert own" on public.users
 create policy "users update own" on public.users
   for update using (auth.uid() = id);
 
--- CONTRACTS / TARIFF / NOTES: alle authentifizierten lesen alles,
--- jeder schreibt seine eigenen und kann Datensätze bearbeiten,
--- bei denen er Owner oder Co-Owner des Kunden ist.
+-- CONTRACTS / TARIFF / NOTES: alle authentifizierten lesen alles.
+-- Bearbeiten/Löschen nur, wenn der User den Datensatz selbst erfasst hat
+-- ODER Owner/Co-Owner des zugehörigen Kunden ist.
 create policy "contracts read all" on public.contracts
   for select using (auth.role() = 'authenticated');
 create policy "contracts insert own" on public.contracts
   for insert with check (auth.uid() = created_by);
 create policy "contracts update own" on public.contracts
-  for update using (auth.role() = 'authenticated');
+  for update using (
+    auth.uid() = created_by
+    or exists (
+      select 1 from public.customer_ownerships o
+      where o.customer_number = contracts.customer_number
+        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    )
+  );
 create policy "contracts delete own" on public.contracts
-  for delete using (auth.role() = 'authenticated');
+  for delete using (
+    auth.uid() = created_by
+    or exists (
+      select 1 from public.customer_ownerships o
+      where o.customer_number = contracts.customer_number
+        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    )
+  );
 
 create policy "tariff read all" on public.tariff_changes
   for select using (auth.role() = 'authenticated');
 create policy "tariff insert own" on public.tariff_changes
   for insert with check (auth.uid() = created_by);
-create policy "tariff update all" on public.tariff_changes
-  for update using (auth.role() = 'authenticated');
-create policy "tariff delete all" on public.tariff_changes
-  for delete using (auth.role() = 'authenticated');
+create policy "tariff update own" on public.tariff_changes
+  for update using (
+    auth.uid() = created_by
+    or exists (
+      select 1 from public.customer_ownerships o
+      where o.customer_number = tariff_changes.customer_number
+        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    )
+  );
+create policy "tariff delete own" on public.tariff_changes
+  for delete using (
+    auth.uid() = created_by
+    or exists (
+      select 1 from public.customer_ownerships o
+      where o.customer_number = tariff_changes.customer_number
+        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    )
+  );
 
 create policy "notes read all" on public.notes
   for select using (auth.role() = 'authenticated');
 create policy "notes insert own" on public.notes
   for insert with check (auth.uid() = created_by);
-create policy "notes update all" on public.notes
-  for update using (auth.role() = 'authenticated');
-create policy "notes delete all" on public.notes
-  for delete using (auth.role() = 'authenticated');
+create policy "notes update own" on public.notes
+  for update using (
+    auth.uid() = created_by
+    or exists (
+      select 1 from public.customer_ownerships o
+      where o.customer_number = notes.customer_number
+        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    )
+  );
+create policy "notes delete own" on public.notes
+  for delete using (
+    auth.uid() = created_by
+    or exists (
+      select 1 from public.customer_ownerships o
+      where o.customer_number = notes.customer_number
+        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    )
+  );
 
 -- OWNERSHIPS: alle lesen, alle anlegen, nur owner ändern/löschen
 create policy "ownership read all" on public.customer_ownerships

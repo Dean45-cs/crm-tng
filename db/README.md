@@ -19,6 +19,18 @@ Erzeugt:
 - Row-Level-Security: alle authentifizierten User lesen, jeder schreibt seine eigenen Daten
 - Realtime-Publikationen, damit Änderungen live an alle Clients gehen
 
+## 2a. Migrationen (für bereits laufende Projekte)
+
+Wurde das Schema schon vor einem Update eingespielt, müssen die Dateien im
+Ordner [`migrations/`](./migrations/) **in numerischer Reihenfolge** im SQL
+Editor nachgezogen werden. Frische Projekte aus `schema.sql` enthalten alles
+bereits — Migrationen sind dann nicht nötig.
+
+- `001_tighten_rls.sql` — verschärft die RLS: Bearbeiten/Löschen von Verträgen,
+  Tarifwechseln und Notizen nur noch für Ersteller oder Kunden-Owner.
+- `002_chef_modus.sql` — fügt Rollen (`agent`/`manager`) und den Sperr-Status
+  hinzu und gibt Chefs erweiterte Lese-/Schreibrechte.
+
 ## 3. Email-Bestätigung deaktivieren
 
 Wichtig — die App nutzt PIN-Login mit synthetischen Emails (`name@crm.tng.local`),
