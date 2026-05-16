@@ -12,10 +12,11 @@ import {
   getEffectiveOwnership,
   type OwnershipMode,
 } from '../lib/customerOwnership';
+import { SkeletonCardGrid } from '../components/Skeleton';
 import { useRouter } from '../router';
 
 export function Customers() {
-  const { contracts, tariffChanges, notes, settings, customerOwners } = useStore();
+  const { contracts, tariffChanges, notes, settings, customerOwners, loaded } = useStore();
   const { currentUserKey, users } = useAuth();
   const { navigate } = useRouter();
   const [search, setSearch] = useState('');
@@ -51,6 +52,20 @@ export function Customers() {
     const shared = filterCustomersByOwnership(allCustomers, currentUserKey, 'shared', customerOwners, contracts, tariffChanges, notes).length;
     return { mine, shared, all: allCustomers.length };
   }, [allCustomers, currentUserKey, customerOwners, contracts, tariffChanges, notes]);
+
+  if (!loaded) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h2>Kunden</h2>
+            <p>Deine Kunden und alle, mit denen Kolleg:innen dich verknüpft haben.</p>
+          </div>
+        </div>
+        <SkeletonCardGrid count={6} />
+      </div>
+    );
+  }
 
   return (
     <div>

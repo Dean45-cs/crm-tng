@@ -20,6 +20,7 @@ import {
 } from '../lib/utils';
 import { JiraLink } from '../components/JiraLink';
 import { StatusBadge } from '../components/StatusBadge';
+import { SkeletonTable } from '../components/Skeleton';
 import { useQuickAdd } from '../components/QuickAdd';
 
 type SortKey = 'date' | 'customer' | 'commission';
@@ -35,7 +36,7 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 }
 
 export function Contracts() {
-  const { contracts, settings, deleteContract } = useStore();
+  const { contracts, settings, deleteContract, loaded } = useStore();
   const { openNewContract, editContract } = useQuickAdd();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'alle' | ContractStatus>('alle');
@@ -107,6 +108,20 @@ export function Contracts() {
       })),
     );
   };
+
+  if (!loaded) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h2>Verträge</h2>
+            <p>Verkaufte Verträge und Neuabschlüsse – auch als Bundle.</p>
+          </div>
+        </div>
+        <SkeletonTable rows={7} cols={8} />
+      </div>
+    );
+  }
 
   return (
     <div>

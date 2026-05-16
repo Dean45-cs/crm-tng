@@ -34,18 +34,42 @@ import {
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
 import { FollowUpInbox } from '../components/FollowUpInbox';
+import { SkeletonDashboard } from '../components/Skeleton';
 import { useRouter } from '../router';
 
 type Scope = 'mine' | 'all';
 
 export function Dashboard() {
-  const { contracts: allContracts, tariffChanges: allTariffChanges, settings } = useStore();
+  const { contracts: allContracts, tariffChanges: allTariffChanges, settings, loaded } = useStore();
   const currentUser = useAuth((s) => s.getCurrentUser());
   const greetName = currentUser?.displayName ?? settings.agentName;
   const { navigate } = useRouter();
 
   const [scope, setScope] = useState<Scope>('mine');
   const userKey = currentUser?.key;
+
+  const todayLabel = new Date().toLocaleDateString('de-DE', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  if (!loaded) {
+    return (
+      <div>
+        <div className="dash-header">
+          <div>
+            <h1 className="dash-greeting">
+              {greeting()}, {greetName}
+            </h1>
+            <div className="dash-date">{todayLabel}</div>
+          </div>
+        </div>
+        <SkeletonDashboard />
+      </div>
+    );
+  }
 
   // Standardmäßig nur eigene Daten, bei 'all' alle anzeigen
   const contracts =
@@ -196,14 +220,7 @@ export function Dashboard() {
           <h1 className="dash-greeting">
             {greeting()}, {greetName}
           </h1>
-          <div className="dash-date">
-            {new Date().toLocaleDateString('de-DE', {
-              weekday: 'long',
-              day: '2-digit',
-              month: 'long',
-              year: 'numeric',
-            })}
-          </div>
+          <div className="dash-date">{todayLabel}</div>
         </div>
         <div className="dash-header-actions">
           <div

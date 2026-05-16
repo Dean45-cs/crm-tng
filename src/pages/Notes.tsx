@@ -3,10 +3,11 @@ import { Plus, Search, Pencil, Trash2, User, Calendar, StickyNote } from 'lucide
 import { useStore } from '../store/useStore';
 import { formatDate } from '../lib/utils';
 import { JiraLink } from '../components/JiraLink';
+import { SkeletonCardGrid } from '../components/Skeleton';
 import { useQuickAdd } from '../components/QuickAdd';
 
 export function Notes() {
-  const { notes, deleteNote } = useStore();
+  const { notes, deleteNote, loaded } = useStore();
   const { openNewNote, editNote } = useQuickAdd();
   const [search, setSearch] = useState('');
 
@@ -28,6 +29,20 @@ export function Notes() {
   const remove = (id: string) => {
     if (confirm('Notiz wirklich löschen?')) deleteNote(id);
   };
+
+  if (!loaded) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h2>Notizen</h2>
+            <p>Schnelle Notizen zu Kunden, Vorgängen und Verkäufen.</p>
+          </div>
+        </div>
+        <SkeletonCardGrid count={6} />
+      </div>
+    );
+  }
 
   return (
     <div>

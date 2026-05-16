@@ -26,6 +26,7 @@ import {
   TARIFF_TYPE_LABEL,
 } from '../lib/utils';
 import { JiraLink } from '../components/JiraLink';
+import { SkeletonTable } from '../components/Skeleton';
 import { useQuickAdd } from '../components/QuickAdd';
 import { exportTariffChange } from '../lib/sharepointGraph';
 import type { TariffChange } from '../types';
@@ -43,7 +44,7 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 }
 
 export function TariffChanges() {
-  const { tariffChanges, settings, deleteTariffChange, markTariffChangeExported } = useStore();
+  const { tariffChanges, settings, deleteTariffChange, markTariffChangeExported, loaded } = useStore();
   const { getCurrentUser } = useAuth();
   const { openNewTariff, editTariff } = useQuickAdd();
   const [search, setSearch] = useState('');
@@ -159,6 +160,20 @@ export function TariffChanges() {
       toast.success(`${successCount} Einträge erfolgreich in SharePoint-Excel eingetragen.`);
     }
   };
+
+  if (!loaded) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h2>Tarifwechsel</h2>
+            <p>Sidegrade/VVL oder Upgrade – Provision wird automatisch berechnet.</p>
+          </div>
+        </div>
+        <SkeletonTable rows={7} cols={9} />
+      </div>
+    );
+  }
 
   return (
     <div>

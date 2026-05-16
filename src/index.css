@@ -2376,6 +2376,76 @@ table.crm-table td[style*="text-align: right"] {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ---------- Lade-Skelette ---------- */
+.skeleton,
+.skeleton-block {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.skeleton { display: block; }
+.skeleton::after,
+.skeleton-block::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--bg-card) 78%, transparent),
+    transparent
+  );
+  animation: skeleton-shimmer 1.5s infinite;
+}
+@keyframes skeleton-shimmer {
+  to { transform: translateX(100%); }
+}
+
+.skeleton-table {
+  background: var(--widget-bg);
+  border-radius: 18px;
+  border: 1px solid var(--widget-border);
+  box-shadow: var(--widget-shadow);
+  overflow: hidden;
+}
+.skeleton-table-head,
+.skeleton-table-row {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  padding: 14px 16px;
+}
+.skeleton-table-head {
+  background: var(--surface-2);
+  padding: 12px 16px;
+}
+.skeleton-table-row { border-top: 1px solid var(--separator); }
+.skeleton-table-head > .skeleton,
+.skeleton-table-row > .skeleton { flex: 1; }
+
+.skeleton-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+.skeleton-card {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: var(--widget-bg);
+  border: 1px solid var(--widget-border);
+  border-radius: 16px;
+  box-shadow: var(--widget-shadow);
+}
+.skeleton-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
 .sp-status {
   display: inline-flex;
   align-items: center;

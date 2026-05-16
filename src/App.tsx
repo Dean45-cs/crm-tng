@@ -135,7 +135,6 @@ export default function App() {
   const users = useAuth((s) => s.users);
   const init = useAuth((s) => s.init);
 
-  const loaded = useStore((s) => s.loaded);
   const loadAll = useStore((s) => s.loadAll);
   const subscribeRealtime = useStore((s) => s.subscribeRealtime);
   const resetStore = useStore((s) => s.reset);
@@ -176,10 +175,6 @@ export default function App() {
 
   if (!currentUserKey) {
     return <LoginScreen />;
-  }
-
-  if (!loaded) {
-    return <LoadingScreen label="Lade deine Daten …" />;
   }
 
   const user = users[currentUserKey];
