@@ -119,7 +119,6 @@ interface StoreState {
 /** Loggt den technischen Fehler und zeigt dem Nutzer einen Toast. */
 const fail = (userMsg: string, e: unknown) => {
   const detail = e instanceof Error ? e.message : String(e);
-  // eslint-disable-next-line no-console
   console.error('[useStore]', detail);
   toast.error(userMsg);
 };

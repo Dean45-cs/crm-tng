@@ -64,6 +64,9 @@ export function TariffChanges() {
     }
   };
 
+  const ariaSort = (key: SortKey): 'ascending' | 'descending' | 'none' =>
+    sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     const list = tariffChanges.filter((t) =>
@@ -239,13 +242,13 @@ export function TariffChanges() {
           <table className="crm-table">
             <thead>
               <tr>
-                <th>
+                <th aria-sort={ariaSort('date')}>
                   <button className="sort-th" onClick={() => toggleSort('date')}>
                     Datum <SortIcon active={sortKey === 'date'} dir={sortDir} />
                   </button>
                 </th>
                 <th>KdNr.</th>
-                <th>
+                <th aria-sort={ariaSort('customer')}>
                   <button className="sort-th" onClick={() => toggleSort('customer')}>
                     Kunde <SortIcon active={sortKey === 'customer'} dir={sortDir} />
                   </button>
@@ -254,7 +257,7 @@ export function TariffChanges() {
                 <th>MVLZ</th>
                 <th>Tarife</th>
                 <th>Jira</th>
-                <th style={{ textAlign: 'right' }}>
+                <th style={{ textAlign: 'right' }} aria-sort={ariaSort('commission')}>
                   <button
                     className="sort-th"
                     onClick={() => toggleSort('commission')}

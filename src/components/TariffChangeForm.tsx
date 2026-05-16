@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Modal } from './Modal';
 import { ProductPicker } from './ProductPicker';
@@ -8,6 +9,7 @@ import {
   TARIFF_TYPE_LABEL,
   today,
 } from '../lib/utils';
+import { isJiraTicket, normalizeJiraTicket, findDuplicateCustomer } from '../lib/validation';
 import type {
   TariffChange,
   TariffChangeType,
@@ -40,8 +42,10 @@ interface Props {
 export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
   const { addTariffChange, updateTariffChange, settings, contracts, tariffChanges } = useStore();
   const [draft, setDraft] = useState<Draft>(emptyDraft());
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [showProducts, setShowProducts] = useState(false);
   const [kdnrFocused, setKdnrFocused] = useState(false);
+  const fid = useId();
 
   const knownCustomers = useMemo(() => {
     const map = new Map<string, string>();
@@ -65,6 +69,11 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
       .slice(0, 6);
   }, [knownCustomers, draft.customerNumber, draft.customerName]);
 
+  const duplicateName = useMemo(
+    () => findDuplicateCustomer(draft.customerNumber, draft.customerName, contracts, tariffChanges),
+    [draft.customerNumber, draft.customerName, contracts, tariffChanges],
+  );
+
   useEffect(() => {
     if (!open) return;
     if (editing) {
@@ -80,31 +89,50 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
         notes: editing.notes ?? '',
       });
       setShowProducts(!!editing.oldProduct || !!editing.newProduct);
+      setErrors({});
     } else {
       const base = emptyDraft();
       if (prefill?.customerNumber) base.customerNumber = prefill.customerNumber;
       if (prefill?.customerName) base.customerName = prefill.customerName;
       setDraft(base);
       setShowProducts(false);
+      setErrors({});
     }
   }, [open, editing, prefill]);
+
+  const update = (patch: Partial<Draft>) => {
+    setDraft((d) => ({ ...d, ...patch }));
+    setErrors((e) => {
+      if (Object.keys(e).length === 0) return e;
+      const next = { ...e };
+      Object.keys(patch).forEach((k) => delete next[k]);
+      return next;
+    });
+  };
 
   const commission = useMemo(
     () => settings.tariffCommission[draft.changeType][draft.context],
     [settings, draft.changeType, draft.context],
   );
 
-  const valid =
-    draft.customerNumber.trim().length > 0 &&
-    draft.customerName.trim().length > 0;
-
   const save = () => {
-    if (!valid) return;
-    if (editing) {
-      updateTariffChange(editing.id, draft);
-    } else {
-      addTariffChange(draft);
+    const trimmed: Draft = {
+      ...draft,
+      customerNumber: draft.customerNumber.trim(),
+      customerName: draft.customerName.trim(),
+      jiraTicket: normalizeJiraTicket(draft.jiraTicket),
+      notes: draft.notes?.trim() || '',
+    };
+    const errs: Record<string, string> = {};
+    if (!trimmed.customerNumber) errs.customerNumber = 'Bitte Kundennummer eingeben.';
+    if (!trimmed.customerName) errs.customerName = 'Bitte Kundenname eingeben.';
+    if (!isJiraTicket(trimmed.jiraTicket)) errs.jiraTicket = 'Ungültiges Format – z.B. TNG-1234.';
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
     }
+    if (editing) updateTariffChange(editing.id, trimmed);
+    else addTariffChange(trimmed);
     onClose();
   };
 
@@ -120,11 +148,7 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
       footer={
         <>
           <button className="btn" onClick={onClose}>Abbrechen</button>
-          <button
-            className="btn btn-primary"
-            onClick={save}
-            disabled={!valid}
-          >
+          <button className="btn btn-primary" onClick={save}>
             Speichern
           </button>
         </>
@@ -132,33 +156,36 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
     >
       <div className="form-grid">
         <div className="field">
-          <label>Kundennummer *</label>
+          <label htmlFor={`${fid}-kdnr`}>Kundennummer *</label>
           <div className="typeahead-wrap">
             <input
+              id={`${fid}-kdnr`}
               autoFocus
+              role="combobox"
+              aria-expanded={kdnrFocused && suggestions.length > 0}
+              aria-controls={`${fid}-kdnr-list`}
+              aria-autocomplete="list"
+              aria-invalid={!!errors.customerNumber}
+              aria-describedby={errors.customerNumber ? `${fid}-kdnr-err` : undefined}
               value={draft.customerNumber}
-              onChange={(e) =>
-                setDraft({ ...draft, customerNumber: e.target.value })
-              }
+              onChange={(e) => update({ customerNumber: e.target.value })}
               onFocus={() => setKdnrFocused(true)}
               onBlur={() => setTimeout(() => setKdnrFocused(false), 150)}
               placeholder="z.B. 1234567"
               autoComplete="off"
             />
             {kdnrFocused && suggestions.length > 0 && (
-              <div className="typeahead-dropdown">
+              <div className="typeahead-dropdown" role="listbox" id={`${fid}-kdnr-list`}>
                 {suggestions.map((s) => (
                   <button
                     key={s.kdnr}
                     type="button"
+                    role="option"
+                    aria-selected={false}
                     className="typeahead-item"
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      setDraft({
-                        ...draft,
-                        customerNumber: s.kdnr,
-                        customerName: s.name,
-                      });
+                      update({ customerNumber: s.kdnr, customerName: s.name });
                       setKdnrFocused(false);
                     }}
                   >
@@ -169,16 +196,29 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
               </div>
             )}
           </div>
+          {errors.customerNumber && (
+            <div className="field-error" id={`${fid}-kdnr-err`}>{errors.customerNumber}</div>
+          )}
         </div>
         <div className="field">
-          <label>Kunde *</label>
+          <label htmlFor={`${fid}-name`}>Kunde *</label>
           <input
+            id={`${fid}-name`}
+            aria-invalid={!!errors.customerName}
+            aria-describedby={errors.customerName ? `${fid}-name-err` : undefined}
             value={draft.customerName}
-            onChange={(e) =>
-              setDraft({ ...draft, customerName: e.target.value })
-            }
+            onChange={(e) => update({ customerName: e.target.value })}
             placeholder="Max Mustermann"
           />
+          {errors.customerName && (
+            <div className="field-error" id={`${fid}-name-err`}>{errors.customerName}</div>
+          )}
+          {!errors.customerName && duplicateName && (
+            <div className="field-warning">
+              <AlertTriangle size={12} />
+              KdNr. bereits bekannt als „{duplicateName}".
+            </div>
+          )}
         </div>
 
         <div className="field full">
@@ -189,7 +229,7 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
                 key={t}
                 type="button"
                 className={`seg ${draft.changeType === t ? 'active' : ''}`}
-                onClick={() => setDraft({ ...draft, changeType: t })}
+                onClick={() => update({ changeType: t })}
               >
                 {TARIFF_TYPE_LABEL[t]}
               </button>
@@ -205,7 +245,7 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
                 key={c}
                 type="button"
                 className={`seg ${draft.context === c ? 'active' : ''}`}
-                onClick={() => setDraft({ ...draft, context: c })}
+                onClick={() => update({ context: c })}
               >
                 {TARIFF_CONTEXT_LABEL[c]}
               </button>
@@ -236,23 +276,27 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
         </div>
 
         <div className="field">
-          <label>Jira-Vorgang</label>
+          <label htmlFor={`${fid}-jira`}>Jira-Vorgang</label>
           <input
+            id={`${fid}-jira`}
+            aria-invalid={!!errors.jiraTicket}
+            aria-describedby={errors.jiraTicket ? `${fid}-jira-err` : undefined}
             value={draft.jiraTicket}
-            onChange={(e) =>
-              setDraft({ ...draft, jiraTicket: e.target.value })
-            }
+            onChange={(e) => update({ jiraTicket: e.target.value })}
+            onBlur={() => update({ jiraTicket: normalizeJiraTicket(draft.jiraTicket) })}
             placeholder="z.B. TNG-1234"
           />
+          {errors.jiraTicket && (
+            <div className="field-error" id={`${fid}-jira-err`}>{errors.jiraTicket}</div>
+          )}
         </div>
         <div className="field">
-          <label>Datum</label>
+          <label htmlFor={`${fid}-date`}>Datum</label>
           <input
+            id={`${fid}-date`}
             type="date"
             value={draft.changeDate}
-            onChange={(e) =>
-              setDraft({ ...draft, changeDate: e.target.value })
-            }
+            onChange={(e) => update({ changeDate: e.target.value })}
           />
         </div>
 
@@ -275,28 +319,25 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
               <label>Alter Tarif</label>
               <ProductPicker
                 value={draft.oldProduct ?? 'Fibrelight'}
-                onChange={(p: ProductType) =>
-                  setDraft({ ...draft, oldProduct: p })
-                }
+                onChange={(p: ProductType) => update({ oldProduct: p })}
               />
             </div>
             <div className="field">
               <label>Neuer Tarif</label>
               <ProductPicker
                 value={draft.newProduct ?? 'Fibrepro'}
-                onChange={(p: ProductType) =>
-                  setDraft({ ...draft, newProduct: p })
-                }
+                onChange={(p: ProductType) => update({ newProduct: p })}
               />
             </div>
           </>
         )}
 
         <div className="field full">
-          <label>Notiz</label>
+          <label htmlFor={`${fid}-notes`}>Notiz</label>
           <textarea
+            id={`${fid}-notes`}
             value={draft.notes}
-            onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
+            onChange={(e) => update({ notes: e.target.value })}
             placeholder="Optional"
           />
         </div>
