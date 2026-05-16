@@ -10,6 +10,7 @@ import type {
   CustomerOwnership,
 } from '../types';
 import { useAuth } from './useAuth';
+import { toast } from './useToast';
 import { getSupabase } from '../lib/supabase';
 import {
   fetchContracts,
@@ -85,8 +86,6 @@ interface StoreState {
 
   /** Wird gesetzt, sobald wir initial alle Daten geladen haben. */
   loaded: boolean;
-  /** Letzter Fehler aus einer DB-Operation (für Toast / Banner). */
-  lastError: string | null;
 
   /** Lädt alle CRM-Daten für den aktuellen User. */
   loadAll: () => Promise<void>;
@@ -117,11 +116,12 @@ interface StoreState {
   unshareCustomer: (customerNumber: string, withUserKey: string) => Promise<void>;
 }
 
-const reportError = (set: (s: Partial<StoreState>) => void, e: unknown) => {
-  const msg = e instanceof Error ? e.message : String(e);
+/** Loggt den technischen Fehler und zeigt dem Nutzer einen Toast. */
+const fail = (userMsg: string, e: unknown) => {
+  const detail = e instanceof Error ? e.message : String(e);
   // eslint-disable-next-line no-console
-  console.error('[useStore]', msg);
-  set({ lastError: msg });
+  console.error('[useStore]', detail);
+  toast.error(userMsg);
 };
 
 export const useStore = create<StoreState>()((set, get) => ({
@@ -131,7 +131,6 @@ export const useStore = create<StoreState>()((set, get) => ({
   customerOwners: {},
   settings: DEFAULT_SETTINGS,
   loaded: false,
-  lastError: null,
 
   loadAll: async () => {
     const uid = useAuth.getState().currentUserKey;
@@ -182,10 +181,9 @@ export const useStore = create<StoreState>()((set, get) => ({
         customerOwners: owners,
         settings: mergedSettings,
         loaded: true,
-        lastError: null,
       });
     } catch (e) {
-      reportError(set, e);
+      fail('Daten konnten nicht geladen werden. Bitte Seite neu laden.', e);
       set({ loaded: true });
     }
   },
@@ -198,7 +196,6 @@ export const useStore = create<StoreState>()((set, get) => ({
       customerOwners: {},
       settings: DEFAULT_SETTINGS,
       loaded: false,
-      lastError: null,
     }),
 
   subscribeRealtime: () => {
@@ -227,8 +224,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     try {
       const created = await insertContract({ ...c, createdBy: c.createdBy ?? currentUserKey() });
       set((s) => ({ contracts: [created, ...s.contracts] }));
+      toast.success('Vertrag gespeichert.');
     } catch (e) {
-      reportError(set, e);
+      fail('Vertrag konnte nicht gespeichert werden.', e);
     }
   },
   updateContract: async (id, c) => {
@@ -236,8 +234,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     set({ contracts: prev.map((x) => (x.id === id ? { ...x, ...c } : x)) });
     try {
       await updateContractRow(id, c);
+      toast.success('Vertrag aktualisiert.');
     } catch (e) {
-      reportError(set, e);
+      fail('Änderung fehlgeschlagen – Vertrag wurde zurückgesetzt.', e);
       set({ contracts: prev });
     }
   },
@@ -246,8 +245,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     set({ contracts: prev.filter((x) => x.id !== id) });
     try {
       await deleteContractRow(id);
+      toast.success('Vertrag gelöscht.');
     } catch (e) {
-      reportError(set, e);
+      fail('Löschen fehlgeschlagen – Vertrag wiederhergestellt.', e);
       set({ contracts: prev });
     }
   },
@@ -256,8 +256,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     try {
       const created = await insertTariffChange({ ...t, createdBy: t.createdBy ?? currentUserKey() });
       set((s) => ({ tariffChanges: [created, ...s.tariffChanges] }));
+      toast.success('Tarifwechsel gespeichert.');
     } catch (e) {
-      reportError(set, e);
+      fail('Tarifwechsel konnte nicht gespeichert werden.', e);
     }
   },
   updateTariffChange: async (id, t) => {
@@ -265,8 +266,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     set({ tariffChanges: prev.map((x) => (x.id === id ? { ...x, ...t } : x)) });
     try {
       await updateTariffChangeRow(id, t);
+      toast.success('Tarifwechsel aktualisiert.');
     } catch (e) {
-      reportError(set, e);
+      fail('Änderung fehlgeschlagen – Tarifwechsel wurde zurückgesetzt.', e);
       set({ tariffChanges: prev });
     }
   },
@@ -275,8 +277,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     set({ tariffChanges: prev.filter((x) => x.id !== id) });
     try {
       await deleteTariffChangeRow(id);
+      toast.success('Tarifwechsel gelöscht.');
     } catch (e) {
-      reportError(set, e);
+      fail('Löschen fehlgeschlagen – Tarifwechsel wiederhergestellt.', e);
       set({ tariffChanges: prev });
     }
   },
@@ -289,7 +292,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     try {
       await updateTariffChangeRow(id, { exportedAt: now });
     } catch (e) {
-      reportError(set, e);
+      fail('Export-Status konnte nicht gespeichert werden.', e);
       set({ tariffChanges: prev });
     }
   },
@@ -298,8 +301,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     try {
       const created = await insertNote(n, currentUserKey());
       set((s) => ({ notes: [created, ...s.notes] }));
+      toast.success('Notiz gespeichert.');
     } catch (e) {
-      reportError(set, e);
+      fail('Notiz konnte nicht gespeichert werden.', e);
     }
   },
   updateNote: async (id, n) => {
@@ -308,8 +312,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     set({ notes: prev.map((x) => (x.id === id ? { ...x, ...n, updatedAt: now } : x)) });
     try {
       await updateNoteRow(id, n);
+      toast.success('Notiz aktualisiert.');
     } catch (e) {
-      reportError(set, e);
+      fail('Änderung fehlgeschlagen – Notiz wurde zurückgesetzt.', e);
       set({ notes: prev });
     }
   },
@@ -318,8 +323,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     set({ notes: prev.filter((x) => x.id !== id) });
     try {
       await deleteNoteRow(id);
+      toast.success('Notiz gelöscht.');
     } catch (e) {
-      reportError(set, e);
+      fail('Löschen fehlgeschlagen – Notiz wiederhergestellt.', e);
       set({ notes: prev });
     }
   },
@@ -331,8 +337,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     if (!uid) return;
     try {
       await upsertUserSettings(uid, patch);
+      toast.success('Einstellungen gespeichert.');
     } catch (e) {
-      reportError(set, e);
+      fail('Einstellungen konnten nicht gespeichert werden.', e);
       set({ settings: prev });
     }
   },
@@ -345,7 +352,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     try {
       await upsertSharedSettings({ products: newProducts });
     } catch (e) {
-      reportError(set, e);
+      fail('Provision konnte nicht gespeichert werden.', e);
       set({ settings: prev });
     }
   },
@@ -355,7 +362,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     try {
       await upsertSharedSettings({ tariffCommission: matrix });
     } catch (e) {
-      reportError(set, e);
+      fail('Provision konnte nicht gespeichert werden.', e);
       set({ settings: prev });
     }
   },
@@ -370,8 +377,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     set({ customerOwners: { ...prev, [kdnr]: next } });
     try {
       await upsertOwnership(kdnr, next.owner, next.sharedWith);
+      toast.success('Besitzer:in aktualisiert.');
     } catch (e) {
-      reportError(set, e);
+      fail('Besitzer:in konnte nicht geändert werden.', e);
       set({ customerOwners: prev });
     }
   },
@@ -389,8 +397,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     set({ customerOwners: { ...prev, [kdnr]: next } });
     try {
       await upsertOwnership(kdnr, next.owner, next.sharedWith);
+      toast.success('Kunde geteilt.');
     } catch (e) {
-      reportError(set, e);
+      fail('Teilen fehlgeschlagen.', e);
       set({ customerOwners: prev });
     }
   },
@@ -406,8 +415,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     set({ customerOwners: { ...prev, [kdnr]: next } });
     try {
       await upsertOwnership(kdnr, next.owner, next.sharedWith);
+      toast.success('Freigabe entfernt.');
     } catch (e) {
-      reportError(set, e);
+      fail('Freigabe konnte nicht entfernt werden.', e);
       set({ customerOwners: prev });
     }
   },

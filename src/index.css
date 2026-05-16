@@ -2290,21 +2290,61 @@ table.crm-table td[style*="text-align: right"] {
   to { transform: rotate(360deg); }
 }
 
-.sp-toast {
+/* ---------- Toasts (global) ---------- */
+.toast-stack {
   position: fixed;
   bottom: 28px;
   right: 28px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 380px;
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   background: var(--bg-card);
   border: 1px solid var(--border-strong);
+  border-left-width: 3px;
   border-radius: 12px;
-  padding: 13px 20px;
+  padding: 12px 14px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.14);
-  z-index: 2000;
   font-size: 13.5px;
-  max-width: 380px;
   line-height: 1.45;
   animation: sp-fadein 0.2s ease;
 }
+.toast-icon {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 0.5px;
+}
+.toast-msg { flex: 1; min-width: 0; }
+.toast-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 1px;
+  border-radius: 5px;
+  transition: color 0.12s, background 0.12s;
+}
+.toast-close:hover {
+  color: var(--text);
+  background: var(--bg-card-hover);
+}
+.toast-success { border-left-color: var(--green); }
+.toast-success .toast-icon { color: var(--green); }
+.toast-error { border-left-color: var(--red); }
+.toast-error .toast-icon { color: var(--red); }
+.toast-info { border-left-color: var(--tng-blue); }
+.toast-info .toast-icon { color: var(--tng-blue); }
+
 @keyframes sp-fadein {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }

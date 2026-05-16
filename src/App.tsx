@@ -11,6 +11,7 @@ import { CustomerDetail } from './pages/CustomerDetail';
 import { Leaderboard } from './pages/Leaderboard';
 import { MonthlyReport } from './pages/MonthlyReport';
 import { QuickAddProvider } from './components/QuickAdd';
+import { ToastHost } from './components/ToastHost';
 import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
 import { SupabaseSetup } from './components/SupabaseSetup';
@@ -190,6 +191,7 @@ export default function App() {
         <OfflineBanner />
         <Shell />
         {needsOnboarding && <OnboardingTour />}
+        <ToastHost />
       </QuickAddProvider>
     </Router>
   );

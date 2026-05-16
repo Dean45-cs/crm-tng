@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Plus,
   Search,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
+import { toast } from '../store/useToast';
 import {
   calcTariffCommission,
   exportCsv,
@@ -48,18 +49,11 @@ export function TariffChanges() {
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState<string | null>(null);
   const [bulkExporting, setBulkExporting] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   const agentName = getCurrentUser()?.displayName ?? settings.agentName;
   const spConfigured = !!(settings.spClientId && settings.spTenantId && settings.spFilePath);
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -129,9 +123,9 @@ export function TariffChanges() {
         settings.spFilePath, settings.spSheetName,
       );
       markTariffChangeExported(t.id);
-      setToast('Eintrag erfolgreich in SharePoint-Excel eingetragen.');
+      toast.success('Eintrag erfolgreich in SharePoint-Excel eingetragen.');
     } catch (e) {
-      setToast(`Fehler: ${(e as Error).message}`);
+      toast.error(`Export fehlgeschlagen: ${(e as Error).message}`);
     } finally {
       setExporting(null);
     }
@@ -157,9 +151,9 @@ export function TariffChanges() {
     }
     setBulkExporting(false);
     if (lastError) {
-      setToast(`${successCount} eingetragen, Fehler: ${lastError}`);
+      toast.error(`${successCount} eingetragen, Fehler: ${lastError}`);
     } else {
-      setToast(`${successCount} Einträge erfolgreich in SharePoint-Excel eingetragen.`);
+      toast.success(`${successCount} Einträge erfolgreich in SharePoint-Excel eingetragen.`);
     }
   };
 
@@ -338,12 +332,6 @@ export function TariffChanges() {
               </tr>
             </tfoot>
           </table>
-        </div>
-      )}
-
-      {toast && (
-        <div className="sp-toast">
-          {toast}
         </div>
       )}
     </div>
