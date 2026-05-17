@@ -114,6 +114,27 @@ create table if not exists public.shared_settings (
   constraint single_row check (id = 1)
 );
 
+-- ------------------------------------------------------------
+-- INCENTIVES
+-- ------------------------------------------------------------
+-- Zeitlich begrenzte Team-Ziele mit Belohnung, vom Chef konfiguriert.
+-- mechanic: 'goal' (Zielprämie) | 'competition' (nur Platz 1 gewinnt).
+-- Fortschritt wird live aus contracts/tariff_changes berechnet.
+-- ------------------------------------------------------------
+create table if not exists public.incentives (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  mechanic text not null check (mechanic in ('goal', 'competition')),
+  metric text not null check (metric in ('commission', 'contracts', 'deals')),
+  period text not null check (period in ('weekly', 'monthly')),
+  target numeric not null default 0,
+  reward text not null default '',
+  active boolean not null default true,
+  created_by uuid references public.users(id) on delete set null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 -- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
@@ -125,6 +146,7 @@ alter table public.notes enable row level security;
 alter table public.customer_ownerships enable row level security;
 alter table public.user_settings enable row level security;
 alter table public.shared_settings enable row level security;
+alter table public.incentives enable row level security;
 
 -- USERS: alle authentifizierten User dürfen alle Profile lesen
 -- (fürs Leaderboard und Sharing). Schreiben nur das eigene Profil –
@@ -252,6 +274,19 @@ create policy "shared_settings upsert all" on public.shared_settings
 create policy "shared_settings update all" on public.shared_settings
   for update using (auth.role() = 'authenticated');
 
+-- INCENTIVES: alle lesen laufende Incentives; anlegen/ändern/löschen nur Chefs.
+create policy "incentives read all" on public.incentives
+  for select using (auth.role() = 'authenticated');
+create policy "incentives insert manager" on public.incentives
+  for insert with check (
+    exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager'));
+create policy "incentives update manager" on public.incentives
+  for update using (
+    exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager'));
+create policy "incentives delete manager" on public.incentives
+  for delete using (
+    exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager'));
+
 -- ============================================================================
 -- REALTIME
 -- ============================================================================
@@ -261,3 +296,4 @@ alter publication supabase_realtime add table public.tariff_changes;
 alter publication supabase_realtime add table public.notes;
 alter publication supabase_realtime add table public.customer_ownerships;
 alter publication supabase_realtime add table public.users;
+alter publication supabase_realtime add table public.incentives;

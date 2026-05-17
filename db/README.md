@@ -15,7 +15,7 @@ Die App läuft online über Supabase als Backend. Einmalige Einrichtung:
 3. **Run** klicken — sollte ohne Fehler durchlaufen
 
 Erzeugt:
-- Tabellen: `users`, `contracts`, `tariff_changes`, `notes`, `customer_ownerships`, `user_settings`, `shared_settings`
+- Tabellen: `users`, `contracts`, `tariff_changes`, `notes`, `customer_ownerships`, `user_settings`, `shared_settings`, `incentives`
 - Row-Level-Security: alle authentifizierten User lesen, jeder schreibt seine eigenen Daten
 - Realtime-Publikationen, damit Änderungen live an alle Clients gehen
 
@@ -30,6 +30,8 @@ bereits — Migrationen sind dann nicht nötig.
   Tarifwechseln und Notizen nur noch für Ersteller oder Kunden-Owner.
 - `002_chef_modus.sql` — fügt Rollen (`agent`/`manager`) und den Sperr-Status
   hinzu und gibt Chefs erweiterte Lese-/Schreibrechte.
+- `003_incentives.sql` — legt die Tabelle `incentives` an (Team-Ziele mit
+  Belohnung); anlegen/ändern nur für Chefs, lesen für alle.
 
 ## 3. Email-Bestätigung deaktivieren
 
@@ -56,6 +58,6 @@ Im SQL Editor:
 ```sql
 truncate public.contracts, public.tariff_changes, public.notes,
          public.customer_ownerships, public.user_settings,
-         public.shared_settings restart identity;
+         public.shared_settings, public.incentives restart identity;
 delete from auth.users;  -- löscht auch public.users via cascade
 ```
