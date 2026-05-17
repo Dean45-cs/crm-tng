@@ -1,5 +1,15 @@
 import { useMemo } from 'react';
-import { Gift, Target, Trophy, Check, Crown, Settings2 } from 'lucide-react';
+import {
+  Gift,
+  Target,
+  Trophy,
+  Crown,
+  Zap,
+  CalendarDays,
+  Sparkles,
+  Flame,
+  Settings2,
+} from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { useRouter } from '../router';
@@ -9,6 +19,7 @@ import {
   incentiveStandings,
   incentiveReached,
   isLeader,
+  type Standing,
 } from '../lib/incentives';
 import type { Incentive, IncentiveMetric } from '../types';
 
@@ -16,6 +27,16 @@ function formatMetric(metric: IncentiveMetric, value: number): string {
   if (metric === 'commission') return formatCurrency(value);
   const unit = metric === 'contracts' ? 'Verträge' : 'Abschlüsse';
   return `${value} ${unit}`;
+}
+
+function initialsOf(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
 }
 
 export function Incentives() {
@@ -35,15 +56,35 @@ export function Incentives() {
 
   const hasAny = weekly.length > 0 || monthly.length > 0;
 
+  const renderCards = (list: Incentive[]) => (
+    <div className="incentive-grid">
+      {list.map((inc) => (
+        <IncentiveCard
+          key={inc.id}
+          incentive={inc}
+          myKey={myKey}
+          users={users}
+          contracts={contracts}
+          tariffChanges={tariffChanges}
+          settings={settings}
+        />
+      ))}
+    </div>
+  );
+
   return (
     <div>
       <div className="page-header">
-        <div>
-          <h2>
-            <Gift size={26} style={{ verticalAlign: '-4px', marginRight: 8 }} />
-            Incentives
-          </h2>
-          <p>Laufende Team-Ziele mit Belohnung — und dein aktueller Fortschritt.</p>
+        <div className="incentive-page-title">
+          <span className="incentive-page-icon">
+            <Trophy size={22} />
+          </span>
+          <div>
+            <h2 style={{ margin: 0 }}>Incentives</h2>
+            <p style={{ margin: '4px 0 0' }}>
+              Schnapp dir die Belohnungen — los geht's!
+            </p>
+          </div>
         </div>
         {isManager() && (
           <button
@@ -71,41 +112,23 @@ export function Incentives() {
           {weekly.length > 0 && (
             <section className="incentive-section">
               <h3 className="incentive-section-title">
+                <span className="incentive-section-icon week">
+                  <Zap size={14} />
+                </span>
                 Diese Woche · {weekLabel()}
               </h3>
-              <div className="incentive-grid">
-                {weekly.map((inc) => (
-                  <IncentiveCard
-                    key={inc.id}
-                    incentive={inc}
-                    myKey={myKey}
-                    users={users}
-                    contracts={contracts}
-                    tariffChanges={tariffChanges}
-                    settings={settings}
-                  />
-                ))}
-              </div>
+              {renderCards(weekly)}
             </section>
           )}
           {monthly.length > 0 && (
             <section className="incentive-section">
               <h3 className="incentive-section-title">
+                <span className="incentive-section-icon month">
+                  <CalendarDays size={14} />
+                </span>
                 Dieser Monat · {monthLabel(0)}
               </h3>
-              <div className="incentive-grid">
-                {monthly.map((inc) => (
-                  <IncentiveCard
-                    key={inc.id}
-                    incentive={inc}
-                    myKey={myKey}
-                    users={users}
-                    contracts={contracts}
-                    tariffChanges={tariffChanges}
-                    settings={settings}
-                  />
-                ))}
-              </div>
+              {renderCards(monthly)}
             </section>
           )}
         </>
@@ -138,32 +161,49 @@ function IncentiveCard({
       incentive.target > 0
         ? Math.min(100, Math.round((value / incentive.target) * 100))
         : 0;
+    const remaining = Math.max(0, incentive.target - value);
+
     return (
-      <div className="widget incentive-card">
+      <div className={`widget incentive-card incentive-card-goal ${reached ? 'is-reached' : ''}`}>
         <div className="incentive-card-head">
           <span className="incentive-card-title">
             <Target size={15} /> {incentive.title}
           </span>
-          {reached && (
-            <span className="incentive-reached">
-              <Check size={12} /> Ziel erreicht
+          {reached ? (
+            <span className="incentive-badge-win">
+              <Sparkles size={12} /> GESCHAFFT!
+            </span>
+          ) : (
+            <span className="incentive-badge-pct">{pct}%</span>
+          )}
+        </div>
+
+        <div className="arcade-bar">
+          <div
+            className="arcade-bar-fill"
+            style={{ width: `${Math.max(pct, 3)}%` }}
+          />
+        </div>
+
+        <div className="incentive-progress-label">
+          <strong>{formatMetric(incentive.metric, value)}</strong>
+          {reached ? (
+            <span className="incentive-go">
+              <Flame size={12} /> Ziel geknackt!
+            </span>
+          ) : (
+            <span className="muted">
+              Noch {formatMetric(incentive.metric, remaining)} bis zum Ziel
             </span>
           )}
         </div>
-        <div className="incentive-progress">
-          <div
-            className="incentive-progress-fill"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <div className="incentive-progress-label">
-          <strong>{formatMetric(incentive.metric, value)}</strong>
-          <span className="muted">
-            Ziel: {formatMetric(incentive.metric, incentive.target)}
+
+        <div className="incentive-prize">
+          <Gift size={14} />
+          <span>
+            {reached ? 'Belohnung verdient: ' : 'Belohnung: '}
+            <strong>{incentive.reward}</strong>
           </span>
-        </div>
-        <div className="incentive-reward">
-          <Gift size={13} /> Belohnung: <strong>{incentive.reward}</strong>
         </div>
       </div>
     );
@@ -179,48 +219,111 @@ function IncentiveCard({
   );
   const leading = isLeader(standings, myKey);
   const myRank = standings.find((s) => s.key === myKey);
-  const top = standings.slice(0, 5);
-  const showMine = myRank && myRank.rank > 5;
+  const podium = standings.slice(0, 3);
+  const runners = standings.slice(3, 7);
+  const meInRunners = !!myRank && myRank.rank > 7;
 
   return (
-    <div className="widget incentive-card">
+    <div className="widget incentive-card incentive-card-comp">
       <div className="incentive-card-head">
         <span className="incentive-card-title">
           <Trophy size={15} /> {incentive.title}
         </span>
         {leading && (
-          <span className="incentive-reached">
-            <Crown size={12} /> Du führst
+          <span className="incentive-badge-win">
+            <Crown size={12} /> PLATZ 1
           </span>
         )}
       </div>
-      <div className="incentive-standings">
-        {top.map((s) => (
+
+      {podium.length >= 3 ? (
+        <IncentivePodium rows={podium} myKey={myKey} metric={incentive.metric} />
+      ) : (
+        <div className="incentive-runners">
+          {standings.map((s) => (
+            <RunnerRow key={s.key} s={s} myKey={myKey} metric={incentive.metric} />
+          ))}
+        </div>
+      )}
+
+      {(runners.length > 0 || meInRunners) && (
+        <div className="incentive-runners">
+          {runners.map((s) => (
+            <RunnerRow key={s.key} s={s} myKey={myKey} metric={incentive.metric} />
+          ))}
+          {meInRunners && myRank && (
+            <RunnerRow s={myRank} myKey={myKey} metric={incentive.metric} />
+          )}
+        </div>
+      )}
+
+      <div className="incentive-prize">
+        <Crown size={14} />
+        <span>
+          Siegerprämie für Platz 1: <strong>{incentive.reward}</strong>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function RunnerRow({
+  s,
+  myKey,
+  metric,
+}: {
+  s: Standing;
+  myKey: string;
+  metric: IncentiveMetric;
+}) {
+  return (
+    <div className={`incentive-runner-row ${s.key === myKey ? 'is-me' : ''}`}>
+      <span className="incentive-runner-rank">{s.rank}</span>
+      <span className="incentive-runner-name">
+        {s.displayName}
+        {s.key === myKey && <span className="incentive-you-tag">DU</span>}
+      </span>
+      <span className="incentive-runner-value">{formatMetric(metric, s.value)}</span>
+    </div>
+  );
+}
+
+function IncentivePodium({
+  rows,
+  myKey,
+  metric,
+}: {
+  rows: Standing[];
+  myKey: string;
+  metric: IncentiveMetric;
+}) {
+  // visuelle Reihenfolge: 2 – 1 – 3
+  const order = [rows[1], rows[0], rows[2]];
+  const places = [2, 1, 3];
+
+  return (
+    <div className="arcade-podium">
+      {order.map((r, i) => {
+        const place = places[i];
+        const mine = r.key === myKey;
+        return (
           <div
-            key={s.key}
-            className={`incentive-standing-row ${s.key === myKey ? 'is-me' : ''}`}
+            key={r.key}
+            className={`arcade-podium-col place-${place} ${mine ? 'is-me' : ''}`}
           >
-            <span className="incentive-standing-rank">{s.rank}</span>
-            <span className="incentive-standing-name">{s.displayName}</span>
-            <span className="incentive-standing-value">
-              {formatMetric(incentive.metric, s.value)}
-            </span>
+            {place === 1 && <Crown size={22} className="arcade-crown" />}
+            <div className="arcade-podium-avatar">{initialsOf(r.displayName)}</div>
+            <div className="arcade-podium-name">
+              {r.displayName}
+              {mine && <span className="incentive-you-tag">DU</span>}
+            </div>
+            <div className="arcade-podium-score">{formatMetric(metric, r.value)}</div>
+            <div className="arcade-podium-block">
+              <span className="arcade-podium-rank">{place}</span>
+            </div>
           </div>
-        ))}
-        {showMine && myRank && (
-          <div className="incentive-standing-row is-me">
-            <span className="incentive-standing-rank">{myRank.rank}</span>
-            <span className="incentive-standing-name">{myRank.displayName}</span>
-            <span className="incentive-standing-value">
-              {formatMetric(incentive.metric, myRank.value)}
-            </span>
-          </div>
-        )}
-      </div>
-      <div className="incentive-reward">
-        <Gift size={13} /> Nur Platz 1 gewinnt:{' '}
-        <strong>{incentive.reward}</strong>
-      </div>
+        );
+      })}
     </div>
   );
 }

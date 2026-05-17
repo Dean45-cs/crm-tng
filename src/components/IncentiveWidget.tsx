@@ -84,10 +84,10 @@ export function IncentiveWidget() {
                     )}
                   </span>
                 </div>
-                <div className="incentive-progress sm">
+                <div className="arcade-bar sm">
                   <div
-                    className="incentive-progress-fill"
-                    style={{ width: `${pct}%` }}
+                    className="arcade-bar-fill"
+                    style={{ width: `${Math.max(pct, 3)}%` }}
                   />
                 </div>
               </div>
