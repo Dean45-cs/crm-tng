@@ -4536,3 +4536,412 @@ table.crm-table td[style*="text-align: right"] {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* =================================================================
+   UI Polish — Glows, Shimmer & Micro-animations
+   ================================================================= */
+
+/* ---- Keyframes ---- */
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes slide-up-fade {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow:
+      0 4px 14px rgba(0, 102, 179, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+  50% {
+    box-shadow:
+      0 6px 24px rgba(0, 102, 179, 0.52),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  }
+}
+
+@keyframes shimmer-sweep {
+  0%   { transform: translateX(-100%) skewX(-20deg); }
+  100% { transform: translateX(240%)  skewX(-20deg); }
+}
+
+@keyframes float-gentle {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-5px); }
+}
+
+@keyframes logo-glow {
+  0%, 100% { filter: drop-shadow(0 4px 14px rgba(0, 102, 179, 0.4)); }
+  50%       { filter: drop-shadow(0 6px 22px rgba(0, 102, 179, 0.7)); }
+}
+
+@keyframes orb-breathe {
+  0%, 100% { opacity: 0.8; }
+  50%       { opacity: 1; }
+}
+
+/* ---- Page content entrance ---- */
+.content-inner {
+  animation: slide-up-fade 0.26s cubic-bezier(0.34, 1.1, 0.64, 1) both;
+}
+
+/* ---- Sidebar logo glow ---- */
+.sidebar-header svg {
+  animation: logo-glow 5s ease-in-out infinite;
+}
+
+/* ---- Sidebar active item: pulsing glow ---- */
+.sidebar-item.active {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+/* ---- Widget hover: lift + glow ---- */
+.widget {
+  transition: transform 0.22s cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 0.22s ease, border-color 0.2s ease;
+}
+.widget:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    var(--widget-shadow-hover),
+    0 0 0 1px rgba(0, 102, 179, 0.07),
+    0 0 28px rgba(0, 102, 179, 0.07);
+}
+
+/* ---- Primary button: shimmer overlay + deeper glow ---- */
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 65%
+  );
+  transform: translateX(-100%) skewX(-20deg);
+  pointer-events: none;
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  filter: none;
+  box-shadow:
+    0 10px 28px rgba(0, 102, 179, 0.5),
+    0 3px 8px rgba(0, 102, 179, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.btn-primary:hover::before {
+  animation: shimmer-sweep 0.55s ease;
+}
+
+/* ---- Stat card hover glow ---- */
+.stat-card:hover {
+  box-shadow:
+    var(--shadow-md),
+    0 0 0 1px rgba(0, 102, 179, 0.08),
+    0 0 28px rgba(0, 102, 179, 0.08);
+}
+
+/* ---- KPI chip colored glows ---- */
+.kpi-chip.accent-blue {
+  box-shadow:
+    0 4px 14px rgba(0, 102, 179, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+.kpi-chip.accent-orange {
+  box-shadow:
+    0 4px 14px rgba(255, 149, 0, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+.kpi-chip.accent-purple {
+  box-shadow:
+    0 4px 14px rgba(168, 85, 247, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+.kpi-chip.accent-green {
+  box-shadow:
+    0 4px 14px rgba(52, 199, 89, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+/* ---- Team KPI icon colored glows ---- */
+.team-kpi-icon.accent-blue {
+  box-shadow:
+    0 4px 14px rgba(0, 102, 179, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+.team-kpi-icon.accent-orange {
+  box-shadow:
+    0 4px 14px rgba(255, 149, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+.team-kpi-icon.accent-purple {
+  box-shadow:
+    0 4px 14px rgba(168, 85, 247, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+.team-kpi-icon.accent-green {
+  box-shadow:
+    0 4px 14px rgba(52, 199, 89, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+.team-kpi-icon.accent-red {
+  box-shadow:
+    0 4px 14px rgba(255, 59, 48, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+/* ---- FAB pulsing glow ---- */
+.fab {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+.fab:hover {
+  animation: none;
+  transform: scale(1.07);
+  box-shadow:
+    0 16px 40px rgba(0, 102, 179, 0.6),
+    0 6px 16px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.fab.open {
+  animation: none;
+}
+
+/* ---- Leaderboard rank-1 gold glow ---- */
+.leaderboard-row.rank-1 {
+  box-shadow:
+    0 2px 12px rgba(245, 166, 35, 0.22),
+    0 0 0 1px rgba(245, 166, 35, 0.15);
+}
+.leaderboard-row.rank-1:hover {
+  box-shadow:
+    0 4px 20px rgba(245, 166, 35, 0.42),
+    0 0 0 1px rgba(245, 166, 35, 0.28);
+}
+
+/* ---- Podium place-1 gold aura ---- */
+.podium-col.place-1 {
+  box-shadow: 0 0 30px rgba(255, 204, 0, 0.22);
+}
+
+/* ---- Arcade podium place-1 intensified glow ---- */
+.place-1 .arcade-podium-block {
+  box-shadow:
+    0 0 36px rgba(255, 204, 0, 0.75),
+    0 0 72px rgba(255, 204, 0, 0.25) !important;
+}
+.place-1 .arcade-podium-avatar {
+  box-shadow:
+    0 0 28px rgba(255, 204, 0, 0.85),
+    0 4px 14px rgba(0, 0, 0, 0.14);
+}
+
+/* ---- Target ring SVG glow ---- */
+.target-ring-fill {
+  filter: drop-shadow(0 0 6px rgba(0, 102, 179, 0.5));
+}
+
+/* ---- Hero progress bar glow ---- */
+.hero-progress-bar {
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.55);
+}
+
+/* ---- Hero banner orb breathing ---- */
+.hero-banner::before {
+  animation: orb-breathe 5s ease-in-out infinite;
+}
+
+/* ---- Arcade bar fill enhanced glow ---- */
+.arcade-bar-fill {
+  box-shadow:
+    0 0 18px rgba(0, 163, 224, 0.75),
+    0 0 6px rgba(0, 102, 179, 0.45);
+}
+.incentive-card-goal.is-reached .arcade-bar-fill {
+  box-shadow:
+    0 0 22px rgba(52, 199, 89, 0.8),
+    0 0 8px rgba(52, 199, 89, 0.5);
+}
+
+/* ---- Incentive page icon floating ---- */
+.incentive-page-icon {
+  animation: float-gentle 5s ease-in-out infinite;
+}
+
+/* ---- Incentive section icons glow ---- */
+.incentive-section-icon.week {
+  box-shadow: 0 4px 16px rgba(245, 122, 24, 0.55);
+}
+.incentive-section-icon.month {
+  box-shadow: 0 4px 16px rgba(0, 102, 179, 0.5);
+}
+
+/* ---- Incentive goal card: reached glow pulse ---- */
+.incentive-card-goal.is-reached {
+  animation: incentive-reached-glow 2.5s ease-in-out infinite;
+}
+@keyframes incentive-reached-glow {
+  0%, 100% {
+    border-color: rgba(52, 199, 89, 0.45);
+    box-shadow:
+      0 0 0 1px rgba(52, 199, 89, 0.3),
+      0 12px 32px -10px rgba(52, 199, 89, 0.35);
+  }
+  50% {
+    border-color: rgba(52, 199, 89, 0.65);
+    box-shadow:
+      0 0 0 1px rgba(52, 199, 89, 0.45),
+      0 12px 36px -8px rgba(52, 199, 89, 0.55),
+      0 0 28px rgba(52, 199, 89, 0.18);
+  }
+}
+
+/* ---- Customer card hover glow ---- */
+.customer-card:hover {
+  box-shadow:
+    var(--widget-shadow-hover),
+    0 0 22px rgba(0, 102, 179, 0.1);
+}
+
+/* ---- Note card hover glow ---- */
+.note-card:hover {
+  border-color: rgba(0, 102, 179, 0.18);
+  box-shadow:
+    var(--widget-shadow-hover),
+    0 0 20px rgba(0, 102, 179, 0.07);
+}
+
+/* ---- Table row: left accent on hover ---- */
+table.crm-table tbody tr:hover td:first-child {
+  box-shadow: inset 3px 0 0 var(--tng-blue);
+}
+
+/* ---- Input/select focus: deeper glow ---- */
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  box-shadow:
+    0 0 0 3.5px rgba(0, 102, 179, 0.2),
+    0 0 14px rgba(0, 102, 179, 0.1) !important;
+}
+.search-bar input:focus {
+  box-shadow:
+    0 0 0 3.5px rgba(0, 102, 179, 0.2),
+    0 0 14px rgba(0, 102, 179, 0.1) !important;
+}
+
+/* ---- Sidebar user block hover ---- */
+.sidebar-user {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.sidebar-user:hover {
+  border-color: rgba(0, 102, 179, 0.22);
+  box-shadow: 0 2px 12px rgba(0, 102, 179, 0.14);
+}
+
+/* ---- Login primary button glow ---- */
+.login-primary {
+  position: relative;
+  overflow: hidden;
+}
+.login-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 65%
+  );
+  transform: translateX(-100%) skewX(-20deg);
+  pointer-events: none;
+}
+.login-primary:hover:not(:disabled)::before {
+  animation: shimmer-sweep 0.6s ease;
+}
+.login-primary:hover:not(:disabled) {
+  box-shadow:
+    0 14px 36px rgba(0, 102, 179, 0.42),
+    0 4px 12px rgba(0, 102, 179, 0.22) !important;
+}
+
+/* ---- Login card subtle float ---- */
+.login-bg-orb-1 {
+  animation: float-gentle 8s ease-in-out infinite;
+}
+.login-bg-orb-2 {
+  animation: float-gentle 10s ease-in-out infinite reverse;
+}
+
+/* ---- Agent manage card hover ---- */
+.agent-manage-card {
+  transition: transform 0.2s cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.agent-manage-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    var(--widget-shadow-hover),
+    0 0 22px rgba(0, 102, 179, 0.08);
+}
+
+/* ---- Incentive manage card hover ---- */
+.incentive-manage-card {
+  transition: transform 0.2s cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.incentive-manage-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    var(--widget-shadow-hover),
+    0 0 22px rgba(0, 102, 179, 0.08);
+}
+
+/* ---- Onboarding tooltip glow ---- */
+.onboarding-tooltip {
+  box-shadow:
+    var(--shadow-xl),
+    0 0 0 1px rgba(0, 102, 179, 0.08),
+    0 0 40px rgba(0, 102, 179, 0.08);
+}
+
+/* ---- Scope toggle active glow ---- */
+.scope-toggle-btn.active {
+  box-shadow:
+    0 2px 8px rgba(0, 102, 179, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* ---- Leaderboard avatar glow ---- */
+.leaderboard-avatar {
+  box-shadow:
+    0 2px 8px rgba(0, 102, 179, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* ---- Customer hero avatar ---- */
+.customer-hero-avatar {
+  box-shadow:
+    0 6px 18px rgba(0, 102, 179, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+/* ---- Titlebar brand hover ---- */
+.titlebar-brand {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+.titlebar-brand:hover {
+  border-color: rgba(0, 102, 179, 0.2);
+  box-shadow: 0 2px 10px rgba(0, 102, 179, 0.12);
+  opacity: 1;
+}
