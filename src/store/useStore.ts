@@ -8,6 +8,7 @@ import type {
   ProductType,
   TariffCommissionMatrix,
   CustomerOwnership,
+  Incentive,
 } from '../types';
 import { useAuth } from './useAuth';
 import { toast } from './useToast';
@@ -30,6 +31,10 @@ import {
   upsertOwnership,
   upsertUserSettings,
   upsertSharedSettings,
+  fetchIncentives,
+  insertIncentive,
+  updateIncentiveRow,
+  deleteIncentiveRow,
 } from '../lib/supabaseApi';
 
 const currentUserKey = () => useAuth.getState().currentUserKey ?? undefined;
@@ -83,6 +88,7 @@ interface StoreState {
   notes: Note[];
   settings: Settings;
   customerOwners: Record<string, CustomerOwnership>;
+  incentives: Incentive[];
 
   /** Wird gesetzt, sobald wir initial alle Daten geladen haben. */
   loaded: boolean;
@@ -114,6 +120,10 @@ interface StoreState {
   setCustomerOwner: (customerNumber: string, ownerKey: string) => Promise<void>;
   shareCustomer: (customerNumber: string, withUserKey: string) => Promise<void>;
   unshareCustomer: (customerNumber: string, withUserKey: string) => Promise<void>;
+
+  addIncentive: (i: Omit<Incentive, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateIncentive: (id: string, i: Partial<Incentive>) => Promise<void>;
+  deleteIncentive: (id: string) => Promise<void>;
 }
 
 /** Loggt den technischen Fehler und zeigt dem Nutzer einen Toast. */
@@ -128,17 +138,19 @@ export const useStore = create<StoreState>()((set, get) => ({
   tariffChanges: [],
   notes: [],
   customerOwners: {},
+  incentives: [],
   settings: DEFAULT_SETTINGS,
   loaded: false,
 
   loadAll: async () => {
     const uid = useAuth.getState().currentUserKey;
     try {
-      const [contracts, tariffChanges, notes, owners, settingsRes] = await Promise.all([
+      const [contracts, tariffChanges, notes, owners, incentives, settingsRes] = await Promise.all([
         fetchContracts(),
         fetchTariffChanges(),
         fetchNotes(),
         fetchOwnerships(),
+        fetchIncentives(),
         uid ? fetchSettings(uid) : Promise.resolve({ user: null, shared: null }),
       ]);
 
@@ -178,6 +190,7 @@ export const useStore = create<StoreState>()((set, get) => ({
         tariffChanges,
         notes,
         customerOwners: owners,
+        incentives,
         settings: mergedSettings,
         loaded: true,
       });
@@ -193,6 +206,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       tariffChanges: [],
       notes: [],
       customerOwners: {},
+      incentives: [],
       settings: DEFAULT_SETTINGS,
       loaded: false,
     }),
@@ -212,6 +226,9 @@ export const useStore = create<StoreState>()((set, get) => ({
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_ownerships' }, () => {
         fetchOwnerships().then((rows) => set({ customerOwners: rows })).catch(() => {});
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incentives' }, () => {
+        fetchIncentives().then((rows) => set({ incentives: rows })).catch(() => {});
       })
       .subscribe();
     return () => {
@@ -418,6 +435,38 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (e) {
       fail('Freigabe konnte nicht entfernt werden.', e);
       set({ customerOwners: prev });
+    }
+  },
+
+  addIncentive: async (i) => {
+    try {
+      const created = await insertIncentive({ ...i, createdBy: i.createdBy ?? currentUserKey() });
+      set((s) => ({ incentives: [created, ...s.incentives] }));
+      toast.success('Incentive erstellt.');
+    } catch (e) {
+      fail('Incentive konnte nicht erstellt werden.', e);
+    }
+  },
+  updateIncentive: async (id, i) => {
+    const prev = get().incentives;
+    set({ incentives: prev.map((x) => (x.id === id ? { ...x, ...i } : x)) });
+    try {
+      await updateIncentiveRow(id, i);
+      toast.success('Incentive aktualisiert.');
+    } catch (e) {
+      fail('Änderung fehlgeschlagen – Incentive wurde zurückgesetzt.', e);
+      set({ incentives: prev });
+    }
+  },
+  deleteIncentive: async (id) => {
+    const prev = get().incentives;
+    set({ incentives: prev.filter((x) => x.id !== id) });
+    try {
+      await deleteIncentiveRow(id);
+      toast.success('Incentive gelöscht.');
+    } catch (e) {
+      fail('Löschen fehlgeschlagen – Incentive wiederhergestellt.', e);
+      set({ incentives: prev });
     }
   },
 }));

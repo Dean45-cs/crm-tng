@@ -78,6 +78,42 @@ export const monthKey = (iso: string): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
+/** Montag 00:00 der Woche, in der `ref` liegt (deutsche Wochenzählung). */
+export const weekStart = (ref = new Date()): Date => {
+  const d = new Date(ref);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0=So .. 6=Sa
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d;
+};
+
+/** Sonntag 23:59:59.999 der Woche, in der `ref` liegt. */
+export const weekEnd = (ref = new Date()): Date => {
+  const e = weekStart(ref);
+  e.setDate(e.getDate() + 6);
+  e.setHours(23, 59, 59, 999);
+  return e;
+};
+
+/** true, wenn das ISO-Datum in derselben Montag-Woche wie `ref` liegt. */
+export const isSameWeek = (iso: string, ref = new Date()): boolean => {
+  const d = new Date(iso);
+  return d >= weekStart(ref) && d <= weekEnd(ref);
+};
+
+/** ISO-8601-Kalenderwoche (1..53). */
+export const isoWeekNumber = (ref = new Date()): number => {
+  const d = new Date(Date.UTC(ref.getFullYear(), ref.getMonth(), ref.getDate()));
+  const day = d.getUTCDay() || 7; // Mo=1 .. So=7
+  d.setUTCDate(d.getUTCDate() + 4 - day); // Donnerstag dieser Woche
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+};
+
+/** z.B. "KW 21" */
+export const weekLabel = (ref = new Date()): string => `KW ${isoWeekNumber(ref)}`;
+
 export const exportCsv = (filename: string, rows: Record<string, unknown>[]) => {
   if (rows.length === 0) return;
   const headers = Object.keys(rows[0]);

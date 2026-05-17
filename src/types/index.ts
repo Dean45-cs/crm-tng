@@ -121,3 +121,25 @@ export interface CustomerOwnership {
   /** User-Keys, mit denen der Kunde geteilt wird */
   sharedWith: string[];
 }
+
+/** Zielprämie (jede:r, der/die das Ziel erreicht) oder Wettbewerb (nur Platz 1) */
+export type IncentiveMechanic = 'goal' | 'competition';
+/** Was gemessen wird: Provision (€), Anzahl Verträge oder Abschlüsse gesamt */
+export type IncentiveMetric = 'commission' | 'contracts' | 'deals';
+export type IncentivePeriod = 'weekly' | 'monthly';
+
+/** Zeitlich begrenztes Team-Ziel mit Belohnung, vom Chef konfiguriert */
+export interface Incentive {
+  id: string;
+  title: string;
+  mechanic: IncentiveMechanic;
+  metric: IncentiveMetric;
+  period: IncentivePeriod;
+  /** Zielwert — nur bei mechanic === 'goal' relevant, sonst 0 */
+  target: number;
+  reward: string;
+  active: boolean;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -11,6 +11,10 @@ import type {
   ContractStatus,
   TariffChangeType,
   TariffContext,
+  Incentive,
+  IncentiveMechanic,
+  IncentiveMetric,
+  IncentivePeriod,
 } from '../types';
 import type { AuthUser } from '../store/useAuth';
 
@@ -484,5 +488,89 @@ export async function upsertSharedSettings(
   const { error } = await getSupabase()
     .from('shared_settings')
     .upsert(payload, { onConflict: 'id' });
+  if (error) throw error;
+}
+
+// ============================================================================
+// Incentives
+// ============================================================================
+
+interface IncentiveRow {
+  id: string;
+  title: string;
+  mechanic: IncentiveMechanic;
+  metric: IncentiveMetric;
+  period: IncentivePeriod;
+  target: number | string; // numeric kommt teils als string aus Postgres
+  reward: string;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const mapIncentive = (r: IncentiveRow): Incentive => ({
+  id: r.id,
+  title: r.title,
+  mechanic: r.mechanic,
+  metric: r.metric,
+  period: r.period,
+  target: Number(r.target),
+  reward: r.reward ?? '',
+  active: r.active,
+  createdBy: r.created_by ?? undefined,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export async function fetchIncentives(): Promise<Incentive[]> {
+  const { data, error } = await getSupabase()
+    .from('incentives')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as IncentiveRow[]).map(mapIncentive);
+}
+
+export async function insertIncentive(
+  i: Omit<Incentive, 'id' | 'createdAt' | 'updatedAt'>,
+): Promise<Incentive> {
+  const payload = {
+    title: i.title,
+    mechanic: i.mechanic,
+    metric: i.metric,
+    period: i.period,
+    target: i.target,
+    reward: i.reward,
+    active: i.active,
+    created_by: i.createdBy ?? null,
+  };
+  const { data, error } = await getSupabase()
+    .from('incentives')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return mapIncentive(data as IncentiveRow);
+}
+
+export async function updateIncentiveRow(
+  id: string,
+  patch: Partial<Incentive>,
+): Promise<void> {
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.title !== undefined) payload.title = patch.title;
+  if (patch.mechanic !== undefined) payload.mechanic = patch.mechanic;
+  if (patch.metric !== undefined) payload.metric = patch.metric;
+  if (patch.period !== undefined) payload.period = patch.period;
+  if (patch.target !== undefined) payload.target = patch.target;
+  if (patch.reward !== undefined) payload.reward = patch.reward;
+  if (patch.active !== undefined) payload.active = patch.active;
+  const { error } = await getSupabase().from('incentives').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteIncentiveRow(id: string): Promise<void> {
+  const { error } = await getSupabase().from('incentives').delete().eq('id', id);
   if (error) throw error;
 }
