@@ -150,7 +150,9 @@ export const useStore = create<StoreState>()((set, get) => ({
         fetchTariffChanges(),
         fetchNotes(),
         fetchOwnerships(),
-        fetchIncentives(),
+        // Fehlt die Tabelle noch (Migration 003 nicht eingespielt), darf das
+        // nicht den ganzen Datenload abbrechen — dann eben keine Incentives.
+        fetchIncentives().catch(() => [] as Incentive[]),
         uid ? fetchSettings(uid) : Promise.resolve({ user: null, shared: null }),
       ]);
 
