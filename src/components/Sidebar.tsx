@@ -9,6 +9,8 @@ import {
   UsersRound,
   BarChart3,
   Trophy,
+  Gift,
+  Award,
   LogOut,
   Download,
 } from 'lucide-react';
@@ -34,6 +36,7 @@ function buildSections(showChef: boolean): { title: string; items: NavItemDef[] 
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
         { id: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={16} /> },
+        { id: 'incentives', label: 'Incentives', icon: <Gift size={16} /> },
       ],
     },
     {
@@ -58,6 +61,7 @@ function buildSections(showChef: boolean): { title: string; items: NavItemDef[] 
       items: [
         { id: 'teamdashboard', label: 'Team-Dashboard', icon: <BarChart3 size={16} /> },
         { id: 'teammanager', label: 'Team-Verwaltung', icon: <UsersRound size={16} /> },
+        { id: 'incentivemanager', label: 'Incentive-Verwaltung', icon: <Award size={16} /> },
       ],
     });
   }

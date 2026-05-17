@@ -35,6 +35,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
 import { FollowUpInbox } from '../components/FollowUpInbox';
 import { SkeletonDashboard } from '../components/Skeleton';
+import { IncentiveWidget } from '../components/IncentiveWidget';
 import { useRouter } from '../router';
 
 type Scope = 'mine' | 'all';
@@ -298,6 +299,8 @@ export function Dashboard() {
           />
         </div>
       </div>
+
+      <IncentiveWidget />
 
       <div className="grid-2" style={{ marginBottom: 14 }}>
         <div className="widget">

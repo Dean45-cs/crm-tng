@@ -14,6 +14,8 @@ import { TeamDashboard } from './pages/TeamDashboard';
 import { TeamManagement } from './pages/TeamManagement';
 import { TeamReport } from './pages/TeamReport';
 import { AgentDetail } from './pages/AgentDetail';
+import { Incentives } from './pages/Incentives';
+import { IncentiveManager } from './pages/IncentiveManager';
 import { QuickAddProvider } from './components/QuickAdd';
 import { ToastHost } from './components/ToastHost';
 import { CommandPalette } from './components/CommandPalette';
@@ -40,6 +42,8 @@ const TITLES: Record<RouteName, string> = {
   teammanager: 'Team-Verwaltung',
   teamreport: 'Team-Bericht',
   agentdetail: 'Mitarbeiter:in',
+  incentives: 'Incentives',
+  incentivemanager: 'Incentive-Verwaltung',
 };
 
 function Shell() {
@@ -87,6 +91,8 @@ function Shell() {
             {route.name === 'teamdashboard' && <TeamDashboard />}
             {route.name === 'teammanager' && <TeamManagement />}
             {route.name === 'agentdetail' && <AgentDetail agentKey={route.agentKey} />}
+            {route.name === 'incentives' && <Incentives />}
+            {route.name === 'incentivemanager' && <IncentiveManager />}
           </div>
         </div>
       </main>

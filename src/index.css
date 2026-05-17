@@ -4052,3 +4052,170 @@ table.crm-table td[style*="text-align: right"] {
 .commission-input:hover {
   border-color: var(--text-quaternary);
 }
+
+/* =================================================================
+   Incentives — Agent-Seite
+   ================================================================= */
+.incentive-section {
+  margin-bottom: 26px;
+}
+.incentive-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--text);
+  letter-spacing: -0.1px;
+}
+.incentive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+.incentive-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.incentive-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.incentive-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  color: var(--text);
+}
+.incentive-reached {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--green-bg);
+  color: #157a3a;
+  white-space: nowrap;
+}
+
+.incentive-progress {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.incentive-progress.sm {
+  height: 6px;
+}
+.incentive-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--tng-gradient);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.incentive-progress-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+.incentive-progress-label strong {
+  font-size: 15px;
+  color: var(--tng-blue-dark);
+}
+.incentive-reward {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.incentive-standings {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.incentive-standing-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+.incentive-standing-row.is-me {
+  background: var(--tng-blue-50);
+  box-shadow: inset 0 0 0 1px rgba(0, 102, 179, 0.22);
+}
+.incentive-standing-rank {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--bg-card);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.incentive-standing-row:first-child .incentive-standing-rank {
+  background: linear-gradient(135deg, #f5a623, #ffcc00);
+  color: #fff;
+}
+.incentive-standing-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.incentive-standing-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--tng-blue-dark);
+  white-space: nowrap;
+}
+
+/* =================================================================
+   Incentive-Widget (Dashboard)
+   ================================================================= */
+.incentive-widget-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.incentive-widget-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.incentive-widget-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+.incentive-widget-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
