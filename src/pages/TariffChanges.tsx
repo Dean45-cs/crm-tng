@@ -53,7 +53,7 @@ export function TariffChanges() {
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
-  const agentName = getCurrentUser()?.displayName ?? settings.agentName;
+  const agentName = getCurrentUser()?.displayName ?? '';
   const spConfigured = !!(settings.spClientId && settings.spTenantId && settings.spFilePath);
 
   const toggleSort = (key: SortKey) => {

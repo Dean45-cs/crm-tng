@@ -43,7 +43,7 @@ type Scope = 'mine' | 'all';
 export function Dashboard() {
   const { contracts: allContracts, tariffChanges: allTariffChanges, settings, loaded } = useStore();
   const currentUser = useAuth((s) => s.getCurrentUser());
-  const greetName = currentUser?.displayName ?? settings.agentName;
+  const greetName = currentUser?.displayName ?? 'Kolleg:in';
   const { navigate } = useRouter();
 
   const [scope, setScope] = useState<Scope>('mine');

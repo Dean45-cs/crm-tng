@@ -27,7 +27,6 @@ export function Settings() {
   const { getCurrentUser, setLeaderboardOptIn } = useAuth();
   const currentUser = getCurrentUser();
 
-  const [agentName, setAgentName] = useState(settings.agentName);
   const [target, setTarget] = useState(settings.monthlyTarget);
   const [saved, setSaved] = useState(false);
 
@@ -79,7 +78,6 @@ export function Settings() {
 
   const saveGeneral = () => {
     updateSettings({
-      agentName,
       monthlyTarget: target,
     });
     setSaved(true);
@@ -164,11 +162,10 @@ export function Settings() {
         <div className="form-grid">
           <div className="field">
             <label>Dein Name</label>
-            <input
-              value={agentName}
-              onChange={(e) => setAgentName(e.target.value)}
-              placeholder="Vor- & Nachname"
-            />
+            <input value={currentUser?.displayName ?? ''} disabled readOnly />
+            <span className="muted" style={{ fontSize: 12 }}>
+              Wird vom Anmeldenamen übernommen.
+            </span>
           </div>
           <div className="field">
             <label>Monatsziel (€)</label>

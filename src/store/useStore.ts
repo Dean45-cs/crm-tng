@@ -75,7 +75,6 @@ const DEFAULT_SETTINGS: Settings = {
   tariffCommission: DEFAULT_TARIFF_COMMISSION,
   monthlyTarget: 500,
   jiraBaseUrl: 'https://jira.tng.de/browse/',
-  agentName: 'Auszubildende:r',
   spClientId: '',
   spTenantId: '',
   spFilePath: '',

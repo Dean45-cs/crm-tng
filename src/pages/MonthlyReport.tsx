@@ -78,7 +78,7 @@ export function MonthlyReport() {
             <div className="report-title">Monatsabschluss</div>
             <div className="report-subtitle">
               {monthName.charAt(0).toUpperCase() + monthName.slice(1)} ·{' '}
-              {currentUser?.displayName ?? settings.agentName}
+              {currentUser?.displayName ?? '–'}
             </div>
           </div>
           <div className="report-brand">

@@ -461,7 +461,7 @@ export async function fetchSettings(userId: string): Promise<{
 
 export async function upsertUserSettings(
   userId: string,
-  patch: Partial<Pick<Settings, 'monthlyTarget' | 'spClientId' | 'spTenantId' | 'agentName'>>,
+  patch: Partial<Pick<Settings, 'monthlyTarget' | 'spClientId' | 'spTenantId'>>,
 ): Promise<void> {
   const payload: Record<string, unknown> = {
     user_id: userId,
