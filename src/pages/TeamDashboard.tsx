@@ -1,10 +1,44 @@
 import { useMemo } from 'react';
-import { Printer, ChevronRight, Lock, Users, BarChart3 } from 'lucide-react';
+import {
+  Printer,
+  ChevronRight,
+  Lock,
+  Users,
+  BarChart3,
+  Wallet,
+  Target,
+  Handshake,
+  Percent,
+  ArrowUpRight,
+  ArrowDownRight,
+  Crown,
+} from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from 'recharts';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { useRouter } from '../router';
-import { formatCurrency } from '../lib/utils';
-import { agentStats, attainmentPct } from '../lib/teamStats';
+import {
+  formatCurrency,
+  formatDate,
+  isSameMonth,
+  monthKey,
+  monthLabel,
+  calcContractCommission,
+  calcTariffCommission,
+} from '../lib/utils';
+import { attainmentPct } from '../lib/teamStats';
 import { SkeletonTable } from '../components/Skeleton';
 
 function initialsOf(name: string): string {
@@ -17,43 +51,210 @@ function initialsOf(name: string): string {
     .toUpperCase();
 }
 
+function firstName(name: string): string {
+  return name.split(/\s+/)[0] ?? name;
+}
+
+const TOOLTIP_STYLE = {
+  background: 'var(--bg-card)',
+  border: '1px solid var(--border)',
+  borderRadius: 12,
+  fontSize: 12,
+  boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+};
+
+interface AgentRow {
+  key: string;
+  displayName: string;
+  role: string;
+  isActive: boolean;
+  target: number;
+  monthContractCom: number;
+  monthTariffCom: number;
+  monthContracts: number;
+  monthTariffs: number;
+  monthCommission: number;
+  monthDeals: number;
+  totalCommission: number;
+  totalDeals: number;
+  prevCommission: number;
+  attainment: number | null;
+  trendPct: number;
+  lastActivity: string;
+}
+
 export function TeamDashboard() {
   const { contracts, tariffChanges, settings, loaded } = useStore();
   const { users, isManager } = useAuth();
   const { navigate } = useRouter();
 
-  const rows = useMemo(() => {
-    return Object.values(users)
-      .map((u) => {
-        const stats = agentStats(u.key, contracts, tariffChanges, settings);
+  const rows = useMemo<AgentRow[]>(() => {
+    const now = new Date();
+    const prevRef = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    interface Acc {
+      key: string;
+      displayName: string;
+      role: string;
+      isActive: boolean;
+      target: number;
+      monthContractCom: number;
+      monthTariffCom: number;
+      monthContracts: number;
+      monthTariffs: number;
+      totalCommission: number;
+      totalDeals: number;
+      prevCommission: number;
+      lastActivity: string;
+    }
+
+    const map = new Map<string, Acc>();
+    Object.values(users).forEach((u) =>
+      map.set(u.key, {
+        key: u.key,
+        displayName: u.displayName,
+        role: u.role,
+        isActive: u.isActive,
+        target: u.monthlyTarget,
+        monthContractCom: 0,
+        monthTariffCom: 0,
+        monthContracts: 0,
+        monthTariffs: 0,
+        totalCommission: 0,
+        totalDeals: 0,
+        prevCommission: 0,
+        lastActivity: '',
+      }),
+    );
+
+    contracts.forEach((c) => {
+      const r = c.createdBy ? map.get(c.createdBy) : undefined;
+      if (!r) return;
+      const com = calcContractCommission(c, settings);
+      r.totalCommission += com;
+      r.totalDeals += 1;
+      if (c.contractDate > r.lastActivity) r.lastActivity = c.contractDate;
+      if (isSameMonth(c.contractDate, now)) {
+        r.monthContractCom += com;
+        r.monthContracts += 1;
+      } else if (isSameMonth(c.contractDate, prevRef)) {
+        r.prevCommission += com;
+      }
+    });
+    tariffChanges.forEach((t) => {
+      const r = t.createdBy ? map.get(t.createdBy) : undefined;
+      if (!r) return;
+      const com = calcTariffCommission(t, settings);
+      r.totalCommission += com;
+      r.totalDeals += 1;
+      if (t.changeDate > r.lastActivity) r.lastActivity = t.changeDate;
+      if (isSameMonth(t.changeDate, now)) {
+        r.monthTariffCom += com;
+        r.monthTariffs += 1;
+      } else if (isSameMonth(t.changeDate, prevRef)) {
+        r.prevCommission += com;
+      }
+    });
+
+    return Array.from(map.values())
+      .map((r) => {
+        const monthCommission = r.monthContractCom + r.monthTariffCom;
+        const monthDeals = r.monthContracts + r.monthTariffs;
+        const trendPct =
+          r.prevCommission > 0
+            ? Math.round(
+                ((monthCommission - r.prevCommission) / r.prevCommission) * 100,
+              )
+            : monthCommission > 0
+              ? 100
+              : 0;
         return {
-          key: u.key,
-          displayName: u.displayName,
-          role: u.role,
-          isActive: u.isActive,
-          target: u.monthlyTarget,
-          stats,
-          attainment: attainmentPct(stats.monthCommission, u.monthlyTarget),
+          ...r,
+          monthCommission,
+          monthDeals,
+          attainment: attainmentPct(monthCommission, r.target),
+          trendPct,
         };
       })
-      .sort((a, b) => b.stats.monthCommission - a.stats.monthCommission);
+      .sort((a, b) => b.monthCommission - a.monthCommission);
   }, [users, contracts, tariffChanges, settings]);
 
   const team = useMemo(() => {
-    const monthCommission = rows.reduce((s, r) => s + r.stats.monthCommission, 0);
-    const monthDeals = rows.reduce((s, r) => s + r.stats.monthDeals, 0);
+    const monthCommission = rows.reduce((s, r) => s + r.monthCommission, 0);
+    const prevCommission = rows.reduce((s, r) => s + r.prevCommission, 0);
+    const monthDeals = rows.reduce((s, r) => s + r.monthDeals, 0);
+    const monthContracts = rows.reduce((s, r) => s + r.monthContracts, 0);
+    const monthTariffs = rows.reduce((s, r) => s + r.monthTariffs, 0);
     const targetSum = rows.reduce((s, r) => s + r.target, 0);
     const activeContracts = contracts.filter((c) => c.status === 'aktiv').length;
     const openContracts = contracts.filter((c) => c.status === 'offen').length;
     const convBase = activeContracts + openContracts;
+    const trendPct =
+      prevCommission > 0
+        ? Math.round(((monthCommission - prevCommission) / prevCommission) * 100)
+        : monthCommission > 0
+          ? 100
+          : 0;
     return {
       monthCommission,
+      prevCommission,
       monthDeals,
+      monthContracts,
+      monthTariffs,
       attainment: attainmentPct(monthCommission, targetSum),
+      targetSum,
       conversion: convBase > 0 ? Math.round((activeContracts / convBase) * 100) : null,
       activeAgents: rows.filter((r) => r.isActive).length,
+      trendPct,
     };
   }, [rows, contracts]);
+
+  // Team-Provision der letzten 6 Monate
+  const trend6 = useMemo(
+    () =>
+      Array.from({ length: 6 }, (_, i) => {
+        const offset = -5 + i;
+        const refDate = new Date();
+        refDate.setDate(1);
+        refDate.setMonth(refDate.getMonth() + offset);
+        const key = monthKey(refDate.toISOString());
+        const cSum = contracts
+          .filter((c) => monthKey(c.contractDate) === key)
+          .reduce((s, c) => s + calcContractCommission(c, settings), 0);
+        const tSum = tariffChanges
+          .filter((t) => monthKey(t.changeDate) === key)
+          .reduce((s, t) => s + calcTariffCommission(t, settings), 0);
+        return {
+          month: monthLabel(offset),
+          Verträge: Math.round(cSum * 100) / 100,
+          Tarifwechsel: Math.round(tSum * 100) / 100,
+        };
+      }),
+    [contracts, tariffChanges, settings],
+  );
+
+  // Vertragsstatus (gesamt)
+  const statusMix = useMemo(() => {
+    const aktiv = contracts.filter((c) => c.status === 'aktiv').length;
+    const offen = contracts.filter((c) => c.status === 'offen').length;
+    const storniert = contracts.filter((c) => c.status === 'storniert').length;
+    return [
+      { name: 'Aktiv', value: aktiv, color: '#34c759' },
+      { name: 'Offen', value: offen, color: '#f5a623' },
+      { name: 'Storniert', value: storniert, color: '#ff3b30' },
+    ].filter((s) => s.value > 0);
+  }, [contracts]);
+
+  // Provision je Mitarbeiter (Monat) — aufgeteilt nach Verträgen/Tarifwechseln
+  const perAgent = useMemo(
+    () =>
+      rows.map((r) => ({
+        name: firstName(r.displayName),
+        Verträge: Math.round(r.monthContractCom * 100) / 100,
+        Tarifwechsel: Math.round(r.monthTariffCom * 100) / 100,
+      })),
+    [rows],
+  );
 
   if (!isManager()) {
     return (
@@ -79,12 +280,14 @@ export function TeamDashboard() {
     );
   }
 
+  const topPerformer = rows.find((r) => r.monthCommission > 0);
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h2>Team-Dashboard</h2>
-          <p>Provision, Zielerreichung und Abschlüsse des gesamten Teams.</p>
+          <p>Vollständige Übersicht über Leistung, Trends und Pipeline des Teams.</p>
         </div>
         <button
           className="btn btn-primary"
@@ -95,30 +298,168 @@ export function TeamDashboard() {
       </div>
 
       <div className="team-kpis">
-        <div className="widget team-kpi">
-          <div className="team-kpi-label">Team-Provision (Monat)</div>
-          <div className="team-kpi-value">{formatCurrency(team.monthCommission)}</div>
-          <div className="team-kpi-sub">{team.monthDeals} Abschlüsse</div>
+        <KpiTile
+          icon={<Wallet size={15} />}
+          accent="blue"
+          label="Team-Provision (Monat)"
+          value={formatCurrency(team.monthCommission)}
+          sub={`${team.monthDeals} Abschlüsse`}
+        />
+        <KpiTile
+          icon={team.trendPct >= 0 ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
+          accent={team.trendPct >= 0 ? 'green' : 'red'}
+          label="vs. Vormonat"
+          value={`${team.trendPct > 0 ? '+' : ''}${team.trendPct} %`}
+          sub={`Vormonat: ${formatCurrency(team.prevCommission)}`}
+        />
+        <KpiTile
+          icon={<Target size={15} />}
+          accent="purple"
+          label="Zielerreichung Team"
+          value={team.attainment === null ? '–' : `${team.attainment} %`}
+          sub={`Ziel: ${formatCurrency(team.targetSum)}`}
+        />
+        <KpiTile
+          icon={<Handshake size={15} />}
+          accent="orange"
+          label="Abschlüsse (Monat)"
+          value={`${team.monthDeals}`}
+          sub={`${team.monthContracts} Verträge · ${team.monthTariffs} Tarifwechsel`}
+        />
+        <KpiTile
+          icon={<Percent size={15} />}
+          accent="blue"
+          label="Conversion-Rate"
+          value={team.conversion === null ? '–' : `${team.conversion} %`}
+          sub="aktive von (aktiv + offen)"
+        />
+        <KpiTile
+          icon={<Users size={15} />}
+          accent="green"
+          label="Mitarbeitende"
+          value={`${team.activeAgents}`}
+          sub={`von ${rows.length} im Team`}
+        />
+      </div>
+
+      {topPerformer && (
+        <div className="team-top-banner">
+          <Crown size={18} />
+          <span>
+            <strong>{topPerformer.displayName}</strong> führt das Team diesen Monat
+            an — {formatCurrency(topPerformer.monthCommission)} Provision.
+          </span>
         </div>
-        <div className="widget team-kpi">
-          <div className="team-kpi-label">Zielerreichung Team</div>
-          <div className="team-kpi-value">
-            {team.attainment === null ? '–' : `${team.attainment} %`}
+      )}
+
+      <div className="grid-2" style={{ marginBottom: 14 }}>
+        <div className="widget">
+          <div className="row between" style={{ marginBottom: 14 }}>
+            <h3 className="widget-title" style={{ margin: 0 }}>
+              Team-Provision pro Monat
+            </h3>
+            <span className="muted">Letzte 6 Monate</span>
           </div>
-          <div className="team-kpi-sub">Summe aller Monatsziele</div>
-        </div>
-        <div className="widget team-kpi">
-          <div className="team-kpi-label">Conversion-Rate</div>
-          <div className="team-kpi-value">
-            {team.conversion === null ? '–' : `${team.conversion} %`}
+          <div style={{ width: '100%', height: 250 }}>
+            <ResponsiveContainer>
+              <BarChart data={trend6} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
+                <YAxis axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
+                <Tooltip
+                  cursor={{ fill: 'rgba(0,102,179,0.05)' }}
+                  contentStyle={TOOLTIP_STYLE}
+                  formatter={(value) => formatCurrency(Number(value ?? 0))}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="Verträge" stackId="a" fill="#0066b3" />
+                <Bar dataKey="Tarifwechsel" stackId="a" fill="#00a3e0" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
-          <div className="team-kpi-sub">aktive von (aktiv + offen)</div>
         </div>
-        <div className="widget team-kpi">
-          <div className="team-kpi-label">Mitarbeitende</div>
-          <div className="team-kpi-value">{team.activeAgents}</div>
-          <div className="team-kpi-sub">aktiv im Team</div>
+
+        <div className="widget">
+          <div className="row between" style={{ marginBottom: 14 }}>
+            <h3 className="widget-title" style={{ margin: 0 }}>
+              Vertragsstatus
+            </h3>
+            <span className="muted">alle Verträge</span>
+          </div>
+          {statusMix.length === 0 ? (
+            <div className="empty-inline">
+              <span>Noch keine Verträge erfasst.</span>
+            </div>
+          ) : (
+            <div style={{ width: '100%', height: 250 }}>
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie
+                    data={statusMix}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={58}
+                    outerRadius={88}
+                    paddingAngle={3}
+                    stroke="none"
+                  >
+                    {statusMix.map((s) => (
+                      <Cell key={s.name} fill={s.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
+      </div>
+
+      <div className="widget" style={{ marginBottom: 14 }}>
+        <div className="row between" style={{ marginBottom: 14 }}>
+          <h3 className="widget-title" style={{ margin: 0 }}>
+            Provision je Mitarbeiter:in
+          </h3>
+          <span className="muted">aktueller Monat</span>
+        </div>
+        {perAgent.length === 0 ? (
+          <div className="empty-inline">
+            <span>Noch keine Mitarbeitenden.</span>
+          </div>
+        ) : (
+          <div style={{ width: '100%', height: Math.max(160, perAgent.length * 44 + 40) }}>
+            <ResponsiveContainer>
+              <BarChart
+                data={perAgent}
+                layout="vertical"
+                margin={{ top: 4, right: 16, left: 8, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" horizontal={false} />
+                <XAxis type="number" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={96}
+                  axisLine={false}
+                  tickLine={false}
+                  fontSize={12}
+                  stroke="var(--text-tertiary)"
+                />
+                <Tooltip
+                  cursor={{ fill: 'rgba(0,102,179,0.05)' }}
+                  contentStyle={TOOLTIP_STYLE}
+                  formatter={(value) => formatCurrency(Number(value ?? 0))}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="Verträge" stackId="a" fill="#0066b3" />
+                <Bar dataKey="Tarifwechsel" stackId="a" fill="#00a3e0" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
       {rows.length === 0 ? (
@@ -128,75 +469,139 @@ export function TeamDashboard() {
           <p>Sobald sich Kolleg:innen registrieren, erscheinen sie hier.</p>
         </div>
       ) : (
-        <div className="table-wrap">
-          <table className="crm-table">
-            <thead>
-              <tr>
-                <th>Mitarbeiter:in</th>
-                <th>Abschlüsse (Monat)</th>
-                <th>Zielerreichung</th>
-                <th style={{ textAlign: 'right' }}>Provision (Monat)</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr
-                  key={r.key}
-                  className="row-clickable"
-                  onClick={() => navigate({ name: 'agentdetail', agentKey: r.key })}
-                >
-                  <td>
-                    <div className="agent-cell">
-                      <span className="agent-avatar">{initialsOf(r.displayName)}</span>
-                      <div>
-                        <div className="agent-cell-name">
-                          {r.displayName}
-                          {r.role === 'manager' && (
-                            <span className="agent-role-badge">Chef</span>
-                          )}
-                          {!r.isActive && (
-                            <span className="agent-role-badge locked">Gesperrt</span>
-                          )}
-                        </div>
-                        <div className="agent-cell-sub">
-                          Gesamt: {formatCurrency(r.stats.totalCommission)}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td>{r.stats.monthDeals}</td>
-                  <td>
-                    {r.attainment === null ? (
-                      <span className="muted">kein Ziel</span>
-                    ) : (
-                      <div className="agent-target">
-                        <div className="agent-target-bar">
-                          <div
-                            className="agent-target-fill"
-                            style={{ width: `${Math.min(100, Math.max(2, r.attainment))}%` }}
-                          />
-                        </div>
-                        <span className="agent-target-pct">{r.attainment} %</span>
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                    {formatCurrency(r.stats.monthCommission)}
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <ChevronRight size={15} style={{ color: 'var(--text-tertiary)' }} />
-                  </td>
+        <div className="widget" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="table-wrap">
+            <table className="crm-table">
+              <thead>
+                <tr>
+                  <th>Mitarbeiter:in</th>
+                  <th style={{ textAlign: 'right' }}>Verträge</th>
+                  <th style={{ textAlign: 'right' }}>Tarifw.</th>
+                  <th style={{ textAlign: 'right' }}>Provision (Monat)</th>
+                  <th style={{ textAlign: 'right' }}>vs. VM</th>
+                  <th style={{ textAlign: 'right' }}>Monatsziel</th>
+                  <th>Zielerreichung</th>
+                  <th style={{ textAlign: 'right' }}>Gesamt</th>
+                  <th>Letzte Aktivität</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((r, idx) => (
+                  <tr
+                    key={r.key}
+                    className="row-clickable"
+                    onClick={() => navigate({ name: 'agentdetail', agentKey: r.key })}
+                  >
+                    <td>
+                      <div className="agent-cell">
+                        <span className="agent-avatar">{initialsOf(r.displayName)}</span>
+                        <div>
+                          <div className="agent-cell-name">
+                            {idx === 0 && r.monthCommission > 0 && (
+                              <Crown size={13} style={{ color: '#f5a623' }} />
+                            )}
+                            {r.displayName}
+                            {r.role === 'manager' && (
+                              <span className="agent-role-badge">Chef</span>
+                            )}
+                            {!r.isActive && (
+                              <span className="agent-role-badge locked">Gesperrt</span>
+                            )}
+                          </div>
+                          <div className="agent-cell-sub">
+                            {r.totalDeals} Abschlüsse gesamt
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>{r.monthContracts}</td>
+                    <td style={{ textAlign: 'right' }}>{r.monthTariffs}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                      {formatCurrency(r.monthCommission)}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span
+                        className="team-trend"
+                        style={{
+                          color:
+                            r.trendPct > 0
+                              ? 'var(--green)'
+                              : r.trendPct < 0
+                                ? 'var(--red)'
+                                : 'var(--text-tertiary)',
+                        }}
+                      >
+                        {r.trendPct > 0 ? '+' : ''}
+                        {r.trendPct} %
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {r.target > 0 ? formatCurrency(r.target) : '–'}
+                    </td>
+                    <td>
+                      {r.attainment === null ? (
+                        <span className="muted">kein Ziel</span>
+                      ) : (
+                        <div className="agent-target">
+                          <div className="agent-target-bar">
+                            <div
+                              className="agent-target-fill"
+                              style={{ width: `${Math.min(100, Math.max(2, r.attainment))}%` }}
+                            />
+                          </div>
+                          <span className="agent-target-pct">{r.attainment} %</span>
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {formatCurrency(r.totalCommission)}
+                    </td>
+                    <td className="muted" style={{ fontSize: 12.5 }}>
+                      {r.lastActivity ? formatDate(r.lastActivity) : '–'}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <ChevronRight size={15} style={{ color: 'var(--text-tertiary)' }} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      <div className="muted" style={{ marginTop: 14, fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center' }}>
+      <div
+        className="muted"
+        style={{ marginTop: 14, fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center' }}
+      >
         <BarChart3 size={13} /> Klicke auf eine Zeile für die Mitarbeiter-Detailansicht.
       </div>
+    </div>
+  );
+}
+
+function KpiTile({
+  icon,
+  accent,
+  label,
+  value,
+  sub,
+}: {
+  icon: React.ReactNode;
+  accent: 'blue' | 'orange' | 'purple' | 'green' | 'red';
+  label: string;
+  value: string;
+  sub: string;
+}) {
+  return (
+    <div className="widget team-kpi">
+      <div className="row between" style={{ alignItems: 'flex-start' }}>
+        <div className="team-kpi-label">{label}</div>
+        <span className={`team-kpi-icon accent-${accent}`}>{icon}</span>
+      </div>
+      <div className="team-kpi-value">{value}</div>
+      <div className="team-kpi-sub">{sub}</div>
     </div>
   );
 }

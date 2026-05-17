@@ -12,7 +12,18 @@ import {
   Crown,
   Lock,
   UserIcon,
+  TrendingUp,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { useRouter } from '../router';
@@ -21,6 +32,8 @@ import {
   calcTariffCommission,
   formatCurrency,
   formatDate,
+  monthKey,
+  monthLabel,
   TARIFF_CONTEXT_LABEL,
   TARIFF_TYPE_LABEL,
 } from '../lib/utils';
@@ -76,6 +89,29 @@ export function AgentDetail({ agentKey }: Props) {
 
   const stats = useMemo(
     () => agentStats(agentKey, contracts, tariffChanges, settings),
+    [agentKey, contracts, tariffChanges, settings],
+  );
+
+  const chart6 = useMemo(
+    () =>
+      Array.from({ length: 6 }, (_, i) => {
+        const offset = -5 + i;
+        const refDate = new Date();
+        refDate.setDate(1);
+        refDate.setMonth(refDate.getMonth() + offset);
+        const key = monthKey(refDate.toISOString());
+        const cSum = contracts
+          .filter((c) => c.createdBy === agentKey && monthKey(c.contractDate) === key)
+          .reduce((s, c) => s + calcContractCommission(c, settings), 0);
+        const tSum = tariffChanges
+          .filter((t) => t.createdBy === agentKey && monthKey(t.changeDate) === key)
+          .reduce((s, t) => s + calcTariffCommission(t, settings), 0);
+        return {
+          month: monthLabel(offset),
+          Verträge: Math.round(cSum * 100) / 100,
+          Tarifwechsel: Math.round(tSum * 100) / 100,
+        };
+      }),
     [agentKey, contracts, tariffChanges, settings],
   );
 
@@ -155,6 +191,70 @@ export function AgentDetail({ agentKey }: Props) {
               <div className="hero-stat-value">{stats.monthDeals}</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="team-kpis" style={{ marginTop: 18 }}>
+        <div className="widget team-kpi">
+          <div className="team-kpi-label">Provision gesamt</div>
+          <div className="team-kpi-value">{formatCurrency(stats.totalCommission)}</div>
+          <div className="team-kpi-sub">über alle Monate</div>
+        </div>
+        <div className="widget team-kpi">
+          <div className="team-kpi-label">Abschlüsse gesamt</div>
+          <div className="team-kpi-value">{stats.totalDeals}</div>
+          <div className="team-kpi-sub">Verträge + Tarifwechsel</div>
+        </div>
+        <div className="widget team-kpi">
+          <div className="team-kpi-label">Monatsziel</div>
+          <div className="team-kpi-value">
+            {agent.monthlyTarget > 0 ? formatCurrency(agent.monthlyTarget) : '–'}
+          </div>
+          <div className="team-kpi-sub">individuelles Ziel</div>
+        </div>
+        <div className="widget team-kpi">
+          <div className="team-kpi-label">Ø Provision / Abschluss</div>
+          <div className="team-kpi-value">
+            {stats.totalDeals > 0
+              ? formatCurrency(stats.totalCommission / stats.totalDeals)
+              : '–'}
+          </div>
+          <div className="team-kpi-sub">Schnitt aller Abschlüsse</div>
+        </div>
+      </div>
+
+      <div className="widget" style={{ marginBottom: 22 }}>
+        <div className="row between" style={{ marginBottom: 14 }}>
+          <h3
+            className="widget-title"
+            style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}
+          >
+            <TrendingUp size={15} /> Provision pro Monat
+          </h3>
+          <span className="muted">Letzte 6 Monate</span>
+        </div>
+        <div style={{ width: '100%', height: 240 }}>
+          <ResponsiveContainer>
+            <BarChart data={chart6} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
+              <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
+              <YAxis axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
+              <Tooltip
+                cursor={{ fill: 'rgba(0,102,179,0.05)' }}
+                contentStyle={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 12,
+                  fontSize: 12,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                }}
+                formatter={(value) => formatCurrency(Number(value ?? 0))}
+              />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="Verträge" stackId="a" fill="#0066b3" />
+              <Bar dataKey="Tarifwechsel" stackId="a" fill="#00a3e0" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
