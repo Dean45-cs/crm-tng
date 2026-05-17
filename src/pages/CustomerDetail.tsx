@@ -31,6 +31,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
 import { useQuickAdd } from '../components/QuickAdd';
 import { CustomerShareDialog } from '../components/CustomerShareDialog';
+import { ActivityTimeline } from '../components/ActivityTimeline';
 
 interface Props {
   kdnr: string;
@@ -201,6 +202,12 @@ export function CustomerDetail({ kdnr }: Props) {
           onClose={() => setShareOpen(false)}
         />
       )}
+
+      <ActivityTimeline
+        contracts={contractsList}
+        tariffChanges={tariffList}
+        notes={notesList}
+      />
 
       <Section
         icon={<FileSignature size={15} />}
