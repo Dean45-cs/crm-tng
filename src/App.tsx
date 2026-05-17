@@ -10,6 +10,10 @@ import { Customers } from './pages/Customers';
 import { CustomerDetail } from './pages/CustomerDetail';
 import { Leaderboard } from './pages/Leaderboard';
 import { MonthlyReport } from './pages/MonthlyReport';
+import { TeamDashboard } from './pages/TeamDashboard';
+import { TeamManagement } from './pages/TeamManagement';
+import { TeamReport } from './pages/TeamReport';
+import { AgentDetail } from './pages/AgentDetail';
 import { QuickAddProvider } from './components/QuickAdd';
 import { ToastHost } from './components/ToastHost';
 import { CommandPalette } from './components/CommandPalette';
@@ -32,6 +36,10 @@ const TITLES: Record<RouteName, string> = {
   leaderboard: 'Leaderboard',
   settings: 'Einstellungen',
   report: 'Monatsbericht',
+  teamdashboard: 'Team-Dashboard',
+  teammanager: 'Team-Verwaltung',
+  teamreport: 'Team-Bericht',
+  agentdetail: 'Mitarbeiter:in',
 };
 
 function Shell() {
@@ -39,6 +47,9 @@ function Shell() {
 
   if (route.name === 'report') {
     return <MonthlyReport />;
+  }
+  if (route.name === 'teamreport') {
+    return <TeamReport />;
   }
 
   return (
@@ -73,6 +84,9 @@ function Shell() {
             {route.name === 'customer' && <CustomerDetail kdnr={route.kdnr} />}
             {route.name === 'leaderboard' && <Leaderboard />}
             {route.name === 'settings' && <Settings />}
+            {route.name === 'teamdashboard' && <TeamDashboard />}
+            {route.name === 'teammanager' && <TeamManagement />}
+            {route.name === 'agentdetail' && <AgentDetail agentKey={route.agentKey} />}
           </div>
         </div>
       </main>

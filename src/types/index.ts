@@ -82,6 +82,8 @@ export interface Note {
   jiraTicket?: string;
   createdAt: string;
   updatedAt: string;
+  /** Key des angemeldeten Nutzers, der die Notiz erfasst hat */
+  createdBy?: string;
 }
 
 export interface TariffCommissionMatrix {

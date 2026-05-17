@@ -3,12 +3,18 @@ import { getSupabase, pinToPassword, nameToEmail } from '../lib/supabase';
 import {
   fetchAllUsers,
   upsertUserProfile,
+  upsertUserSettings,
   updateUserFlags,
+  updateUserRole as apiUpdateUserRole,
+  setUserActive as apiSetUserActive,
 } from '../lib/supabaseApi';
+import { toast } from './useToast';
 
 export function normalizeUserKey(name: string): string {
   return name.trim().toLowerCase();
 }
+
+export type UserRole = 'agent' | 'manager';
 
 export interface AuthUser {
   /** UUID des Users (= Supabase auth.users.id) */
@@ -20,6 +26,12 @@ export interface AuthUser {
   lastLoginAt?: string;
   onboardingCompleted: boolean;
   leaderboardOptIn: boolean;
+  /** 'manager' = Chef mit Team-Bereich, sonst 'agent' */
+  role: UserRole;
+  /** false = gesperrt, kein Login möglich */
+  isActive: boolean;
+  /** Monatsziel des Nutzers (aus user_settings; 0 = nicht gesetzt) */
+  monthlyTarget: number;
 }
 
 interface AuthState {
@@ -38,8 +50,15 @@ interface AuthState {
   loginUser: (name: string, pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   logout: () => Promise<void>;
   getCurrentUser: () => AuthUser | null;
+  /** True, wenn der angemeldete Nutzer ein Chef ist. */
+  isManager: () => boolean;
   completeOnboarding: () => Promise<void>;
   setLeaderboardOptIn: (optIn: boolean) => Promise<void>;
+
+  /** Chef-Aktionen für die Team-Verwaltung */
+  setUserRole: (key: string, role: UserRole) => Promise<void>;
+  setUserActive: (key: string, isActive: boolean) => Promise<void>;
+  setAgentTarget: (key: string, target: number) => Promise<void>;
 }
 
 export const useAuth = create<AuthState>()((set, get) => ({
@@ -157,6 +176,13 @@ export const useAuth = create<AuthState>()((set, get) => ({
       /* ignore */
     }
     await get().refreshUsers();
+
+    // Gesperrte Nutzer dürfen sich nicht anmelden.
+    if (get().users[uid]?.isActive === false) {
+      await sb.auth.signOut();
+      return { ok: false, error: 'Dieser Zugang wurde gesperrt. Bitte wende dich an deine:n Vorgesetzte:n.' };
+    }
+
     set({ currentUserKey: uid });
     return { ok: true };
   },
@@ -171,6 +197,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
     const k = get().currentUserKey;
     return k ? get().users[k] ?? null : null;
   },
+
+  isManager: () => get().getCurrentUser()?.role === 'manager',
 
   completeOnboarding: async () => {
     const uid = get().currentUserKey;
@@ -201,6 +229,56 @@ export const useAuth = create<AuthState>()((set, get) => ({
       }
     } catch (e) {
       console.error(e);
+    }
+  },
+
+  setUserRole: async (key, role) => {
+    const u = get().users[key];
+    if (!u) return;
+    const prev = u.role;
+    set((s) => ({ users: { ...s.users, [key]: { ...u, role } } }));
+    try {
+      await apiUpdateUserRole(key, role);
+      toast.success(
+        role === 'manager'
+          ? `${u.displayName} ist jetzt Chef.`
+          : `${u.displayName} ist jetzt im Vertrieb.`,
+      );
+    } catch (e) {
+      console.error(e);
+      set((s) => ({ users: { ...s.users, [key]: { ...u, role: prev } } }));
+      toast.error('Rolle konnte nicht geändert werden.');
+    }
+  },
+
+  setUserActive: async (key, isActive) => {
+    const u = get().users[key];
+    if (!u) return;
+    set((s) => ({ users: { ...s.users, [key]: { ...u, isActive } } }));
+    try {
+      await apiSetUserActive(key, isActive);
+      toast.success(
+        isActive ? `${u.displayName} entsperrt.` : `${u.displayName} gesperrt.`,
+      );
+    } catch (e) {
+      console.error(e);
+      set((s) => ({ users: { ...s.users, [key]: { ...u, isActive: !isActive } } }));
+      toast.error('Status konnte nicht geändert werden.');
+    }
+  },
+
+  setAgentTarget: async (key, target) => {
+    const u = get().users[key];
+    if (!u) return;
+    const prev = u.monthlyTarget;
+    set((s) => ({ users: { ...s.users, [key]: { ...u, monthlyTarget: target } } }));
+    try {
+      await upsertUserSettings(key, { monthlyTarget: target });
+      toast.success(`Monatsziel für ${u.displayName} gespeichert.`);
+    } catch (e) {
+      console.error(e);
+      set((s) => ({ users: { ...s.users, [key]: { ...u, monthlyTarget: prev } } }));
+      toast.error('Monatsziel konnte nicht gespeichert werden.');
     }
   },
 }));

@@ -6,6 +6,8 @@ import {
   StickyNote,
   Settings as SettingsIcon,
   Users,
+  UsersRound,
+  BarChart3,
   Trophy,
   LogOut,
   Download,
@@ -25,42 +27,62 @@ interface NavItemDef {
   icon: React.ReactNode;
 }
 
-const SECTIONS: { title: string; items: NavItemDef[] }[] = [
-  {
-    title: 'Übersicht',
-    items: [
-      { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
-      { id: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={16} /> },
-    ],
-  },
-  {
-    title: 'Verkauf',
-    items: [
-      { id: 'contracts', label: 'Verträge', icon: <FileSignature size={16} /> },
-      { id: 'tariff', label: 'Tarifwechsel', icon: <ArrowLeftRight size={16} /> },
-      { id: 'notes', label: 'Notizen', icon: <StickyNote size={16} /> },
-    ],
-  },
-  {
-    title: 'Stamm',
-    items: [
-      { id: 'customers', label: 'Kunden', icon: <Users size={16} /> },
-    ],
-  },
-  {
+function buildSections(showChef: boolean): { title: string; items: NavItemDef[] }[] {
+  const sections: { title: string; items: NavItemDef[] }[] = [
+    {
+      title: 'Übersicht',
+      items: [
+        { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
+        { id: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={16} /> },
+      ],
+    },
+    {
+      title: 'Verkauf',
+      items: [
+        { id: 'contracts', label: 'Verträge', icon: <FileSignature size={16} /> },
+        { id: 'tariff', label: 'Tarifwechsel', icon: <ArrowLeftRight size={16} /> },
+        { id: 'notes', label: 'Notizen', icon: <StickyNote size={16} /> },
+      ],
+    },
+    {
+      title: 'Stamm',
+      items: [
+        { id: 'customers', label: 'Kunden', icon: <Users size={16} /> },
+      ],
+    },
+  ];
+
+  if (showChef) {
+    sections.push({
+      title: 'Chef',
+      items: [
+        { id: 'teamdashboard', label: 'Team-Dashboard', icon: <BarChart3 size={16} /> },
+        { id: 'teammanager', label: 'Team-Verwaltung', icon: <UsersRound size={16} /> },
+      ],
+    });
+  }
+
+  sections.push({
     title: 'System',
     items: [
       { id: 'settings', label: 'Einstellungen', icon: <SettingsIcon size={16} /> },
     ],
-  },
-];
+  });
+
+  return sections;
+}
 
 export function Sidebar() {
   const { route, navigate } = useRouter();
-  const { getCurrentUser, logout } = useAuth();
+  const { getCurrentUser, isManager, logout } = useAuth();
   const currentUser = getCurrentUser();
+  const sections = buildSections(isManager());
   const active: RouteName =
-    route.name === 'customer' ? 'customers' : route.name;
+    route.name === 'customer'
+      ? 'customers'
+      : route.name === 'agentdetail'
+        ? 'teamdashboard'
+        : route.name;
 
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(
@@ -116,7 +138,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      {SECTIONS.map((section) => (
+      {sections.map((section) => (
         <div key={section.title}>
           <div className="sidebar-section">{section.title}</div>
           {section.items.map((item) => (
@@ -139,7 +161,9 @@ export function Sidebar() {
           <div className="sidebar-user-avatar">{initials}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="sidebar-user-name">{currentUser.displayName}</div>
-            <div className="sidebar-user-role">Angemeldet</div>
+            <div className="sidebar-user-role">
+              {currentUser.role === 'manager' ? 'Chef' : 'Vertrieb'}
+            </div>
           </div>
           <button
             className="sidebar-user-logout"

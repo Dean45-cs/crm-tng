@@ -24,11 +24,13 @@ interface UserRow {
   display_name: string;
   onboarding_completed: boolean;
   leaderboard_opt_in: boolean;
+  role: string | null;
+  is_active: boolean | null;
   created_at: string;
   last_login_at: string | null;
 }
 
-const mapUser = (r: UserRow): AuthUser => ({
+const mapUser = (r: UserRow, monthlyTarget = 0): AuthUser => ({
   key: r.id, // wir nutzen die UUID als key für FK-Konsistenz
   displayName: r.display_name,
   pinHash: '', // pin ist in Supabase Auth, hier nicht gespeichert
@@ -37,6 +39,9 @@ const mapUser = (r: UserRow): AuthUser => ({
   lastLoginAt: r.last_login_at ?? undefined,
   onboardingCompleted: r.onboarding_completed,
   leaderboardOptIn: r.leaderboard_opt_in,
+  role: r.role === 'manager' ? 'manager' : 'agent',
+  isActive: r.is_active !== false,
+  monthlyTarget,
 });
 
 interface ContractRow {
@@ -120,6 +125,7 @@ const mapNote = (r: NoteRow): Note => ({
   jiraTicket: r.jira_ticket ?? '',
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  createdBy: r.created_by ?? undefined,
 });
 
 interface OwnershipRow {
@@ -138,13 +144,34 @@ const mapOwnership = (r: OwnershipRow): CustomerOwnership => ({
 // ============================================================================
 
 export async function fetchAllUsers(): Promise<Record<string, AuthUser>> {
-  const { data, error } = await getSupabase().from('users').select('*');
-  if (error) throw error;
+  const sb = getSupabase();
+  const [usersRes, settingsRes] = await Promise.all([
+    sb.from('users').select('*'),
+    sb.from('user_settings').select('user_id, monthly_target'),
+  ]);
+  if (usersRes.error) throw usersRes.error;
+
+  // Monatsziele pro Nutzer: Chefs lesen alle (RLS), Agents nur die eigene Zeile.
+  const targets: Record<string, number> = {};
+  for (const row of (settingsRes.data ?? []) as { user_id: string; monthly_target: number }[]) {
+    targets[row.user_id] = Number(row.monthly_target);
+  }
+
   const map: Record<string, AuthUser> = {};
-  for (const row of (data ?? []) as UserRow[]) {
-    map[row.id] = mapUser(row);
+  for (const row of (usersRes.data ?? []) as UserRow[]) {
+    map[row.id] = mapUser(row, targets[row.id] ?? 0);
   }
   return map;
+}
+
+export async function updateUserRole(id: string, role: 'agent' | 'manager'): Promise<void> {
+  const { error } = await getSupabase().from('users').update({ role }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function setUserActive(id: string, isActive: boolean): Promise<void> {
+  const { error } = await getSupabase().from('users').update({ is_active: isActive }).eq('id', id);
+  if (error) throw error;
 }
 
 export async function upsertUserProfile(

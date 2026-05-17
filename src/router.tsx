@@ -9,7 +9,11 @@ export type Route =
   | { name: 'customer'; kdnr: string }
   | { name: 'leaderboard' }
   | { name: 'settings' }
-  | { name: 'report' };
+  | { name: 'report' }
+  | { name: 'teamdashboard' }
+  | { name: 'teammanager' }
+  | { name: 'teamreport' }
+  | { name: 'agentdetail'; agentKey: string };
 
 export type RouteName = Route['name'];
 
