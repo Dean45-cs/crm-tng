@@ -14,8 +14,13 @@
  */
 
 const VIEWBOX_TILE = '0 0 600 600';
-// Der Logo-Bereich, mittig in der 600×600-Box gecroppt (≈ 4:1)
-const VIEWBOX_MARK = '120 245 360 90';
+// Enge Bounding-Box des Logos in der 600×600-Box (aus den Pfaden berechnet:
+// x 59–541, y 246–354) plus 5 Einheiten symmetrischer Rand.
+const MARK_X = 54;
+const MARK_Y = 241;
+const MARK_W = 492;
+const MARK_H = 118;
+const VIEWBOX_MARK = `${MARK_X} ${MARK_Y} ${MARK_W} ${MARK_H}`;
 
 /**
  * Originalpfade. Erste Subpath = Außenrechteck (600×600),
@@ -120,7 +125,7 @@ export function TngMark({
   height?: number;
   color?: string;
 }) {
-  const aspect = 360 / 90;
+  const aspect = MARK_W / MARK_H;
   const width = Math.round(height * aspect);
   const maskId = nextId();
 
