@@ -158,6 +158,21 @@ create table if not exists public.leads (
 );
 create index if not exists idx_leads_status on public.leads(status);
 
+-- ------------------------------------------------------------
+-- LEAD ACTIVITIES
+-- ------------------------------------------------------------
+-- Aktivitäts-Log pro Lead: Kontaktversuche und Team-Notizen.
+-- ------------------------------------------------------------
+create table if not exists public.lead_activities (
+  id uuid primary key default gen_random_uuid(),
+  lead_id uuid not null references public.leads(id) on delete cascade,
+  type text not null check (type in ('contact', 'note')),
+  content text,
+  created_by uuid references public.users(id) on delete set null,
+  created_at timestamptz default now()
+);
+create index if not exists idx_lead_activities_lead_id on public.lead_activities(lead_id);
+
 -- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
@@ -171,6 +186,7 @@ alter table public.user_settings enable row level security;
 alter table public.shared_settings enable row level security;
 alter table public.incentives enable row level security;
 alter table public.leads enable row level security;
+alter table public.lead_activities enable row level security;
 
 -- USERS: alle authentifizierten User dürfen alle Profile lesen
 -- (fürs Leaderboard und Sharing). Schreiben nur das eigene Profil –
@@ -321,6 +337,14 @@ create policy "leads update all" on public.leads
 create policy "leads delete all" on public.leads
   for delete using (auth.role() = 'authenticated');
 
+-- LEAD ACTIVITIES: alle lesen, alle dürfen anlegen, nur Ersteller darf löschen.
+create policy "lead_activities read all" on public.lead_activities
+  for select using (auth.role() = 'authenticated');
+create policy "lead_activities insert all" on public.lead_activities
+  for insert with check (auth.role() = 'authenticated');
+create policy "lead_activities delete own" on public.lead_activities
+  for delete using (auth.uid() = created_by);
+
 -- ============================================================================
 -- REALTIME
 -- ============================================================================
@@ -332,3 +356,4 @@ alter publication supabase_realtime add table public.customer_ownerships;
 alter publication supabase_realtime add table public.users;
 alter publication supabase_realtime add table public.incentives;
 alter publication supabase_realtime add table public.leads;
+alter publication supabase_realtime add table public.lead_activities;

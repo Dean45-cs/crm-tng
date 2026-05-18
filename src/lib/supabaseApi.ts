@@ -17,6 +17,8 @@ import type {
   IncentivePeriod,
   Lead,
   LeadStatus,
+  LeadActivity,
+  LeadActivityType,
 } from '../types';
 import type { AuthUser } from '../store/useAuth';
 
@@ -662,5 +664,59 @@ export async function updateLeadRow(
 
 export async function deleteLeadRow(id: string): Promise<void> {
   const { error } = await getSupabase().from('leads').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ============================================================================
+// Lead Activities
+// ============================================================================
+
+interface LeadActivityRow {
+  id: string;
+  lead_id: string;
+  type: LeadActivityType;
+  content: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+const mapLeadActivity = (r: LeadActivityRow): LeadActivity => ({
+  id: r.id,
+  leadId: r.lead_id,
+  type: r.type,
+  content: r.content ?? undefined,
+  createdBy: r.created_by ?? undefined,
+  createdAt: r.created_at,
+});
+
+export async function fetchLeadActivities(): Promise<LeadActivity[]> {
+  const { data, error } = await getSupabase()
+    .from('lead_activities')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as LeadActivityRow[]).map(mapLeadActivity);
+}
+
+export async function insertLeadActivity(
+  a: Pick<LeadActivity, 'leadId' | 'type' | 'content' | 'createdBy'>,
+): Promise<LeadActivity> {
+  const payload = {
+    lead_id: a.leadId,
+    type: a.type,
+    content: a.content ?? null,
+    created_by: a.createdBy ?? null,
+  };
+  const { data, error } = await getSupabase()
+    .from('lead_activities')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return mapLeadActivity(data as LeadActivityRow);
+}
+
+export async function deleteLeadActivityRow(id: string): Promise<void> {
+  const { error } = await getSupabase().from('lead_activities').delete().eq('id', id);
   if (error) throw error;
 }

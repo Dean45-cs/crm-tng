@@ -164,3 +164,17 @@ export interface Lead {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Typ einer Lead-Aktivität */
+export type LeadActivityType = 'contact' | 'note';
+
+/** Eintrag im Aktivitäts-Log eines Leads (Kontaktversuch oder Team-Notiz) */
+export interface LeadActivity {
+  id: string;
+  leadId: string;
+  type: LeadActivityType;
+  /** Notiztext — nur bei type === 'note', sonst undefined */
+  content?: string;
+  createdBy?: string;
+  createdAt: string;
+}

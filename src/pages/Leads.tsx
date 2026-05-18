@@ -8,8 +8,15 @@ import {
   Trash2,
   RefreshCw,
   Check,
+  PhoneCall,
+  MessageSquare,
+  ChevronDown,
+  ChevronUp,
+  Send,
+  Trash,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useAuth } from '../store/useAuth';
 import {
   formatDate,
   formatCurrency,
@@ -32,13 +39,113 @@ const STATUS_LABEL: Record<LeadStatus, string> = {
   verloren: 'Verloren',
 };
 
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 2) return 'gerade eben';
+  if (mins < 60) return `vor ${mins} Min.`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `vor ${hours} Std.`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'gestern';
+  if (days < 7) return `vor ${days} Tagen`;
+  return formatDate(iso.slice(0, 10));
+}
+
+interface ActivityPanelProps {
+  leadId: string;
+  currentUserKey: string | null;
+  userMap: Record<string, { displayName: string }>;
+}
+
+function ActivityPanel({ leadId, currentUserKey, userMap }: ActivityPanelProps) {
+  const { leadActivities, addLeadActivity, deleteLeadActivity } = useStore();
+  const [noteText, setNoteText] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const activities = leadActivities[leadId] ?? [];
+
+  const sendNote = async () => {
+    const text = noteText.trim();
+    if (!text) return;
+    setSending(true);
+    await addLeadActivity({ leadId, type: 'note', content: text });
+    setNoteText('');
+    setSending(false);
+  };
+
+  return (
+    <div className="lead-activity-panel">
+      <div className="lead-activity-feed">
+        {activities.length === 0 && (
+          <div className="lead-activity-empty">Noch keine Aktivität.</div>
+        )}
+        {activities.map((a) => {
+          const name = a.createdBy ? (userMap[a.createdBy]?.displayName ?? 'Unbekannt') : 'System';
+          const isOwn = a.createdBy === currentUserKey;
+          return (
+            <div key={a.id} className={`lead-activity-item ${a.type}`}>
+              <span className="lead-activity-icon">
+                {a.type === 'contact' ? <PhoneCall size={12} /> : <MessageSquare size={12} />}
+              </span>
+              <div className="lead-activity-body">
+                <div className="lead-activity-meta">
+                  <span className="lead-activity-author">{name}</span>
+                  <span className="lead-activity-time">{relativeTime(a.createdAt)}</span>
+                  {isOwn && (
+                    <button
+                      className="lead-activity-delete"
+                      title="Löschen"
+                      onClick={() => deleteLeadActivity(a.id, leadId)}
+                    >
+                      <Trash size={11} />
+                    </button>
+                  )}
+                </div>
+                {a.type === 'contact' ? (
+                  <span className="lead-activity-content contact-label">Kunde kontaktiert</span>
+                ) : (
+                  <span className="lead-activity-content">{a.content}</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="lead-activity-input-row">
+        <input
+          className="lead-activity-input"
+          placeholder="Notiz ins Team schreiben …"
+          value={noteText}
+          onChange={(e) => setNoteText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendNote(); }
+          }}
+        />
+        <button
+          className="lead-activity-send"
+          disabled={!noteText.trim() || sending}
+          onClick={sendNote}
+          title="Senden"
+        >
+          <Send size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Leads() {
-  const { leads, contracts, settings, updateLead, deleteLead } = useStore();
+  const { leads, contracts, settings, leadActivities, updateLead, deleteLead, addLeadActivity } = useStore();
+  const { getCurrentUser, users } = useAuth();
+  const currentUser = getCurrentUser();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Lead | undefined>(undefined);
   const [prefill, setPrefill] = useState<LeadPrefill | undefined>(undefined);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Auslaufende Verträge (alle Team-Verträge), nach Ablauf-Dringlichkeit sortiert.
   const expiring = useMemo(
@@ -87,6 +194,16 @@ export function Leads() {
       topic: 'Vertragsverlängerung',
     });
     setFormOpen(true);
+  };
+
+  const handleContact = async (leadId: string) => {
+    await addLeadActivity({ leadId, type: 'contact', content: undefined });
+  };
+
+  const lastContact = (leadId: string): string | null => {
+    const acts = leadActivities[leadId] ?? [];
+    const c = acts.find((a) => a.type === 'contact');
+    return c ? c.createdAt : null;
   };
 
   return (
@@ -172,6 +289,10 @@ export function Leads() {
                 )}
                 {byStatus[status].map((lead) => {
                   const fuBucket = followUpBucket(lead.followUpDate);
+                  const lc = lastContact(lead.id);
+                  const isExpanded = expandedId === lead.id;
+                  const actCount = (leadActivities[lead.id] ?? []).length;
+
                   return (
                     <div key={lead.id} className="lead-card">
                       <div className="lead-card-head">
@@ -231,6 +352,14 @@ export function Leads() {
                         </div>
                       )}
 
+                      {/* Letzter Kontakt */}
+                      {lc && (
+                        <div className="lead-last-contact">
+                          <PhoneCall size={11} />
+                          <span>Zuletzt kontaktiert: {relativeTime(lc)}</span>
+                        </div>
+                      )}
+
                       <div className="lead-card-footer">
                         <span
                           className={`lead-card-followup${fuBucket ? ` fu-${fuBucket}` : ''}`}
@@ -255,6 +384,35 @@ export function Leads() {
                           ))}
                         </select>
                       </div>
+
+                      {/* Aktionsleiste */}
+                      <div className="lead-card-toolbar">
+                        <button
+                          className="lead-contact-btn"
+                          onClick={() => handleContact(lead.id)}
+                          title="Kontaktversuch protokollieren"
+                        >
+                          <PhoneCall size={13} /> Kontaktiert
+                        </button>
+                        <button
+                          className="lead-chat-toggle"
+                          onClick={() => setExpandedId(isExpanded ? null : lead.id)}
+                          title="Aktivitäts-Log"
+                        >
+                          <MessageSquare size={13} />
+                          {actCount > 0 && <span className="lead-chat-badge">{actCount}</span>}
+                          {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        </button>
+                      </div>
+
+                      {/* Aktivitäts-Log */}
+                      {isExpanded && (
+                        <ActivityPanel
+                          leadId={lead.id}
+                          currentUserKey={currentUser?.key ?? null}
+                          userMap={users}
+                        />
+                      )}
                     </div>
                   );
                 })}

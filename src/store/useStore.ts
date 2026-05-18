@@ -10,6 +10,7 @@ import type {
   CustomerOwnership,
   Incentive,
   Lead,
+  LeadActivity,
 } from '../types';
 import { useAuth } from './useAuth';
 import { toast } from './useToast';
@@ -40,6 +41,9 @@ import {
   insertLead,
   updateLeadRow,
   deleteLeadRow,
+  fetchLeadActivities,
+  insertLeadActivity,
+  deleteLeadActivityRow,
 } from '../lib/supabaseApi';
 
 const currentUserKey = () => useAuth.getState().currentUserKey ?? undefined;
@@ -94,6 +98,8 @@ interface StoreState {
   customerOwners: Record<string, CustomerOwnership>;
   incentives: Incentive[];
   leads: Lead[];
+  /** Aktivitäten pro Lead, absteigend nach created_at */
+  leadActivities: Record<string, LeadActivity[]>;
 
   /** Wird gesetzt, sobald wir initial alle Daten geladen haben. */
   loaded: boolean;
@@ -133,6 +139,9 @@ interface StoreState {
   addLead: (l: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateLead: (id: string, l: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
+
+  addLeadActivity: (a: Pick<LeadActivity, 'leadId' | 'type' | 'content'>) => Promise<void>;
+  deleteLeadActivity: (id: string, leadId: string) => Promise<void>;
 }
 
 /** Loggt den technischen Fehler und zeigt dem Nutzer einen Toast. */
@@ -149,13 +158,14 @@ export const useStore = create<StoreState>()((set, get) => ({
   customerOwners: {},
   incentives: [],
   leads: [],
+  leadActivities: {},
   settings: DEFAULT_SETTINGS,
   loaded: false,
 
   loadAll: async () => {
     const uid = useAuth.getState().currentUserKey;
     try {
-      const [contracts, tariffChanges, notes, owners, incentives, leads, settingsRes] = await Promise.all([
+      const [contracts, tariffChanges, notes, owners, incentives, leads, activities, settingsRes] = await Promise.all([
         fetchContracts(),
         fetchTariffChanges(),
         fetchNotes(),
@@ -165,6 +175,8 @@ export const useStore = create<StoreState>()((set, get) => ({
         fetchIncentives().catch(() => [] as Incentive[]),
         // Ebenso für Leads (Migration 005).
         fetchLeads().catch(() => [] as Lead[]),
+        // Lead-Aktivitäten (Migration 006).
+        fetchLeadActivities().catch(() => [] as LeadActivity[]),
         uid ? fetchSettings(uid) : Promise.resolve({ user: null, shared: null }),
       ]);
 
@@ -199,6 +211,12 @@ export const useStore = create<StoreState>()((set, get) => ({
         }).catch(() => {});
       }
 
+      const leadActivities: Record<string, LeadActivity[]> = {};
+      for (const a of activities) {
+        if (!leadActivities[a.leadId]) leadActivities[a.leadId] = [];
+        leadActivities[a.leadId].push(a);
+      }
+
       set({
         contracts,
         tariffChanges,
@@ -206,6 +224,7 @@ export const useStore = create<StoreState>()((set, get) => ({
         customerOwners: owners,
         incentives,
         leads,
+        leadActivities,
         settings: mergedSettings,
         loaded: true,
       });
@@ -223,6 +242,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       customerOwners: {},
       incentives: [],
       leads: [],
+      leadActivities: {},
       settings: DEFAULT_SETTINGS,
       loaded: false,
     }),
@@ -248,6 +268,16 @@ export const useStore = create<StoreState>()((set, get) => ({
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
         fetchLeads().then((rows) => set({ leads: rows })).catch(() => {});
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_activities' }, () => {
+        fetchLeadActivities().then((rows) => {
+          const map: Record<string, LeadActivity[]> = {};
+          for (const a of rows) {
+            if (!map[a.leadId]) map[a.leadId] = [];
+            map[a.leadId].push(a);
+          }
+          set({ leadActivities: map });
+        }).catch(() => {});
       })
       .subscribe();
     return () => {
@@ -519,6 +549,35 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (e) {
       fail('Löschen fehlgeschlagen – Lead wiederhergestellt.', e);
       set({ leads: prev });
+    }
+  },
+
+  addLeadActivity: async ({ leadId, type, content }) => {
+    const uid = currentUserKey();
+    try {
+      const created = await insertLeadActivity({ leadId, type, content, createdBy: uid });
+      set((s) => {
+        const existing = s.leadActivities[leadId] ?? [];
+        return { leadActivities: { ...s.leadActivities, [leadId]: [created, ...existing] } };
+      });
+    } catch (e) {
+      fail('Aktivität konnte nicht gespeichert werden.', e);
+    }
+  },
+
+  deleteLeadActivity: async (id, leadId) => {
+    const prev = get().leadActivities;
+    set((s) => ({
+      leadActivities: {
+        ...s.leadActivities,
+        [leadId]: (s.leadActivities[leadId] ?? []).filter((a) => a.id !== id),
+      },
+    }));
+    try {
+      await deleteLeadActivityRow(id);
+    } catch (e) {
+      fail('Löschen fehlgeschlagen.', e);
+      set({ leadActivities: prev });
     }
   },
 }));

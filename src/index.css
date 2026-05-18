@@ -5399,3 +5399,222 @@ table.crm-table tbody tr:hover td:first-child {
   border-color: var(--tng-blue);
   box-shadow: 0 0 0 3px rgba(0, 102, 179, 0.16);
 }
+
+/* ============================================================
+   Lead Activity Log + Kontaktiert-Button
+   ============================================================ */
+
+.lead-last-contact {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--green);
+  font-weight: 500;
+  margin: 2px 0 0;
+}
+
+.lead-card-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.lead-contact-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--green);
+  background: transparent;
+  color: var(--green);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+  flex: 1;
+  justify-content: center;
+}
+.lead-contact-btn:hover {
+  background: var(--green);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.22);
+}
+
+.lead-chat-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.lead-chat-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.lead-chat-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--tng-blue);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+/* Activity Panel */
+.lead-activity-panel {
+  margin-top: 10px;
+  border-top: 1px solid var(--separator);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lead-activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.lead-activity-feed::-webkit-scrollbar { width: 4px; }
+.lead-activity-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.lead-activity-empty {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: center;
+  padding: 8px 0;
+}
+
+.lead-activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.lead-activity-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.lead-activity-item.contact .lead-activity-icon {
+  background: rgba(52, 199, 89, 0.15);
+  color: var(--green);
+}
+.lead-activity-item.note .lead-activity-icon {
+  background: rgba(0, 102, 179, 0.12);
+  color: var(--tng-blue);
+}
+
+.lead-activity-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.lead-activity-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 2px;
+}
+
+.lead-activity-author {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.lead-activity-time {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.lead-activity-delete {
+  display: none;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 0 2px;
+  border-radius: 3px;
+  transition: color 0.12s;
+}
+.lead-activity-meta:hover .lead-activity-delete { display: inline-flex; }
+.lead-activity-delete:hover { color: var(--red); }
+
+.lead-activity-content {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.lead-activity-content.contact-label {
+  color: var(--green);
+  font-weight: 600;
+}
+
+/* Note input row */
+.lead-activity-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lead-activity-input {
+  flex: 1;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.lead-activity-input:focus {
+  border-color: var(--tng-blue);
+  box-shadow: 0 0 0 3px rgba(0, 102, 179, 0.12);
+}
+.lead-activity-input::placeholder { color: var(--text-tertiary); }
+
+.lead-activity-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--tng-blue);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.12s, transform 0.1s;
+}
+.lead-activity-send:disabled { opacity: 0.4; cursor: default; }
+.lead-activity-send:not(:disabled):hover { transform: scale(1.08); }
