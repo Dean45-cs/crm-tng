@@ -57,6 +57,7 @@ interface ContractRow {
   status: ContractStatus;
   jira_ticket: string | null;
   follow_up_date: string | null;
+  laufzeit_monate: number | null;
   notes: string | null;
   created_at: string;
   created_by: string | null;
@@ -71,6 +72,7 @@ const mapContract = (r: ContractRow): Contract => ({
   status: r.status,
   jiraTicket: r.jira_ticket ?? '',
   followUpDate: r.follow_up_date ?? undefined,
+  laufzeitMonate: (r.laufzeit_monate as 12 | 24 | null) ?? null,
   notes: r.notes ?? undefined,
   createdAt: r.created_at,
   createdBy: r.created_by ?? undefined,
@@ -231,6 +233,7 @@ export async function insertContract(
     status: c.status,
     jira_ticket: c.jiraTicket || null,
     follow_up_date: c.followUpDate || null,
+    laufzeit_monate: c.laufzeitMonate ?? null,
     notes: c.notes || null,
     created_by: c.createdBy ?? null,
   };
@@ -255,6 +258,7 @@ export async function updateContractRow(
   if (patch.status !== undefined) payload.status = patch.status;
   if (patch.jiraTicket !== undefined) payload.jira_ticket = patch.jiraTicket || null;
   if (patch.followUpDate !== undefined) payload.follow_up_date = patch.followUpDate || null;
+  if (patch.laufzeitMonate !== undefined) payload.laufzeit_monate = patch.laufzeitMonate ?? null;
   if (patch.notes !== undefined) payload.notes = patch.notes || null;
   const { error } = await getSupabase().from('contracts').update(payload).eq('id', id);
   if (error) throw error;

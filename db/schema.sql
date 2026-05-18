@@ -36,6 +36,7 @@ create table if not exists public.contracts (
   status text not null,
   jira_ticket text,
   follow_up_date date,
+  laufzeit_monate integer check (laufzeit_monate in (12, 24)),
   notes text,
   created_at timestamptz default now(),
   created_by uuid references public.users(id) on delete set null

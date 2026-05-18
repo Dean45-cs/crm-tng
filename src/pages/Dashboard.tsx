@@ -36,6 +36,7 @@ import { JiraLink } from '../components/JiraLink';
 import { FollowUpInbox } from '../components/FollowUpInbox';
 import { SkeletonDashboard } from '../components/Skeleton';
 import { IncentiveWidget } from '../components/IncentiveWidget';
+import { ExpiryRadarWidget } from '../components/ExpiryRadarWidget';
 import { useRouter } from '../router';
 
 type Scope = 'mine' | 'all';
@@ -301,6 +302,7 @@ export function Dashboard() {
       </div>
 
       <IncentiveWidget />
+      <ExpiryRadarWidget />
 
       <div className="grid-2" style={{ marginBottom: 14 }}>
         <div className="widget">

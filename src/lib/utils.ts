@@ -191,6 +191,55 @@ export const buildCustomerSummaries = (
   );
 };
 
+// ── Vertragslaufzeit / Auslauf-Radar ─────────────────────────────────────────
+
+/** Berechnet das Vertragsende (contractDate + laufzeitMonate). Null = unbefristet. */
+export const contractEndDate = (contract: Contract): Date | null => {
+  if (!contract.laufzeitMonate) return null;
+  const d = new Date(contract.contractDate);
+  d.setMonth(d.getMonth() + contract.laufzeitMonate);
+  return d;
+};
+
+/** Tage bis zu einem Datum (negativ = bereits vergangen). */
+export const daysUntil = (d: Date): number => {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const target = new Date(d);
+  target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - now.getTime()) / 86_400_000);
+};
+
+export type ExpiryBucket = 'soon' | 'medium' | 'later';
+
+/**
+ * Ampel-Kategorie für den Auslauf-Radar.
+ * soon   = ≤ 30 Tage  (rot)
+ * medium = 31–60 Tage (orange)
+ * later  = 61–90 Tage (gelb)
+ * null   = > 90 Tage, bereits abgelaufen, oder unbefristet
+ */
+export const expiryBucket = (contract: Contract): ExpiryBucket | null => {
+  const end = contractEndDate(contract);
+  if (!end) return null;
+  const days = daysUntil(end);
+  if (days < 0 || days > 90) return null;
+  if (days <= 30) return 'soon';
+  if (days <= 60) return 'medium';
+  return 'later';
+};
+
+/** Formatiert die verbleibenden Tage als lesbaren Hinweis. */
+export const expiryLabel = (contract: Contract): string => {
+  const end = contractEndDate(contract);
+  if (!end) return '';
+  const days = daysUntil(end);
+  if (days < 0) return `vor ${Math.abs(days)} Tagen abgelaufen`;
+  if (days === 0) return 'Läuft heute ab';
+  if (days === 1) return 'Morgen';
+  return `in ${days} Tagen`;
+};
+
 export type FollowUpBucket = 'overdue' | 'today' | 'thisWeek' | 'later';
 
 export const FOLLOW_UP_LABEL: Record<FollowUpBucket, string> = {

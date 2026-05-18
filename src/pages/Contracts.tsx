@@ -17,6 +17,8 @@ import {
   exportCsv,
   formatCurrency,
   formatDate,
+  expiryBucket,
+  expiryLabel,
 } from '../lib/utils';
 import { JiraLink } from '../components/JiraLink';
 import { StatusBadge } from '../components/StatusBadge';
@@ -223,6 +225,7 @@ export function Contracts() {
                 <th>Produkte</th>
                 <th>Status</th>
                 <th>Jira</th>
+                <th>Laufzeit</th>
                 <th>Wiedervorlage</th>
                 <th style={{ textAlign: 'right' }} aria-sort={ariaSort('commission')}>
                   <button
@@ -264,6 +267,19 @@ export function Contracts() {
                   </td>
                   <td><StatusBadge status={c.status} /></td>
                   <td><JiraLink ticket={c.jiraTicket} /></td>
+                  <td>
+                    {c.laufzeitMonate ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {expiryBucket(c) && (
+                          <span
+                            className={`expiry-dot ${expiryBucket(c)}`}
+                            title={expiryLabel(c)}
+                          />
+                        )}
+                        {c.laufzeitMonate} M.
+                      </div>
+                    ) : '—'}
+                  </td>
                   <td>{formatDate(c.followUpDate)}</td>
                   <td style={{ textAlign: 'right', fontWeight: 600 }}>
                     {formatCurrency(calcContractCommission(c, settings))}
@@ -283,7 +299,7 @@ export function Contracts() {
             </tbody>
             <tfoot>
               <tr className="table-footer-row">
-                <td colSpan={7} style={{ textAlign: 'right' }}>
+                <td colSpan={8} style={{ textAlign: 'right' }}>
                   {filtered.length} Vertrag{filtered.length !== 1 ? 'sätze' : ''} · Provision gesamt
                 </td>
                 <td style={{ textAlign: 'right', color: 'var(--tng-blue-dark)' }}>

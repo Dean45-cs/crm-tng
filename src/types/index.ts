@@ -49,6 +49,8 @@ export interface Contract {
   status: ContractStatus;
   jiraTicket: string;
   followUpDate?: string;
+  /** Laufzeit in Monaten (12 oder 24). null = unbefristet. */
+  laufzeitMonate?: 12 | 24 | null;
   notes?: string;
   createdAt: string;
   /** Key des angemeldeten Nutzers, der den Vertrag erfasst hat */

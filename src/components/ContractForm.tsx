@@ -1,9 +1,15 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Plus, X, AlertTriangle } from 'lucide-react';
+import { Plus, X, AlertTriangle, Coins } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Modal } from './Modal';
 import { ProductPicker } from './ProductPicker';
-import { formatCurrency, getProductCommission, today } from '../lib/utils';
+import {
+  formatCurrency,
+  formatDate,
+  getProductCommission,
+  today,
+  contractEndDate,
+} from '../lib/utils';
 import { isJiraTicket, normalizeJiraTicket, findDuplicateCustomer } from '../lib/validation';
 import type { Contract, ContractStatus, ProductType } from '../types';
 import type { QuickAddPrefill } from './QuickAdd';
@@ -18,6 +24,7 @@ const emptyDraft = (): Draft => ({
   status: 'aktiv',
   jiraTicket: '',
   followUpDate: '',
+  laufzeitMonate: null,
   notes: '',
 });
 
@@ -75,6 +82,7 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
         status: editing.status,
         jiraTicket: editing.jiraTicket,
         followUpDate: editing.followUpDate ?? '',
+        laufzeitMonate: editing.laufzeitMonate ?? null,
         notes: editing.notes ?? '',
       });
       setShowMore(true);
@@ -266,13 +274,30 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
               </button>
             </div>
           </div>
-          <div className="bundle-total">
-            <span className="muted" style={{ fontSize: 12.5 }}>
-              Gesamtprovision
-            </span>
-            <strong style={{ color: 'var(--tng-blue-dark)' }}>
-              {formatCurrency(totalCommission)}
-            </strong>
+          {/* Provisions-Vorschau */}
+          <div className="commission-preview">
+            <div className="commission-preview-header">
+              <Coins size={14} />
+              Provisions-Vorschau
+            </div>
+            {draft.products.map((p, i) => {
+              const com = getProductCommission(settings, p);
+              return (
+                <div key={i} className="commission-preview-row">
+                  <span>{p}</span>
+                  <span>+ {formatCurrency(com)}</span>
+                </div>
+              );
+            })}
+            <div className="commission-preview-total" key={totalCommission}>
+              <span>Gesamt</span>
+              <span>{formatCurrency(totalCommission)}</span>
+            </div>
+            {settings.monthlyTarget > 0 && (
+              <div className="commission-preview-target">
+                = {Math.round((totalCommission / settings.monthlyTarget) * 100)} % deines Monatsziels
+              </div>
+            )}
           </div>
         </div>
 
@@ -299,6 +324,31 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
             value={draft.contractDate}
             onChange={(e) => update({ contractDate: e.target.value })}
           />
+        </div>
+        <div className="field">
+          <label htmlFor={`${fid}-laufzeit`}>Laufzeit</label>
+          <select
+            id={`${fid}-laufzeit`}
+            value={draft.laufzeitMonate ?? ''}
+            onChange={(e) => {
+              const v = e.target.value;
+              update({ laufzeitMonate: v === '' ? null : (Number(v) as 12 | 24) });
+            }}
+          >
+            <option value="">Unbefristet</option>
+            <option value="12">12 Monate</option>
+            <option value="24">24 Monate</option>
+          </select>
+          {draft.laufzeitMonate && draft.contractDate && (
+            <span className="muted" style={{ fontSize: 12 }}>
+              Vertragsende:{' '}
+              {formatDate(
+                contractEndDate({ ...draft, id: '', createdAt: '' })
+                  ?.toISOString()
+                  .slice(0, 10),
+              )}
+            </span>
+          )}
         </div>
 
         {!showMore && (
