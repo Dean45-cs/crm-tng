@@ -14,6 +14,7 @@ import {
   Users,
   LayoutDashboard,
   Trophy,
+  Target,
   Settings as SettingsIcon,
   Plus,
   CornerDownLeft,
@@ -88,6 +89,7 @@ export function CommandPalette() {
 
     const navItems: CmdItem[] = [
       { id: 'nav-dashboard', group: 'Navigation', icon: <LayoutDashboard size={15} />, label: 'Dashboard', run: go({ name: 'dashboard' }) },
+      { id: 'nav-leads', group: 'Navigation', icon: <Target size={15} />, label: 'Leads', run: go({ name: 'leads' }) },
       { id: 'nav-contracts', group: 'Navigation', icon: <FileSignature size={15} />, label: 'Verträge', run: go({ name: 'contracts' }) },
       { id: 'nav-tariff', group: 'Navigation', icon: <ArrowLeftRight size={15} />, label: 'Tarifwechsel', run: go({ name: 'tariff' }) },
       { id: 'nav-notes', group: 'Navigation', icon: <StickyNote size={15} />, label: 'Notizen', run: go({ name: 'notes' }) },

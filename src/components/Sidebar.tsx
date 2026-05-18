@@ -11,6 +11,7 @@ import {
   Trophy,
   Gift,
   Award,
+  Target,
   LogOut,
   Download,
 } from 'lucide-react';
@@ -42,6 +43,7 @@ function buildSections(showChef: boolean): { title: string; items: NavItemDef[] 
     {
       title: 'Verkauf',
       items: [
+        { id: 'leads', label: 'Leads', icon: <Target size={16} /> },
         { id: 'contracts', label: 'Verträge', icon: <FileSignature size={16} /> },
         { id: 'tariff', label: 'Tarifwechsel', icon: <ArrowLeftRight size={16} /> },
         { id: 'notes', label: 'Notizen', icon: <StickyNote size={16} /> },

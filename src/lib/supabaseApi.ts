@@ -15,6 +15,8 @@ import type {
   IncentiveMechanic,
   IncentiveMetric,
   IncentivePeriod,
+  Lead,
+  LeadStatus,
 } from '../types';
 import type { AuthUser } from '../store/useAuth';
 
@@ -576,5 +578,89 @@ export async function updateIncentiveRow(
 
 export async function deleteIncentiveRow(id: string): Promise<void> {
   const { error } = await getSupabase().from('incentives').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ============================================================================
+// Leads
+// ============================================================================
+
+interface LeadRow {
+  id: string;
+  customer_name: string;
+  customer_number: string | null;
+  phone: string | null;
+  topic: string | null;
+  status: LeadStatus;
+  follow_up_date: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const mapLead = (r: LeadRow): Lead => ({
+  id: r.id,
+  customerName: r.customer_name,
+  customerNumber: r.customer_number ?? undefined,
+  phone: r.phone ?? undefined,
+  topic: r.topic ?? undefined,
+  status: r.status,
+  followUpDate: r.follow_up_date ?? undefined,
+  notes: r.notes ?? undefined,
+  createdBy: r.created_by ?? undefined,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export async function fetchLeads(): Promise<Lead[]> {
+  const { data, error } = await getSupabase()
+    .from('leads')
+    .select('*')
+    .order('follow_up_date', { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return (data as LeadRow[]).map(mapLead);
+}
+
+export async function insertLead(
+  l: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>,
+): Promise<Lead> {
+  const payload = {
+    customer_name: l.customerName,
+    customer_number: l.customerNumber || null,
+    phone: l.phone || null,
+    topic: l.topic || null,
+    status: l.status,
+    follow_up_date: l.followUpDate || null,
+    notes: l.notes || null,
+    created_by: l.createdBy ?? null,
+  };
+  const { data, error } = await getSupabase()
+    .from('leads')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return mapLead(data as LeadRow);
+}
+
+export async function updateLeadRow(
+  id: string,
+  patch: Partial<Lead>,
+): Promise<void> {
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.customerName !== undefined) payload.customer_name = patch.customerName;
+  if (patch.customerNumber !== undefined) payload.customer_number = patch.customerNumber || null;
+  if (patch.phone !== undefined) payload.phone = patch.phone || null;
+  if (patch.topic !== undefined) payload.topic = patch.topic || null;
+  if (patch.status !== undefined) payload.status = patch.status;
+  if (patch.followUpDate !== undefined) payload.follow_up_date = patch.followUpDate || null;
+  if (patch.notes !== undefined) payload.notes = patch.notes || null;
+  const { error } = await getSupabase().from('leads').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteLeadRow(id: string): Promise<void> {
+  const { error } = await getSupabase().from('leads').delete().eq('id', id);
   if (error) throw error;
 }

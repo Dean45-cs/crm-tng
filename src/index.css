@@ -5138,3 +5138,264 @@ table.crm-table tbody tr:hover td:first-child {
 .expiry-summary-pill.soon   { background: var(--red); }
 .expiry-summary-pill.medium { background: var(--orange); }
 .expiry-summary-pill.later  { background: #b8980a; }
+
+/* =================================================================
+   Leads — Vertragsverlängerungen + Pipeline-Board
+   ================================================================= */
+
+/* ---- Vertragsverlängerungen-Liste ---- */
+.lead-renewal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+}
+.lead-renewal-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  transition: background 0.12s;
+}
+.lead-renewal-row:hover {
+  background: var(--surface-3);
+}
+.lead-renewal-customer {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.lead-renewal-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lead-renewal-kdnr {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.lead-renewal-com {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--tng-blue-dark);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+@media (prefers-color-scheme: dark) {
+  .lead-renewal-com { color: #6cbef0; }
+}
+.lead-renewal-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1a9f4a;
+  white-space: nowrap;
+}
+
+/* ---- Pipeline-Board ---- */
+.lead-board {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+@media (max-width: 1100px) {
+  .lead-board { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 620px) {
+  .lead-board { grid-template-columns: 1fr; }
+}
+.lead-column {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lead-column-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px 8px;
+  border-bottom: 1px solid var(--separator);
+}
+.lead-column-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.lead-column-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.lead-column-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+.lead-column.status-neu          .lead-column-dot { background: var(--tng-blue); }
+.lead-column.status-inBearbeitung .lead-column-dot { background: var(--orange); }
+.lead-column.status-gewonnen     .lead-column-dot { background: var(--green); }
+.lead-column.status-verloren     .lead-column-dot { background: var(--text-tertiary); }
+
+.lead-column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 40px;
+}
+.lead-column-empty {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-quaternary);
+  padding: 14px 0;
+}
+
+/* ---- Lead-Karte ---- */
+.lead-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: var(--shadow-xs);
+  transition: transform 0.16s cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.lead-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md), 0 0 18px rgba(0, 102, 179, 0.07);
+  border-color: rgba(0, 102, 179, 0.18);
+}
+.lead-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lead-card-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+  color: var(--text);
+  line-height: 1.3;
+}
+.lead-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.lead-icon-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--text-tertiary);
+  background: var(--surface-2);
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.lead-icon-btn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.lead-card-topic {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.lead-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lead-card-phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--tng-blue);
+  text-decoration: none;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--tng-blue-50);
+}
+.lead-card-phone:hover { background: var(--tng-blue-100); }
+.lead-card-kdnr {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-tertiary);
+  background: var(--surface-2);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+.lead-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--separator);
+}
+.lead-card-followup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.lead-card-followup.fu-overdue  { color: var(--red); }
+.lead-card-followup.fu-today    { color: var(--orange); }
+.lead-card-followup.fu-thisWeek { color: var(--tng-blue); }
+.lead-status-select {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 22px 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%238e8e93' d='M0 0h10L5 6z'/%3E%3C/svg%3E")
+    no-repeat right 8px center;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.lead-status-select:focus {
+  border-color: var(--tng-blue);
+  box-shadow: 0 0 0 3px rgba(0, 102, 179, 0.16);
+}

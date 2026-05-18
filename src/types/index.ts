@@ -144,3 +144,23 @@ export interface Incentive {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Stufen der Vertriebs-Pipeline für selbst angelegte Leads */
+export type LeadStatus = 'neu' | 'inBearbeitung' | 'gewonnen' | 'verloren';
+
+/** Selbst angelegter Vertriebs-Lead — geteiltes Team-Werkzeug */
+export interface Lead {
+  id: string;
+  customerName: string;
+  customerNumber?: string;
+  phone?: string;
+  /** Thema / Anliegen des Leads */
+  topic?: string;
+  status: LeadStatus;
+  /** Wiedervorlage-Datum */
+  followUpDate?: string;
+  notes?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -136,6 +136,28 @@ create table if not exists public.incentives (
   updated_at timestamptz default now()
 );
 
+-- ------------------------------------------------------------
+-- LEADS
+-- ------------------------------------------------------------
+-- Selbst angelegte Vertriebs-Leads mit 4-Stufen-Pipeline.
+-- Geteiltes Team-Werkzeug: alle Nutzer lesen/ändern alle Leads.
+-- ------------------------------------------------------------
+create table if not exists public.leads (
+  id uuid primary key default gen_random_uuid(),
+  customer_name text not null,
+  customer_number text,
+  phone text,
+  topic text,
+  status text not null default 'neu'
+    check (status in ('neu', 'inBearbeitung', 'gewonnen', 'verloren')),
+  follow_up_date date,
+  notes text,
+  created_by uuid references public.users(id) on delete set null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+create index if not exists idx_leads_status on public.leads(status);
+
 -- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
@@ -148,6 +170,7 @@ alter table public.customer_ownerships enable row level security;
 alter table public.user_settings enable row level security;
 alter table public.shared_settings enable row level security;
 alter table public.incentives enable row level security;
+alter table public.leads enable row level security;
 
 -- USERS: alle authentifizierten User dürfen alle Profile lesen
 -- (fürs Leaderboard und Sharing). Schreiben nur das eigene Profil –
@@ -288,6 +311,16 @@ create policy "incentives delete manager" on public.incentives
   for delete using (
     exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager'));
 
+-- LEADS: geteiltes Team-Werkzeug — alle authentifizierten Nutzer dürfen alles.
+create policy "leads read all" on public.leads
+  for select using (auth.role() = 'authenticated');
+create policy "leads insert all" on public.leads
+  for insert with check (auth.role() = 'authenticated');
+create policy "leads update all" on public.leads
+  for update using (auth.role() = 'authenticated');
+create policy "leads delete all" on public.leads
+  for delete using (auth.role() = 'authenticated');
+
 -- ============================================================================
 -- REALTIME
 -- ============================================================================
@@ -298,3 +331,4 @@ alter publication supabase_realtime add table public.notes;
 alter publication supabase_realtime add table public.customer_ownerships;
 alter publication supabase_realtime add table public.users;
 alter publication supabase_realtime add table public.incentives;
+alter publication supabase_realtime add table public.leads;

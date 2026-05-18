@@ -9,6 +9,7 @@ import type {
   TariffCommissionMatrix,
   CustomerOwnership,
   Incentive,
+  Lead,
 } from '../types';
 import { useAuth } from './useAuth';
 import { toast } from './useToast';
@@ -35,6 +36,10 @@ import {
   insertIncentive,
   updateIncentiveRow,
   deleteIncentiveRow,
+  fetchLeads,
+  insertLead,
+  updateLeadRow,
+  deleteLeadRow,
 } from '../lib/supabaseApi';
 
 const currentUserKey = () => useAuth.getState().currentUserKey ?? undefined;
@@ -88,6 +93,7 @@ interface StoreState {
   settings: Settings;
   customerOwners: Record<string, CustomerOwnership>;
   incentives: Incentive[];
+  leads: Lead[];
 
   /** Wird gesetzt, sobald wir initial alle Daten geladen haben. */
   loaded: boolean;
@@ -123,6 +129,10 @@ interface StoreState {
   addIncentive: (i: Omit<Incentive, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateIncentive: (id: string, i: Partial<Incentive>) => Promise<void>;
   deleteIncentive: (id: string) => Promise<void>;
+
+  addLead: (l: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateLead: (id: string, l: Partial<Lead>) => Promise<void>;
+  deleteLead: (id: string) => Promise<void>;
 }
 
 /** Loggt den technischen Fehler und zeigt dem Nutzer einen Toast. */
@@ -138,13 +148,14 @@ export const useStore = create<StoreState>()((set, get) => ({
   notes: [],
   customerOwners: {},
   incentives: [],
+  leads: [],
   settings: DEFAULT_SETTINGS,
   loaded: false,
 
   loadAll: async () => {
     const uid = useAuth.getState().currentUserKey;
     try {
-      const [contracts, tariffChanges, notes, owners, incentives, settingsRes] = await Promise.all([
+      const [contracts, tariffChanges, notes, owners, incentives, leads, settingsRes] = await Promise.all([
         fetchContracts(),
         fetchTariffChanges(),
         fetchNotes(),
@@ -152,6 +163,8 @@ export const useStore = create<StoreState>()((set, get) => ({
         // Fehlt die Tabelle noch (Migration 003 nicht eingespielt), darf das
         // nicht den ganzen Datenload abbrechen — dann eben keine Incentives.
         fetchIncentives().catch(() => [] as Incentive[]),
+        // Ebenso für Leads (Migration 005).
+        fetchLeads().catch(() => [] as Lead[]),
         uid ? fetchSettings(uid) : Promise.resolve({ user: null, shared: null }),
       ]);
 
@@ -192,6 +205,7 @@ export const useStore = create<StoreState>()((set, get) => ({
         notes,
         customerOwners: owners,
         incentives,
+        leads,
         settings: mergedSettings,
         loaded: true,
       });
@@ -208,6 +222,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       notes: [],
       customerOwners: {},
       incentives: [],
+      leads: [],
       settings: DEFAULT_SETTINGS,
       loaded: false,
     }),
@@ -230,6 +245,9 @@ export const useStore = create<StoreState>()((set, get) => ({
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incentives' }, () => {
         fetchIncentives().then((rows) => set({ incentives: rows })).catch(() => {});
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
+        fetchLeads().then((rows) => set({ leads: rows })).catch(() => {});
       })
       .subscribe();
     return () => {
@@ -468,6 +486,39 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (e) {
       fail('Löschen fehlgeschlagen – Incentive wiederhergestellt.', e);
       set({ incentives: prev });
+    }
+  },
+
+  addLead: async (l) => {
+    try {
+      const created = await insertLead({ ...l, createdBy: l.createdBy ?? currentUserKey() });
+      set((s) => ({ leads: [created, ...s.leads] }));
+      toast.success('Lead angelegt.');
+    } catch (e) {
+      fail('Lead konnte nicht angelegt werden.', e);
+    }
+  },
+  updateLead: async (id, l) => {
+    const prev = get().leads;
+    const now = new Date().toISOString();
+    set({ leads: prev.map((x) => (x.id === id ? { ...x, ...l, updatedAt: now } : x)) });
+    try {
+      await updateLeadRow(id, l);
+      toast.success('Lead aktualisiert.');
+    } catch (e) {
+      fail('Änderung fehlgeschlagen – Lead wurde zurückgesetzt.', e);
+      set({ leads: prev });
+    }
+  },
+  deleteLead: async (id) => {
+    const prev = get().leads;
+    set({ leads: prev.filter((x) => x.id !== id) });
+    try {
+      await deleteLeadRow(id);
+      toast.success('Lead gelöscht.');
+    } catch (e) {
+      fail('Löschen fehlgeschlagen – Lead wiederhergestellt.', e);
+      set({ leads: prev });
     }
   },
 }));
