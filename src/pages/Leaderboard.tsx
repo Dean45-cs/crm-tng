@@ -83,7 +83,9 @@ export function Leaderboard() {
       .sort((a, b) => b.monthCommission - a.monthCommission);
   }, [contracts, tariffChanges, settings, users, currentUserKey]);
 
-  const visibleRows = rows.filter((r) => r.optedIn);
+  // `rows` ist bereits auf „sichtbar oder ich selbst" gefiltert — auch ein
+  // ausgeblendeter Nutzer sieht sich also weiterhin im eigenen Ranking.
+  const visibleRows = rows;
   const maxMonth = Math.max(1, ...visibleRows.map((r) => r.monthCommission));
 
   return (

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Download, Upload, Trash2, Trophy, Sheet, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Save, Download, Trophy, Sheet, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { formatCurrency, TARIFF_CONTEXT_LABEL, TARIFF_TYPE_LABEL } from '../lib/utils';
@@ -28,6 +28,7 @@ export function Settings() {
   const currentUser = getCurrentUser();
 
   const [target, setTarget] = useState(settings.monthlyTarget);
+  const [syncedTarget, setSyncedTarget] = useState(settings.monthlyTarget);
   const [saved, setSaved] = useState(false);
 
   const [spClientId, setSpClientId] = useState(settings.spClientId);
@@ -45,6 +46,14 @@ export function Settings() {
         .catch(() => setSpAccount(null));
     }
   }, [settings.spClientId, settings.spTenantId]);
+
+  // settings lädt asynchron aus Supabase nach. Ändert sich das Monatsziel im
+  // Store, das Eingabefeld nachziehen — sonst überschriebe „Speichern" den
+  // echten Wert mit einem veralteten. Anpassung im Render (kein Effekt).
+  if (settings.monthlyTarget !== syncedTarget) {
+    setSyncedTarget(settings.monthlyTarget);
+    setTarget(settings.monthlyTarget);
+  }
 
   const saveSharePoint = () => {
     updateSettings({ spClientId, spTenantId, spFilePath, spSheetName });
@@ -101,37 +110,6 @@ export function Settings() {
     a.download = `crm-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const importAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(reader.result as string);
-        if (!confirm('Aktuelle Daten überschreiben?')) return;
-        const raw = localStorage.getItem('crm-tng-store');
-        const state = raw ? JSON.parse(raw) : { state: {}, version: 2 };
-        state.state = {
-          contracts: data.contracts ?? [],
-          tariffChanges: data.tariffChanges ?? [],
-          notes: data.notes ?? [],
-          settings: data.settings ?? settings,
-        };
-        localStorage.setItem('crm-tng-store', JSON.stringify(state));
-        window.location.reload();
-      } catch {
-        alert('Ungültige Datei.');
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const clearAll = () => {
-    if (!confirm('Wirklich ALLE Daten löschen? Dies kann nicht rückgängig gemacht werden!')) return;
-    localStorage.removeItem('crm-tng-store');
-    window.location.reload();
   };
 
   const updateMatrix = (
@@ -398,23 +376,11 @@ export function Settings() {
         <h3 className="widget-title">Daten</h3>
         <p className="muted" style={{ marginBottom: 14 }}>
           {contracts.length} Verträge · {tariffChanges.length} Tarifwechsel · {notes.length} Notizen.
-          Daten liegen lokal im Browser.
+          Alle Daten werden zentral in der Cloud gespeichert und im Team synchronisiert.
         </p>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <button className="btn" onClick={exportAll}>
-            <Download size={14} /> Backup exportieren
-          </button>
-          <label className="btn" style={{ cursor: 'pointer' }}>
-            <Upload size={14} /> Backup importieren
-            <input
-              type="file"
-              accept="application/json"
-              onChange={importAll}
-              style={{ display: 'none' }}
-            />
-          </label>
-          <button className="btn btn-danger" onClick={clearAll}>
-            <Trash2 size={14} /> Alle Daten löschen
+            <Download size={14} /> Backup exportieren (JSON)
           </button>
         </div>
       </div>

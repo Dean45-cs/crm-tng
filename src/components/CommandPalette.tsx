@@ -237,7 +237,7 @@ export function CommandPalette() {
                     aria-selected={idx === safeIdx}
                     data-active={idx === safeIdx}
                     className={`cmdk-item ${idx === safeIdx ? 'active' : ''}`}
-                    onMouseMove={() => setActiveIdx(idx)}
+                    onMouseEnter={() => setActiveIdx(idx)}
                     onClick={() => item.run()}
                   >
                     <span className="cmdk-item-icon">{item.icon}</span>

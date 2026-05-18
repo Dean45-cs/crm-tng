@@ -29,24 +29,22 @@ export function ExpiryRadarWidget() {
   const { users } = useAuth();
   const { navigate } = useRouter();
 
-  const expiring = useMemo(() => {
-    return contracts
+  // Alle auslaufenden Verträge fürs Zählen, die Top 8 für die Liste.
+  const { rows, bucketCounts } = useMemo(() => {
+    const all = contracts
       .filter((c) => c.status !== 'storniert' && expiryBucket(c) !== null)
-      .sort((a, b) => {
-        const da = daysUntil(contractEndDate(a)!);
-        const db = daysUntil(contractEndDate(b)!);
-        return da - db;
-      })
-      .slice(0, 8);
+      .sort(
+        (a, b) => daysUntil(contractEndDate(a)!) - daysUntil(contractEndDate(b)!),
+      );
+    const counts = { soon: 0, medium: 0, later: 0 };
+    for (const c of all) {
+      const b = expiryBucket(c);
+      if (b) counts[b] += 1;
+    }
+    return { rows: all.slice(0, 8), bucketCounts: counts };
   }, [contracts]);
 
-  if (expiring.length === 0) return null;
-
-  const bucketCounts = {
-    soon: expiring.filter((c) => expiryBucket(c) === 'soon').length,
-    medium: expiring.filter((c) => expiryBucket(c) === 'medium').length,
-    later: expiring.filter((c) => expiryBucket(c) === 'later').length,
-  };
+  if (rows.length === 0) return null;
 
   return (
     <div className="widget" style={{ marginBottom: 14 }}>
@@ -77,11 +75,11 @@ export function ExpiryRadarWidget() {
       </div>
 
       <div className="expiry-radar-list">
-        {expiring.map((c) => {
+        {rows.map((c) => {
           const bucket = expiryBucket(c)!;
           const label = expiryLabel(c);
           const com = calcContractCommission(c, settings);
-          const owner = c.createdBy ? Object.values(users).find((u) => u.key === c.createdBy) : null;
+          const owner = c.createdBy ? users[c.createdBy] : null;
           const ownerName = owner?.displayName ?? '';
 
           return (

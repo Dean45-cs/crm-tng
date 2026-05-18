@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Plus, FileSignature, ArrowLeftRight, StickyNote, X } from 'lucide-react';
 import { ContractForm } from './ContractForm';
 import { TariffChangeForm } from './TariffChangeForm';
@@ -45,29 +45,34 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
     setPrefill(null);
   }, []);
 
-  const ctx: QuickAddCtx = {
-    openNewContract: (p) => {
-      setEditingContract(null);
-      setPrefill(p ?? null);
-      setForm('contract');
-      setMenuOpen(false);
-    },
-    openNewTariff: (p) => {
-      setEditingTariff(null);
-      setPrefill(p ?? null);
-      setForm('tariff');
-      setMenuOpen(false);
-    },
-    openNewNote: (p) => {
-      setEditingNote(null);
-      setPrefill(p ?? null);
-      setForm('note');
-      setMenuOpen(false);
-    },
-    editContract: (c) => { setEditingContract(c); setPrefill(null); setForm('contract'); },
-    editTariff: (t) => { setEditingTariff(t); setPrefill(null); setForm('tariff'); },
-    editNote: (n) => { setEditingNote(n); setPrefill(null); setForm('note'); },
-  };
+  // Stabile Referenz — alle Aktionen nutzen nur useState-Setter (selbst stabil),
+  // damit Konsumenten wie CommandPalette nicht bei jedem Render neu memoisieren.
+  const ctx: QuickAddCtx = useMemo(
+    () => ({
+      openNewContract: (p) => {
+        setEditingContract(null);
+        setPrefill(p ?? null);
+        setForm('contract');
+        setMenuOpen(false);
+      },
+      openNewTariff: (p) => {
+        setEditingTariff(null);
+        setPrefill(p ?? null);
+        setForm('tariff');
+        setMenuOpen(false);
+      },
+      openNewNote: (p) => {
+        setEditingNote(null);
+        setPrefill(p ?? null);
+        setForm('note');
+        setMenuOpen(false);
+      },
+      editContract: (c) => { setEditingContract(c); setPrefill(null); setForm('contract'); },
+      editTariff: (t) => { setEditingTariff(t); setPrefill(null); setForm('tariff'); },
+      editNote: (n) => { setEditingNote(n); setPrefill(null); setForm('note'); },
+    }),
+    [],
+  );
 
   // Cmd/Ctrl + N → Vertrag, Cmd/Ctrl + T → Tarifwechsel, Cmd/Ctrl + Shift + N → Notiz
   useEffect(() => {
@@ -87,7 +92,7 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ctx]);
 
   return (
     <Ctx.Provider value={ctx}>

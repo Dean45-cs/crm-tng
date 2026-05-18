@@ -354,6 +354,7 @@ export function Leads() {
                           {confirmId === lead.id ? (
                             <button
                               className="btn btn-sm btn-danger"
+                              autoFocus
                               onClick={() => {
                                 deleteLead(lead.id);
                                 setConfirmId(null);

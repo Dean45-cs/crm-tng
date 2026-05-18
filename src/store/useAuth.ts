@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { getSupabase, pinToPassword, nameToEmail } from '../lib/supabase';
 import {
   fetchAllUsers,
+  fetchUserActive,
   upsertUserProfile,
   upsertUserSettings,
   updateUserFlags,
@@ -13,6 +14,9 @@ import { toast } from './useToast';
 export function normalizeUserKey(name: string): string {
   return name.trim().toLowerCase();
 }
+
+/** Verhindert, dass der Auth-Listener bei HMR/Remount mehrfach registriert wird. */
+let authListenerRegistered = false;
 
 export type UserRole = 'agent' | 'manager';
 
@@ -86,13 +90,18 @@ export const useAuth = create<AuthState>()((set, get) => ({
         initializing: false,
       });
 
-      // Auth-State-Changes abonnieren
-      sb.auth.onAuthStateChange((_event, sess) => {
-        set({ currentUserKey: sess?.user.id ?? null });
-        if (sess) {
-          fetchAllUsers().then((u) => set({ users: u })).catch(() => {});
-        }
-      });
+      // Auth-State-Changes abonnieren (genau einmal).
+      if (!authListenerRegistered) {
+        authListenerRegistered = true;
+        sb.auth.onAuthStateChange((event, sess) => {
+          set({ currentUserKey: sess?.user.id ?? null });
+          // Profile nur bei echtem Login neu laden — nicht bei jedem
+          // stündlichen TOKEN_REFRESHED-Event.
+          if (event === 'SIGNED_IN') {
+            fetchAllUsers().then((u) => set({ users: u })).catch(() => {});
+          }
+        });
+      }
     } catch (e) {
       console.error('Auth init failed', e);
       set({ initializing: false });
@@ -175,14 +184,28 @@ export const useAuth = create<AuthState>()((set, get) => ({
     } catch {
       /* ignore */
     }
-    await get().refreshUsers();
 
-    // Gesperrte Nutzer dürfen sich nicht anmelden.
-    if (get().users[uid]?.isActive === false) {
+    // Gesperrte Nutzer dürfen sich nicht anmelden — verbindlich serverseitig
+    // prüfen. Schlägt die Prüfung fehl, wird fail-closed abgewiesen, damit
+    // ein Netzwerkfehler keinen gesperrten Zugang durchrutschen lässt.
+    try {
+      const active = await fetchUserActive(uid);
+      if (!active) {
+        await sb.auth.signOut();
+        return {
+          ok: false,
+          error: 'Dieser Zugang wurde gesperrt. Bitte wende dich an deine:n Vorgesetzte:n.',
+        };
+      }
+    } catch {
       await sb.auth.signOut();
-      return { ok: false, error: 'Dieser Zugang wurde gesperrt. Bitte wende dich an deine:n Vorgesetzte:n.' };
+      return {
+        ok: false,
+        error: 'Anmeldung konnte nicht verifiziert werden. Bitte erneut versuchen.',
+      };
     }
 
+    await get().refreshUsers();
     set({ currentUserKey: uid });
     return { ok: true };
   },

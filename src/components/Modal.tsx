@@ -17,6 +17,13 @@ export function Modal({ title, subtitle, open, onClose, children, footer }: Prop
   const modalRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
 
+  // Immer der aktuelle onClose — so muss der Fokus-Trap-Effekt nicht von
+  // onClose abhängen und wird nicht bei jedem Eltern-Render neu aufgebaut.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!open) return;
 
@@ -36,7 +43,7 @@ export function Modal({ title, subtitle, open, onClose, children, footer }: Prop
 
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -60,7 +67,7 @@ export function Modal({ title, subtitle, open, onClose, children, footer }: Prop
       window.removeEventListener('keydown', handler);
       restoreFocusRef.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

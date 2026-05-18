@@ -159,6 +159,7 @@ create table if not exists public.leads (
   updated_at timestamptz default now()
 );
 create index if not exists idx_leads_status on public.leads(status);
+create index if not exists idx_leads_follow_up on public.leads(follow_up_date);
 
 -- ------------------------------------------------------------
 -- LEAD ACTIVITIES

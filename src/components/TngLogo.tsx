@@ -12,6 +12,7 @@
  * großes Rechteck mit den Buchstaben "TNG" + Doppel-Loop als even-odd-
  * Aussparungen. Diese Pfade werden hier 1:1 weiter genutzt.
  */
+import { useId } from 'react';
 
 const VIEWBOX_TILE = '0 0 600 600';
 // Enge Bounding-Box des Logos in der 600×600-Box (aus den Pfaden berechnet:
@@ -40,9 +41,6 @@ function LogoPaths({ fill }: { fill: string }) {
   );
 }
 
-let uid = 0;
-const nextId = () => `tng-${++uid}`;
-
 /**
  * Branded Tile: TNG-blauer Gradient, gerundete Ecken,
  * Logo als weiße Aussparung. Selbsterklärend, auf jedem Hintergrund.
@@ -55,10 +53,12 @@ export function TngTile({
   radius?: number;
 }) {
   const r = radius ?? Math.round(size * 0.22);
-  const gradId = nextId();
-  const shineId = nextId();
-  const innerId = nextId();
-  const clipId = nextId();
+  // useId() liefert stabile, kollisionsfreie IDs (auch unter StrictMode/SSR).
+  const base = useId();
+  const gradId = `${base}-grad`;
+  const shineId = `${base}-shine`;
+  const innerId = `${base}-inner`;
+  const clipId = `${base}-clip`;
   // Radius im 600er-Koordinatensystem
   const r600 = (r / size) * 600;
 
@@ -127,7 +127,7 @@ export function TngMark({
 }) {
   const aspect = MARK_W / MARK_H;
   const width = Math.round(height * aspect);
-  const maskId = nextId();
+  const maskId = `${useId()}-mask`;
 
   return (
     <svg

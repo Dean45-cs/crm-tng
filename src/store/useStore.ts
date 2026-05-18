@@ -151,6 +151,18 @@ const fail = (userMsg: string, e: unknown) => {
   toast.error(userMsg);
 };
 
+/**
+ * Bündelt schnelle Aufrufe: bei einem Schwall Realtime-Events wird die
+ * Tabelle nur einmal neu geladen statt pro Event.
+ */
+const debounce = (fn: () => void, ms = 250): (() => void) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(fn, ms);
+  };
+};
+
 export const useStore = create<StoreState>()((set, get) => ({
   contracts: [],
   tariffChanges: [],
@@ -249,36 +261,49 @@ export const useStore = create<StoreState>()((set, get) => ({
 
   subscribeRealtime: () => {
     const sb = getSupabase();
-    const channel = sb
-      .channel('crm-tng-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'contracts' }, () => {
-        fetchContracts().then((rows) => set({ contracts: rows })).catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tariff_changes' }, () => {
-        fetchTariffChanges().then((rows) => set({ tariffChanges: rows })).catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, () => {
-        fetchNotes().then((rows) => set({ notes: rows })).catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_ownerships' }, () => {
-        fetchOwnerships().then((rows) => set({ customerOwners: rows })).catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'incentives' }, () => {
-        fetchIncentives().then((rows) => set({ incentives: rows })).catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
-        fetchLeads().then((rows) => set({ leads: rows })).catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_activities' }, () => {
-        fetchLeadActivities().then((rows) => {
+
+    // Pro Tabelle ein gebündelter Reload — ein Event-Schwall (z.B. Bulk-Export)
+    // löst so nur einen Refetch aus statt einen pro Zeile.
+    const reloadContracts = debounce(() => {
+      fetchContracts().then((rows) => set({ contracts: rows })).catch(() => {});
+    });
+    const reloadTariffs = debounce(() => {
+      fetchTariffChanges().then((rows) => set({ tariffChanges: rows })).catch(() => {});
+    });
+    const reloadNotes = debounce(() => {
+      fetchNotes().then((rows) => set({ notes: rows })).catch(() => {});
+    });
+    const reloadOwners = debounce(() => {
+      fetchOwnerships().then((rows) => set({ customerOwners: rows })).catch(() => {});
+    });
+    const reloadIncentives = debounce(() => {
+      fetchIncentives().then((rows) => set({ incentives: rows })).catch(() => {});
+    });
+    const reloadLeads = debounce(() => {
+      fetchLeads().then((rows) => set({ leads: rows })).catch(() => {});
+    });
+    const reloadActivities = debounce(() => {
+      fetchLeadActivities()
+        .then((rows) => {
           const map: Record<string, LeadActivity[]> = {};
           for (const a of rows) {
             if (!map[a.leadId]) map[a.leadId] = [];
             map[a.leadId].push(a);
           }
           set({ leadActivities: map });
-        }).catch(() => {});
-      })
+        })
+        .catch(() => {});
+    });
+
+    const channel = sb
+      .channel('crm-tng-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contracts' }, reloadContracts)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tariff_changes' }, reloadTariffs)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, reloadNotes)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_ownerships' }, reloadOwners)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incentives' }, reloadIncentives)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, reloadLeads)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_activities' }, reloadActivities)
       .subscribe();
     return () => {
       sb.removeChannel(channel);
@@ -545,6 +570,13 @@ export const useStore = create<StoreState>()((set, get) => ({
     set({ leads: prev.filter((x) => x.id !== id) });
     try {
       await deleteLeadRow(id);
+      // Verwaiste Aktivitäten aus dem State entfernen (DB cascadet selbst).
+      set((s) => {
+        if (!s.leadActivities[id]) return {};
+        const next = { ...s.leadActivities };
+        delete next[id];
+        return { leadActivities: next };
+      });
       toast.success('Lead gelöscht.');
     } catch (e) {
       fail('Löschen fehlgeschlagen – Lead wiederhergestellt.', e);

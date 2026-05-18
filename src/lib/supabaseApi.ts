@@ -185,6 +185,22 @@ export async function setUserActive(id: string, isActive: boolean): Promise<void
   if (error) throw error;
 }
 
+/**
+ * Liest gezielt den Sperr-Status eines Nutzers — für den Login-Gate.
+ * Fehlt das Profil oder schlägt die Abfrage fehl, gilt fail-closed:
+ * der Aufrufer wertet das als „kein Zugang".
+ */
+export async function fetchUserActive(id: string): Promise<boolean> {
+  const { data, error } = await getSupabase()
+    .from('users')
+    .select('is_active')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return false;
+  return (data as { is_active: boolean | null }).is_active !== false;
+}
+
 export async function upsertUserProfile(
   id: string,
   key: string,

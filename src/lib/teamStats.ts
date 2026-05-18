@@ -34,12 +34,16 @@ export function agentStats(
   for (const c of contracts) {
     if (c.createdBy !== agentKey) continue;
     const com = calcContractCommission(c, settings);
+    // Stornierte Verträge zählen nicht als Abschluss (konsistent mit incentives.ts).
+    const counts = c.status !== 'storniert';
     s.totalCommission += com;
-    s.totalDeals += 1;
+    if (counts) s.totalDeals += 1;
     if (isSameMonth(c.contractDate, ref)) {
       s.monthCommission += com;
-      s.monthDeals += 1;
-      s.monthContracts += 1;
+      if (counts) {
+        s.monthDeals += 1;
+        s.monthContracts += 1;
+      }
     }
   }
   for (const t of tariffChanges) {

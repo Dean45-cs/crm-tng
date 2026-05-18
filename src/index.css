@@ -5773,7 +5773,8 @@ table.crm-table tbody tr:hover td:first-child {
   text-align: left;
   transition: background 0.1s;
 }
-.header-search-item:hover {
+.header-search-item:hover,
+.header-search-item.active {
   background: var(--surface-2);
 }
 

@@ -15,16 +15,33 @@ export const formatCurrency = (value: number): string =>
     currency: 'EUR',
   }).format(value);
 
+/**
+ * Parst ein ISO-Datum. Reine Datumsstrings (YYYY-MM-DD) werden als lokale
+ * Mitternacht interpretiert — `new Date('2024-03-01')` läse sie sonst als
+ * UTC und würde in westlichen Zeitzonen auf den Vortag rutschen.
+ */
+export const parseLocalDate = (iso: string): Date => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return new Date(iso);
+};
+
 export const formatDate = (iso?: string): string => {
   if (!iso) return '–';
-  return new Date(iso).toLocaleDateString('de-DE', {
+  return parseLocalDate(iso).toLocaleDateString('de-DE', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
   });
 };
 
-export const today = (): string => new Date().toISOString().slice(0, 10);
+/** Heutiges Datum als YYYY-MM-DD in lokaler Zeit (nicht UTC). */
+export const today = (): string => {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+};
 
 export const TARIFF_TYPE_LABEL: Record<TariffChangeType, string> = {
   sidegrade: 'Sidegrade / VVL',
@@ -60,7 +77,7 @@ export const calcTariffCommission = (
   settings.tariffCommission[change.changeType]?.[change.context] ?? 0;
 
 export const isSameMonth = (iso: string, ref = new Date()): boolean => {
-  const d = new Date(iso);
+  const d = parseLocalDate(iso);
   return (
     d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth()
   );
@@ -74,7 +91,7 @@ export const monthLabel = (offset = 0): string => {
 };
 
 export const monthKey = (iso: string): string => {
-  const d = new Date(iso);
+  const d = parseLocalDate(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
@@ -98,7 +115,7 @@ export const weekEnd = (ref = new Date()): Date => {
 
 /** true, wenn das ISO-Datum in derselben Montag-Woche wie `ref` liegt. */
 export const isSameWeek = (iso: string, ref = new Date()): boolean => {
-  const d = new Date(iso);
+  const d = parseLocalDate(iso);
   return d >= weekStart(ref) && d <= weekEnd(ref);
 };
 
@@ -196,8 +213,14 @@ export const buildCustomerSummaries = (
 /** Berechnet das Vertragsende (contractDate + laufzeitMonate). Null = unbefristet. */
 export const contractEndDate = (contract: Contract): Date | null => {
   if (!contract.laufzeitMonate) return null;
-  const d = new Date(contract.contractDate);
+  const d = parseLocalDate(contract.contractDate);
+  const day = d.getDate();
+  // Tag erst auf 1 setzen, damit das Monats-Addieren nicht überläuft
+  // (z.B. 29.02. + 12 Monate dürfte sonst auf den 01.03. springen).
+  d.setDate(1);
   d.setMonth(d.getMonth() + contract.laufzeitMonate);
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, lastDay));
   return d;
 };
 
@@ -251,7 +274,7 @@ export const FOLLOW_UP_LABEL: Record<FollowUpBucket, string> = {
 
 export const followUpBucket = (iso?: string): FollowUpBucket | null => {
   if (!iso) return null;
-  const target = new Date(iso);
+  const target = parseLocalDate(iso);
   target.setHours(0, 0, 0, 0);
   const now = new Date();
   now.setHours(0, 0, 0, 0);

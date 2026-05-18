@@ -9,6 +9,7 @@ export function CustomerSearchBar() {
   const { navigate } = useRouter();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -53,6 +54,20 @@ export function CustomerSearchBar() {
       setOpen(false);
       setQuery('');
       inputRef.current?.blur();
+      return;
+    }
+    if (results.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setOpen(true);
+      setActiveIdx((i) => (i + 1) % results.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setOpen(true);
+      setActiveIdx((i) => (i - 1 + results.length) % results.length);
+    } else if (e.key === 'Enter') {
+      const pick = results[Math.min(activeIdx, results.length - 1)];
+      if (pick) handleSelect(pick.customerNumber);
     }
   };
 
@@ -68,19 +83,26 @@ export function CustomerSearchBar() {
           autoComplete="off"
           onChange={(e) => {
             setQuery(e.target.value);
+            setActiveIdx(0);
             setOpen(true);
           }}
           onFocus={() => { if (query) setOpen(true); }}
           onKeyDown={handleKeyDown}
+          role="combobox"
+          aria-expanded={open && results.length > 0}
+          aria-controls="customer-search-list"
         />
       </div>
 
       {open && results.length > 0 && (
-        <div className="header-search-dropdown">
-          {results.map((c) => (
+        <div className="header-search-dropdown" id="customer-search-list" role="listbox">
+          {results.map((c, idx) => (
             <button
               key={c.customerNumber}
-              className="header-search-item"
+              role="option"
+              aria-selected={idx === activeIdx}
+              className={`header-search-item${idx === activeIdx ? ' active' : ''}`}
+              onMouseEnter={() => setActiveIdx(idx)}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => handleSelect(c.customerNumber)}
             >
