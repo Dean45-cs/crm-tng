@@ -14,7 +14,12 @@ import {
   ChevronUp,
   Send,
   Trash,
+  Crown,
+  Flame,
+  ArrowUp,
+  UserPlus,
 } from 'lucide-react';
+import { useQuickAdd } from '../components/QuickAdd';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import {
@@ -28,7 +33,7 @@ import {
   followUpBucket,
 } from '../lib/utils';
 import { LeadForm, type LeadPrefill } from '../components/LeadForm';
-import type { Lead, LeadStatus, Contract } from '../types';
+import type { Lead, LeadStatus, LeadPriority, Contract } from '../types';
 
 const STATUS_ORDER: LeadStatus[] = ['neu', 'inBearbeitung', 'gewonnen', 'verloren'];
 
@@ -37,6 +42,13 @@ const STATUS_LABEL: Record<LeadStatus, string> = {
   inBearbeitung: 'In Bearbeitung',
   gewonnen: 'Gewonnen',
   verloren: 'Verloren',
+};
+
+// Niedriger Rang = höhere Dringlichkeit, wird zuerst sortiert.
+const PRIORITY_RANK: Record<LeadPriority, number> = {
+  dringend: 0,
+  hoch: 1,
+  normal: 2,
 };
 
 function relativeTime(iso: string): string {
@@ -139,6 +151,7 @@ function ActivityPanel({ leadId, currentUserKey, userMap }: ActivityPanelProps) 
 export function Leads() {
   const { leads, contracts, settings, leadActivities, updateLead, deleteLead, addLeadActivity } = useStore();
   const { getCurrentUser, users } = useAuth();
+  const { openNewContract } = useQuickAdd();
   const currentUser = getCurrentUser();
 
   const [formOpen, setFormOpen] = useState(false);
@@ -173,6 +186,16 @@ export function Leads() {
       verloren: [],
     };
     for (const l of leads) groups[l.status]?.push(l);
+    // Innerhalb jeder Spalte: dringende Leads zuerst, dann nach Wiedervorlage.
+    for (const status of STATUS_ORDER) {
+      groups[status].sort((a, b) => {
+        const r = PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
+        if (r !== 0) return r;
+        return (a.followUpDate ?? '9999-12-31').localeCompare(
+          b.followUpDate ?? '9999-12-31',
+        );
+      });
+    }
     return groups;
   }, [leads]);
 
@@ -292,9 +315,32 @@ export function Leads() {
                   const lc = lastContact(lead.id);
                   const isExpanded = expandedId === lead.id;
                   const actCount = (leadActivities[lead.id] ?? []).length;
+                  const isChef = !!lead.createdBy && users[lead.createdBy]?.role === 'manager';
+                  const cardClass = `lead-card prio-${lead.priority}${isChef ? ' from-chef' : ''}`;
 
                   return (
-                    <div key={lead.id} className="lead-card">
+                    <div key={lead.id} className={cardClass}>
+                      {/* Dringlichkeits- und Chef-Badges */}
+                      {(isChef || lead.priority !== 'normal') && (
+                        <div className="lead-card-badges">
+                          {lead.priority === 'dringend' && (
+                            <span className="lead-prio-badge dringend">
+                              <Flame size={10} /> Dringend
+                            </span>
+                          )}
+                          {lead.priority === 'hoch' && (
+                            <span className="lead-prio-badge hoch">
+                              <ArrowUp size={10} /> Hoch
+                            </span>
+                          )}
+                          {isChef && (
+                            <span className="lead-chef-badge">
+                              <Crown size={10} /> Vom Chef
+                            </span>
+                          )}
+                        </div>
+                      )}
+
                       <div className="lead-card-head">
                         <span className="lead-card-name">{lead.customerName}</span>
                         <div className="lead-card-actions">
@@ -412,6 +458,21 @@ export function Leads() {
                           currentUserKey={currentUser?.key ?? null}
                           userMap={users}
                         />
+                      )}
+
+                      {/* Gewonnen → Kunde anlegen */}
+                      {lead.status === 'gewonnen' && (
+                        <button
+                          className="lead-convert-btn"
+                          onClick={() =>
+                            openNewContract({
+                              customerName: lead.customerName,
+                              customerNumber: lead.customerNumber ?? '',
+                            })
+                          }
+                        >
+                          <UserPlus size={13} /> Als Kunde in Datenbank anlegen
+                        </button>
                       )}
                     </div>
                   );

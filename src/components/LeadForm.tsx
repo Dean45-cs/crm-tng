@@ -2,13 +2,14 @@ import { useId, useState } from 'react';
 import { Modal } from './Modal';
 import { useStore } from '../store/useStore';
 import { today } from '../lib/utils';
-import type { Lead, LeadStatus } from '../types';
+import type { Lead, LeadStatus, LeadPriority } from '../types';
 
 export interface LeadPrefill {
   customerName?: string;
   customerNumber?: string;
   phone?: string;
   topic?: string;
+  priority?: LeadPriority;
   followUpDate?: string;
 }
 
@@ -25,6 +26,12 @@ const STATUS_LABEL: Record<LeadStatus, string> = {
   inBearbeitung: 'In Bearbeitung',
   gewonnen: 'Gewonnen',
   verloren: 'Verloren',
+};
+
+const PRIORITY_LABEL: Record<LeadPriority, string> = {
+  normal: 'Normal',
+  hoch: 'Hoch',
+  dringend: 'Dringend',
 };
 
 /**
@@ -45,6 +52,9 @@ export function LeadForm({ onClose, lead, prefill }: Props) {
   const [phone, setPhone] = useState(lead?.phone ?? prefill?.phone ?? '');
   const [topic, setTopic] = useState(lead?.topic ?? prefill?.topic ?? '');
   const [status, setStatus] = useState<LeadStatus>(lead?.status ?? 'neu');
+  const [priority, setPriority] = useState<LeadPriority>(
+    lead?.priority ?? prefill?.priority ?? 'normal',
+  );
   const [followUpDate, setFollowUpDate] = useState(
     lead?.followUpDate ?? prefill?.followUpDate ?? today(),
   );
@@ -75,6 +85,7 @@ export function LeadForm({ onClose, lead, prefill }: Props) {
       phone: phone.trim(),
       topic: topic.trim(),
       status,
+      priority,
       followUpDate,
       notes: notes.trim(),
     };
@@ -173,7 +184,7 @@ export function LeadForm({ onClose, lead, prefill }: Props) {
           />
         </div>
 
-        <div className="field full">
+        <div className="field">
           <label htmlFor={`${fid}-status`}>Status</label>
           <select
             id={`${fid}-status`}
@@ -183,6 +194,21 @@ export function LeadForm({ onClose, lead, prefill }: Props) {
             {(Object.keys(STATUS_LABEL) as LeadStatus[]).map((s) => (
               <option key={s} value={s}>
                 {STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor={`${fid}-priority`}>Dringlichkeit</label>
+          <select
+            id={`${fid}-priority`}
+            value={priority}
+            onChange={(e) => setPriority(e.target.value as LeadPriority)}
+          >
+            {(Object.keys(PRIORITY_LABEL) as LeadPriority[]).map((p) => (
+              <option key={p} value={p}>
+                {PRIORITY_LABEL[p]}
               </option>
             ))}
           </select>

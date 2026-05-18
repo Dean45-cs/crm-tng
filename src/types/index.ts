@@ -148,6 +148,9 @@ export interface Incentive {
 /** Stufen der Vertriebs-Pipeline für selbst angelegte Leads */
 export type LeadStatus = 'neu' | 'inBearbeitung' | 'gewonnen' | 'verloren';
 
+/** Dringlichkeit eines Leads */
+export type LeadPriority = 'normal' | 'hoch' | 'dringend';
+
 /** Selbst angelegter Vertriebs-Lead — geteiltes Team-Werkzeug */
 export interface Lead {
   id: string;
@@ -157,6 +160,8 @@ export interface Lead {
   /** Thema / Anliegen des Leads */
   topic?: string;
   status: LeadStatus;
+  /** Dringlichkeit — steuert Sortierung und Hervorhebung */
+  priority: LeadPriority;
   /** Wiedervorlage-Datum */
   followUpDate?: string;
   notes?: string;

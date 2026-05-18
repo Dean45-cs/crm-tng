@@ -150,6 +150,8 @@ create table if not exists public.leads (
   topic text,
   status text not null default 'neu'
     check (status in ('neu', 'inBearbeitung', 'gewonnen', 'verloren')),
+  priority text not null default 'normal'
+    check (priority in ('normal', 'hoch', 'dringend')),
   follow_up_date date,
   notes text,
   created_by uuid references public.users(id) on delete set null,

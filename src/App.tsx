@@ -20,6 +20,7 @@ import { Leads } from './pages/Leads';
 import { QuickAddProvider } from './components/QuickAdd';
 import { ToastHost } from './components/ToastHost';
 import { CommandPalette } from './components/CommandPalette';
+import { CustomerSearchBar } from './components/CustomerSearchBar';
 import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
 import { SupabaseSetup } from './components/SupabaseSetup';
@@ -67,7 +68,8 @@ function Shell() {
             <h1>{TITLES[route.name]}</h1>
           </div>
           <div className="row" style={{ gap: 14, alignItems: 'center' }}>
-            <span className="muted">
+            <CustomerSearchBar />
+            <span className="muted titlebar-date">
               {new Date().toLocaleDateString('de-DE', {
                 weekday: 'long',
                 day: '2-digit',

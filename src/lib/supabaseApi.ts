@@ -17,6 +17,7 @@ import type {
   IncentivePeriod,
   Lead,
   LeadStatus,
+  LeadPriority,
   LeadActivity,
   LeadActivityType,
 } from '../types';
@@ -594,6 +595,7 @@ interface LeadRow {
   phone: string | null;
   topic: string | null;
   status: LeadStatus;
+  priority: LeadPriority | null;
   follow_up_date: string | null;
   notes: string | null;
   created_by: string | null;
@@ -608,6 +610,7 @@ const mapLead = (r: LeadRow): Lead => ({
   phone: r.phone ?? undefined,
   topic: r.topic ?? undefined,
   status: r.status,
+  priority: r.priority ?? 'normal',
   followUpDate: r.follow_up_date ?? undefined,
   notes: r.notes ?? undefined,
   createdBy: r.created_by ?? undefined,
@@ -633,6 +636,7 @@ export async function insertLead(
     phone: l.phone || null,
     topic: l.topic || null,
     status: l.status,
+    priority: l.priority,
     follow_up_date: l.followUpDate || null,
     notes: l.notes || null,
     created_by: l.createdBy ?? null,
@@ -656,6 +660,7 @@ export async function updateLeadRow(
   if (patch.phone !== undefined) payload.phone = patch.phone || null;
   if (patch.topic !== undefined) payload.topic = patch.topic || null;
   if (patch.status !== undefined) payload.status = patch.status;
+  if (patch.priority !== undefined) payload.priority = patch.priority;
   if (patch.followUpDate !== undefined) payload.follow_up_date = patch.followUpDate || null;
   if (patch.notes !== undefined) payload.notes = patch.notes || null;
   const { error } = await getSupabase().from('leads').update(payload).eq('id', id);
