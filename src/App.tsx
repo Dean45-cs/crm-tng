@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { WifiOff } from 'lucide-react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { Contracts } from './pages/Contracts';
@@ -220,6 +221,7 @@ export default function App() {
         {needsOnboarding && <OnboardingTour />}
         <CommandPalette />
         <ToastHost />
+        <SpeedInsights />
       </QuickAddProvider>
     </Router>
   );
