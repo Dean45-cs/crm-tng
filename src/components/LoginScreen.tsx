@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, LockKeyhole, UserRound, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowRight, LockKeyhole, UserRound, Sparkles, Loader2, LogIn, UserPlus } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
 import { TngTile } from './TngLogo';
 
-type Step = 'name' | 'pin-login' | 'pin-setup-new' | 'pin-setup-confirm';
+type Step = 'name' | 'choose' | 'pin-login' | 'pin-setup-new' | 'pin-setup-confirm';
 
 export function LoginScreen() {
   const { hasUser, registerUser, loginUser, users } = useAuth();
@@ -13,6 +13,7 @@ export function LoginScreen() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [fromChoice, setFromChoice] = useState(false);
 
   const knownUsers = Object.values(users).sort((a, b) =>
     (b.lastLoginAt ?? b.createdAt).localeCompare(a.lastLoginAt ?? a.createdAt),
@@ -27,7 +28,13 @@ export function LoginScreen() {
     setName(value);
     setError(null);
     setPin('');
-    setStep(hasUser(value) ? 'pin-login' : 'pin-setup-new');
+    if (hasUser(value)) {
+      setFromChoice(false);
+      setStep('pin-login');
+    } else {
+      setFromChoice(true);
+      setStep('choose');
+    }
   };
 
   const handlePinComplete = async (entered: string) => {
@@ -69,10 +76,19 @@ export function LoginScreen() {
     setStep('name');
   };
 
+  const goBackToChoice = () => {
+    setError(null);
+    setPin('');
+    setStep('choose');
+  };
+
+  const isPinStep = step === 'pin-login' || step === 'pin-setup-new' || step === 'pin-setup-confirm';
+
   return (
     <div className="login-shell">
       <div className="login-bg-orb login-bg-orb-1" />
       <div className="login-bg-orb login-bg-orb-2" />
+      <div className="login-bg-orb login-bg-orb-3" />
 
       <div className="login-card">
         <div className="login-brand">
@@ -83,35 +99,50 @@ export function LoginScreen() {
           </div>
         </div>
 
-        {step === 'name' && (
-          <NameStep
-            name={name}
-            onNameChange={setName}
-            onSubmit={() => submitName()}
-            knownUsers={knownUsers.map((u) => u.displayName)}
-            onPickKnown={(n) => {
-              setName(n);
-              submitName(n);
-            }}
-            error={error}
-          />
-        )}
+        <div key={step} className="login-step-wrap">
+          {step === 'name' && (
+            <NameStep
+              name={name}
+              onNameChange={setName}
+              onSubmit={() => submitName()}
+              knownUsers={knownUsers.map((u) => u.displayName)}
+              onPickKnown={(n) => {
+                setName(n);
+                submitName(n);
+              }}
+              error={error}
+            />
+          )}
 
-        {step !== 'name' && (
-          <PinStep
-            key={step}
-            mode={step}
-            name={name}
-            error={error}
-            busy={busy}
-            onComplete={handlePinComplete}
-            onBack={goBack}
-          />
-        )}
+          {step === 'choose' && (
+            <ChooseStep
+              name={name}
+              onLogin={() => { setError(null); setStep('pin-login'); }}
+              onRegister={() => { setError(null); setStep('pin-setup-new'); }}
+              onBack={goBack}
+            />
+          )}
+
+          {isPinStep && (
+            <PinStep
+              mode={step as 'pin-login' | 'pin-setup-new' | 'pin-setup-confirm'}
+              name={name}
+              error={error}
+              busy={busy}
+              onComplete={handlePinComplete}
+              onBack={fromChoice && step === 'pin-login' ? goBackToChoice : goBack}
+              onSwitchToRegister={
+                fromChoice && step === 'pin-login'
+                  ? () => { setError(null); setPin(''); setStep('pin-setup-new'); }
+                  : undefined
+              }
+            />
+          )}
+        </div>
 
         <div className="login-footer">
           <Sparkles size={11} />
-          Alle Daten bleiben lokal auf diesem Gerät.
+          TNG Stadtnetz GmbH · Vertriebssystem
         </div>
       </div>
     </div>
@@ -140,7 +171,7 @@ function NameStep({
     <>
       <div className="login-step-title">Willkommen</div>
       <div className="login-step-sub">
-        Melde dich mit deinem Namen an. Beim ersten Mal vergibst du eine PIN.
+        Gib deinen Namen ein. Neue Nutzer vergeben beim ersten Mal eine PIN.
       </div>
 
       <form
@@ -191,6 +222,53 @@ function NameStep({
   );
 }
 
+function ChooseStep({
+  name,
+  onLogin,
+  onRegister,
+  onBack,
+}: {
+  name: string;
+  onLogin: () => void;
+  onRegister: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <>
+      <div className="login-step-title">Hallo, {name}!</div>
+      <div className="login-step-sub">
+        Hast du bereits einen Account oder meldest du dich zum ersten Mal an?
+      </div>
+
+      <div className="login-choice-btns">
+        <button className="login-choice-btn" type="button" onClick={onLogin}>
+          <div className="login-choice-icon login-choice-icon--primary">
+            <LogIn size={18} />
+          </div>
+          <div className="login-choice-text">
+            <div className="login-choice-title">Anmelden</div>
+            <div className="login-choice-sub">Ich habe bereits einen Account</div>
+          </div>
+        </button>
+
+        <button className="login-choice-btn" type="button" onClick={onRegister}>
+          <div className="login-choice-icon login-choice-icon--secondary">
+            <UserPlus size={18} />
+          </div>
+          <div className="login-choice-text">
+            <div className="login-choice-title">Neuer Account</div>
+            <div className="login-choice-sub">Zum ersten Mal dabei</div>
+          </div>
+        </button>
+      </div>
+
+      <button type="button" className="login-secondary" onClick={onBack}>
+        Anderen Namen eingeben
+      </button>
+    </>
+  );
+}
+
 function PinStep({
   mode,
   name,
@@ -198,6 +276,7 @@ function PinStep({
   busy,
   onComplete,
   onBack,
+  onSwitchToRegister,
 }: {
   mode: 'pin-login' | 'pin-setup-new' | 'pin-setup-confirm';
   name: string;
@@ -205,6 +284,7 @@ function PinStep({
   busy: boolean;
   onComplete: (pin: string) => void;
   onBack: () => void;
+  onSwitchToRegister?: () => void;
 }) {
   const [digits, setDigits] = useState<string[]>(['', '', '', '']);
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
@@ -281,7 +361,7 @@ function PinStep({
             ref={(el) => {
               inputs.current[i] = el;
             }}
-            className="pin-digit"
+            className={`pin-digit${d ? ' pin-digit--filled' : ''}`}
             value={d ? '•' : ''}
             onChange={(e) => {
               const raw = e.target.value.replace(/[•\s]/g, '');
@@ -301,14 +381,27 @@ function PinStep({
 
       {busy && (
         <div className="login-busy">
-          <Loader2 size={14} className="spin" /> Verbinde mit Server …
+          <Loader2 size={16} className="spin" />
+          <span>Verbinde …</span>
         </div>
       )}
       {!busy && error && <div className="login-error">{error}</div>}
 
-      <button type="button" className="login-secondary" onClick={onBack} disabled={busy}>
-        Anderer Name
-      </button>
+      <div className="login-actions">
+        <button type="button" className="login-secondary" onClick={onBack} disabled={busy}>
+          {mode === 'pin-login' ? 'Zurück' : 'Anderer Name'}
+        </button>
+        {mode === 'pin-login' && onSwitchToRegister && (
+          <button
+            type="button"
+            className="login-switch-link"
+            onClick={onSwitchToRegister}
+            disabled={busy}
+          >
+            Noch kein Account?
+          </button>
+        )}
+      </div>
     </>
   );
 }

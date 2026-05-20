@@ -139,7 +139,28 @@ export const useAuth = create<AuthState>()((set, get) => ({
     });
     if (error) {
       if (error.message.toLowerCase().includes('already')) {
-        return { ok: false, error: 'Dieser Name ist bereits vergeben.' };
+        // User exists in auth but may be missing their public.users profile
+        // (e.g. interrupted first registration or landing on a new device).
+        // Transparently fall back to login so the user isn't blocked.
+        const { data: sd, error: se } = await sb.auth.signInWithPassword({ email, password });
+        if (!se && sd.user?.id) {
+          const uid = sd.user.id;
+          try { await upsertUserProfile(uid, key, trimmed); } catch { /* profile may already exist */ }
+          try {
+            const active = await fetchUserActive(uid);
+            if (!active) {
+              await sb.auth.signOut();
+              return { ok: false, error: 'Dieser Zugang wurde gesperrt. Bitte wende dich an deine:n Vorgesetzte:n.' };
+            }
+          } catch {
+            await sb.auth.signOut();
+            return { ok: false, error: 'Anmeldung konnte nicht verifiziert werden. Bitte erneut versuchen.' };
+          }
+          await get().refreshUsers();
+          set({ currentUserKey: uid });
+          return { ok: true };
+        }
+        return { ok: false, error: 'Dieser Name ist bereits belegt. Falls du einen Account hast, melde dich über "Anmelden" an.' };
       }
       return { ok: false, error: error.message };
     }

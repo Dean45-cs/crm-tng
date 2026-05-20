@@ -105,11 +105,11 @@ function Shell() {
   );
 }
 
-function LoadingScreen({ label = 'Lade …' }: { label?: string }) {
+function LoadingScreen({ label = 'Verbinde mit Server …' }: { label?: string }) {
   return (
     <div className="boot-screen">
       <div className="boot-brand">
-        <TngTile size={72} radius={18} />
+        <TngTile size={80} radius={20} />
       </div>
       <div className="boot-spinner" />
       <div className="boot-label">{label}</div>
