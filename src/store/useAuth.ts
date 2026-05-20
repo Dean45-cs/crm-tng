@@ -8,8 +8,10 @@ import {
   updateUserFlags,
   updateUserRole as apiUpdateUserRole,
   setUserActive as apiSetUserActive,
+  updateUserConsent,
 } from '../lib/supabaseApi';
 import { toast } from './useToast';
+import { logAudit } from '../lib/audit';
 
 export function normalizeUserKey(name: string): string {
   return name.trim().toLowerCase();
@@ -34,6 +36,8 @@ export interface AuthUser {
   role: UserRole;
   /** false = gesperrt, kein Login möglich */
   isActive: boolean;
+  /** Zeitpunkt der DSGVO-Datenschutzhinweis-Bestätigung; undefined = noch nicht erteilt */
+  consentGivenAt?: string;
   /** Monatsziel des Nutzers (aus user_settings; 0 = nicht gesetzt) */
   monthlyTarget: number;
 }
@@ -58,6 +62,8 @@ interface AuthState {
   isManager: () => boolean;
   completeOnboarding: () => Promise<void>;
   setLeaderboardOptIn: (optIn: boolean) => Promise<void>;
+  /** Bestätigt den DSGVO-Datenschutzhinweis. Schreibt Audit-Log-Eintrag. */
+  giveConsent: () => Promise<void>;
 
   /** Chef-Aktionen für die Team-Verwaltung */
   setUserRole: (key: string, role: UserRole) => Promise<void>;
@@ -228,10 +234,13 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
     await get().refreshUsers();
     set({ currentUserKey: uid });
+    logAudit({ action: 'login', entityType: 'auth', entityId: uid });
     return { ok: true };
   },
 
   logout: async () => {
+    const uid = get().currentUserKey;
+    if (uid) logAudit({ action: 'logout', entityType: 'auth', entityId: uid });
     const sb = getSupabase();
     await sb.auth.signOut();
     set({ currentUserKey: null });
@@ -276,6 +285,30 @@ export const useAuth = create<AuthState>()((set, get) => ({
     }
   },
 
+  giveConsent: async () => {
+    const uid = get().currentUserKey;
+    if (!uid) return;
+    const now = new Date().toISOString();
+    try {
+      await updateUserConsent(uid, now);
+      const u = get().users[uid];
+      if (u) {
+        set((s) => ({
+          users: { ...s.users, [uid]: { ...u, consentGivenAt: now } },
+        }));
+      }
+      logAudit({
+        action: 'consent',
+        entityType: 'user',
+        entityId: uid,
+        entityLabel: get().users[uid]?.displayName,
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error('Bestätigung konnte nicht gespeichert werden.');
+    }
+  },
+
   setUserRole: async (key, role) => {
     const u = get().users[key];
     if (!u) return;
@@ -288,6 +321,13 @@ export const useAuth = create<AuthState>()((set, get) => ({
           ? `${u.displayName} ist jetzt Chef.`
           : `${u.displayName} ist jetzt im Vertrieb.`,
       );
+      logAudit({
+        action: 'role_change',
+        entityType: 'user',
+        entityId: key,
+        entityLabel: u.displayName,
+        details: { from: prev, to: role },
+      });
     } catch (e) {
       console.error(e);
       set((s) => ({ users: { ...s.users, [key]: { ...u, role: prev } } }));
@@ -304,6 +344,12 @@ export const useAuth = create<AuthState>()((set, get) => ({
       toast.success(
         isActive ? `${u.displayName} entsperrt.` : `${u.displayName} gesperrt.`,
       );
+      logAudit({
+        action: isActive ? 'unlock' : 'lock',
+        entityType: 'user',
+        entityId: key,
+        entityLabel: u.displayName,
+      });
     } catch (e) {
       console.error(e);
       set((s) => ({ users: { ...s.users, [key]: { ...u, isActive: !isActive } } }));

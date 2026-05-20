@@ -13,6 +13,7 @@ import {
   Target,
   LogOut,
   Download,
+  ShieldCheck,
 } from 'lucide-react';
 import { useRouter, type Route, type RouteName } from '../router';
 import { useAuth } from '../store/useAuth';
@@ -59,6 +60,7 @@ function buildSections(showChef: boolean): { title: string; items: NavItemDef[] 
         { id: 'teamdashboard', label: 'Team-Dashboard', icon: <BarChart3 size={16} /> },
         { id: 'teammanager', label: 'Team-Verwaltung', icon: <UsersRound size={16} /> },
         { id: 'incentivemanager', label: 'Incentive-Verwaltung', icon: <Award size={16} /> },
+        { id: 'auditlog', label: 'Audit-Log', icon: <ShieldCheck size={16} /> },
       ],
     });
   }

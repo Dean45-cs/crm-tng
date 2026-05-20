@@ -183,3 +183,50 @@ export interface LeadActivity {
   createdBy?: string;
   createdAt: string;
 }
+
+// ============================================================================
+// AUDIT LOG — DSGVO-Nachvollziehbarkeit (Art. 30)
+// ============================================================================
+
+export type AuditAction =
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'purge'
+  | 'login'
+  | 'logout'
+  | 'role_change'
+  | 'lock'
+  | 'unlock'
+  | 'consent'
+  | 'export';
+
+export type AuditEntity =
+  | 'contract'
+  | 'tariff_change'
+  | 'note'
+  | 'lead'
+  | 'lead_activity'
+  | 'customer'
+  | 'user'
+  | 'incentive'
+  | 'auth'
+  | 'settings';
+
+/** Unveränderlicher Audit-Eintrag — wer hat wann was getan? */
+export interface AuditLogEntry {
+  id: string;
+  /** UUID des handelnden Nutzers — kann null sein, falls Nutzer gelöscht wurde */
+  actorId?: string;
+  /** Anzeige-Name zum Zeitpunkt der Aktion (denormalisiert, überlebt User-Löschung) */
+  actorName: string;
+  action: AuditAction;
+  entityType: AuditEntity;
+  /** ID der betroffenen Entität (kann KdNr, UUID, Username sein) */
+  entityId?: string;
+  /** Menschenlesbares Label, z. B. Kundenname */
+  entityLabel?: string;
+  /** Optionale strukturierte Details (vorher/nachher, Kontextfelder) */
+  details?: Record<string, unknown>;
+  createdAt: string;
+}

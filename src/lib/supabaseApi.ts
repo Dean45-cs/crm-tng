@@ -20,6 +20,9 @@ import type {
   LeadPriority,
   LeadActivity,
   LeadActivityType,
+  AuditLogEntry,
+  AuditAction,
+  AuditEntity,
 } from '../types';
 import type { AuthUser } from '../store/useAuth';
 
@@ -35,6 +38,7 @@ interface UserRow {
   leaderboard_opt_in: boolean;
   role: string | null;
   is_active: boolean | null;
+  consent_given_at: string | null;
   created_at: string;
   last_login_at: string | null;
 }
@@ -50,6 +54,7 @@ const mapUser = (r: UserRow, monthlyTarget = 0): AuthUser => ({
   leaderboardOptIn: r.leaderboard_opt_in,
   role: r.role === 'manager' ? 'manager' : 'agent',
   isActive: r.is_active !== false,
+  consentGivenAt: r.consent_given_at ?? undefined,
   monthlyTarget,
 });
 
@@ -739,5 +744,109 @@ export async function insertLeadActivity(
 
 export async function deleteLeadActivityRow(id: string): Promise<void> {
   const { error } = await getSupabase().from('lead_activities').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ============================================================================
+// AUDIT LOG
+// ============================================================================
+
+interface AuditLogRow {
+  id: string;
+  actor_id: string | null;
+  actor_name: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  entity_label: string | null;
+  details: Record<string, unknown> | null;
+  created_at: string;
+}
+
+const mapAuditLog = (r: AuditLogRow): AuditLogEntry => ({
+  id: r.id,
+  actorId: r.actor_id ?? undefined,
+  actorName: r.actor_name,
+  action: r.action as AuditAction,
+  entityType: r.entity_type as AuditEntity,
+  entityId: r.entity_id ?? undefined,
+  entityLabel: r.entity_label ?? undefined,
+  details: r.details ?? undefined,
+  createdAt: r.created_at,
+});
+
+export async function insertAuditLog(entry: {
+  actorId: string;
+  actorName: string;
+  action: AuditAction;
+  entityType: AuditEntity;
+  entityId?: string;
+  entityLabel?: string;
+  details?: Record<string, unknown>;
+}): Promise<void> {
+  const payload = {
+    actor_id: entry.actorId,
+    actor_name: entry.actorName,
+    action: entry.action,
+    entity_type: entry.entityType,
+    entity_id: entry.entityId ?? null,
+    entity_label: entry.entityLabel ?? null,
+    details: entry.details ?? null,
+  };
+  const { error } = await getSupabase().from('audit_log').insert(payload);
+  if (error) throw error;
+}
+
+export async function fetchAuditLog(limit = 100): Promise<AuditLogEntry[]> {
+  const { data, error } = await getSupabase()
+    .from('audit_log')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data as AuditLogRow[]).map(mapAuditLog);
+}
+
+// ============================================================================
+// CUSTOMER PURGE — Recht auf Vergessenwerden (Art. 17 DSGVO)
+// ============================================================================
+
+/**
+ * Löscht alle CRM-Spuren eines Kunden: Verträge, Tarifwechsel, Notizen und
+ * Ownership-Eintrag. Liefert die Anzahl gelöschter Zeilen pro Tabelle zurück.
+ * RLS sorgt dafür, dass nur Berechtigte (Ersteller/Owner/Manager) das ausführen
+ * können — Manager dürfen kraft Policy alle Zeilen löschen.
+ */
+export async function purgeCustomerData(customerNumber: string): Promise<{
+  contracts: number;
+  tariffChanges: number;
+  notes: number;
+  ownership: number;
+}> {
+  const sb = getSupabase();
+  const [c, t, n, o] = await Promise.all([
+    sb.from('contracts').delete({ count: 'exact' }).eq('customer_number', customerNumber),
+    sb.from('tariff_changes').delete({ count: 'exact' }).eq('customer_number', customerNumber),
+    sb.from('notes').delete({ count: 'exact' }).eq('customer_number', customerNumber),
+    sb.from('customer_ownerships').delete({ count: 'exact' }).eq('customer_number', customerNumber),
+  ]);
+  for (const res of [c, t, n, o]) if (res.error) throw res.error;
+  return {
+    contracts: c.count ?? 0,
+    tariffChanges: t.count ?? 0,
+    notes: n.count ?? 0,
+    ownership: o.count ?? 0,
+  };
+}
+
+// ============================================================================
+// CONSENT (Art. 13 DSGVO)
+// ============================================================================
+
+export async function updateUserConsent(id: string, at: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from('users')
+    .update({ consent_given_at: at })
+    .eq('id', id);
   if (error) throw error;
 }

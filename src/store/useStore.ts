@@ -15,6 +15,7 @@ import type {
 import { useAuth } from './useAuth';
 import { toast } from './useToast';
 import { getSupabase } from '../lib/supabase';
+import { logAudit } from '../lib/audit';
 import {
   fetchContracts,
   fetchTariffChanges,
@@ -44,6 +45,7 @@ import {
   fetchLeadActivities,
   insertLeadActivity,
   deleteLeadActivityRow,
+  purgeCustomerData,
 } from '../lib/supabaseApi';
 
 const currentUserKey = () => useAuth.getState().currentUserKey ?? undefined;
@@ -142,6 +144,13 @@ interface StoreState {
 
   addLeadActivity: (a: Pick<LeadActivity, 'leadId' | 'type' | 'content'>) => Promise<void>;
   deleteLeadActivity: (id: string, leadId: string) => Promise<void>;
+
+  /**
+   * Recht auf Vergessenwerden (DSGVO Art. 17): löscht alle CRM-Daten eines
+   * Kunden (Verträge, Tarifwechsel, Notizen, Ownership) endgültig. Loggt den
+   * Vorgang im Audit-Log.
+   */
+  purgeCustomer: (customerNumber: string, customerName?: string) => Promise<void>;
 }
 
 /** Loggt den technischen Fehler und zeigt dem Nutzer einen Toast. */
@@ -315,16 +324,31 @@ export const useStore = create<StoreState>()((set, get) => ({
       const created = await insertContract({ ...c, createdBy: c.createdBy ?? currentUserKey() });
       set((s) => ({ contracts: [created, ...s.contracts] }));
       toast.success('Vertrag gespeichert.');
+      logAudit({
+        action: 'create',
+        entityType: 'contract',
+        entityId: created.id,
+        entityLabel: `${created.customerName} (${created.customerNumber})`,
+        details: { products: created.products, status: created.status },
+      });
     } catch (e) {
       fail('Vertrag konnte nicht gespeichert werden.', e);
     }
   },
   updateContract: async (id, c) => {
     const prev = get().contracts;
+    const before = prev.find((x) => x.id === id);
     set({ contracts: prev.map((x) => (x.id === id ? { ...x, ...c } : x)) });
     try {
       await updateContractRow(id, c);
       toast.success('Vertrag aktualisiert.');
+      logAudit({
+        action: 'update',
+        entityType: 'contract',
+        entityId: id,
+        entityLabel: before ? `${before.customerName} (${before.customerNumber})` : id,
+        details: { changed: Object.keys(c) },
+      });
     } catch (e) {
       fail('Änderung fehlgeschlagen – Vertrag wurde zurückgesetzt.', e);
       set({ contracts: prev });
@@ -332,10 +356,17 @@ export const useStore = create<StoreState>()((set, get) => ({
   },
   deleteContract: async (id) => {
     const prev = get().contracts;
+    const before = prev.find((x) => x.id === id);
     set({ contracts: prev.filter((x) => x.id !== id) });
     try {
       await deleteContractRow(id);
       toast.success('Vertrag gelöscht.');
+      logAudit({
+        action: 'delete',
+        entityType: 'contract',
+        entityId: id,
+        entityLabel: before ? `${before.customerName} (${before.customerNumber})` : id,
+      });
     } catch (e) {
       fail('Löschen fehlgeschlagen – Vertrag wiederhergestellt.', e);
       set({ contracts: prev });
@@ -347,16 +378,31 @@ export const useStore = create<StoreState>()((set, get) => ({
       const created = await insertTariffChange({ ...t, createdBy: t.createdBy ?? currentUserKey() });
       set((s) => ({ tariffChanges: [created, ...s.tariffChanges] }));
       toast.success('Tarifwechsel gespeichert.');
+      logAudit({
+        action: 'create',
+        entityType: 'tariff_change',
+        entityId: created.id,
+        entityLabel: `${created.customerName} (${created.customerNumber})`,
+        details: { type: created.changeType, context: created.context },
+      });
     } catch (e) {
       fail('Tarifwechsel konnte nicht gespeichert werden.', e);
     }
   },
   updateTariffChange: async (id, t) => {
     const prev = get().tariffChanges;
+    const before = prev.find((x) => x.id === id);
     set({ tariffChanges: prev.map((x) => (x.id === id ? { ...x, ...t } : x)) });
     try {
       await updateTariffChangeRow(id, t);
       toast.success('Tarifwechsel aktualisiert.');
+      logAudit({
+        action: 'update',
+        entityType: 'tariff_change',
+        entityId: id,
+        entityLabel: before ? `${before.customerName} (${before.customerNumber})` : id,
+        details: { changed: Object.keys(t) },
+      });
     } catch (e) {
       fail('Änderung fehlgeschlagen – Tarifwechsel wurde zurückgesetzt.', e);
       set({ tariffChanges: prev });
@@ -364,10 +410,17 @@ export const useStore = create<StoreState>()((set, get) => ({
   },
   deleteTariffChange: async (id) => {
     const prev = get().tariffChanges;
+    const before = prev.find((x) => x.id === id);
     set({ tariffChanges: prev.filter((x) => x.id !== id) });
     try {
       await deleteTariffChangeRow(id);
       toast.success('Tarifwechsel gelöscht.');
+      logAudit({
+        action: 'delete',
+        entityType: 'tariff_change',
+        entityId: id,
+        entityLabel: before ? `${before.customerName} (${before.customerNumber})` : id,
+      });
     } catch (e) {
       fail('Löschen fehlgeschlagen – Tarifwechsel wiederhergestellt.', e);
       set({ tariffChanges: prev });
@@ -392,17 +445,32 @@ export const useStore = create<StoreState>()((set, get) => ({
       const created = await insertNote(n, currentUserKey());
       set((s) => ({ notes: [created, ...s.notes] }));
       toast.success('Notiz gespeichert.');
+      logAudit({
+        action: 'create',
+        entityType: 'note',
+        entityId: created.id,
+        entityLabel: created.title,
+        details: created.customerNumber ? { customerNumber: created.customerNumber } : undefined,
+      });
     } catch (e) {
       fail('Notiz konnte nicht gespeichert werden.', e);
     }
   },
   updateNote: async (id, n) => {
     const prev = get().notes;
+    const before = prev.find((x) => x.id === id);
     const now = new Date().toISOString();
     set({ notes: prev.map((x) => (x.id === id ? { ...x, ...n, updatedAt: now } : x)) });
     try {
       await updateNoteRow(id, n);
       toast.success('Notiz aktualisiert.');
+      logAudit({
+        action: 'update',
+        entityType: 'note',
+        entityId: id,
+        entityLabel: before?.title ?? id,
+        details: { changed: Object.keys(n) },
+      });
     } catch (e) {
       fail('Änderung fehlgeschlagen – Notiz wurde zurückgesetzt.', e);
       set({ notes: prev });
@@ -410,10 +478,17 @@ export const useStore = create<StoreState>()((set, get) => ({
   },
   deleteNote: async (id) => {
     const prev = get().notes;
+    const before = prev.find((x) => x.id === id);
     set({ notes: prev.filter((x) => x.id !== id) });
     try {
       await deleteNoteRow(id);
       toast.success('Notiz gelöscht.');
+      logAudit({
+        action: 'delete',
+        entityType: 'note',
+        entityId: id,
+        entityLabel: before?.title ?? id,
+      });
     } catch (e) {
       fail('Löschen fehlgeschlagen – Notiz wiederhergestellt.', e);
       set({ notes: prev });
@@ -549,17 +624,32 @@ export const useStore = create<StoreState>()((set, get) => ({
       const created = await insertLead({ ...l, createdBy: l.createdBy ?? currentUserKey() });
       set((s) => ({ leads: [created, ...s.leads] }));
       toast.success('Lead angelegt.');
+      logAudit({
+        action: 'create',
+        entityType: 'lead',
+        entityId: created.id,
+        entityLabel: created.customerName,
+        details: { status: created.status, priority: created.priority },
+      });
     } catch (e) {
       fail('Lead konnte nicht angelegt werden.', e);
     }
   },
   updateLead: async (id, l) => {
     const prev = get().leads;
+    const before = prev.find((x) => x.id === id);
     const now = new Date().toISOString();
     set({ leads: prev.map((x) => (x.id === id ? { ...x, ...l, updatedAt: now } : x)) });
     try {
       await updateLeadRow(id, l);
       toast.success('Lead aktualisiert.');
+      logAudit({
+        action: 'update',
+        entityType: 'lead',
+        entityId: id,
+        entityLabel: before?.customerName ?? id,
+        details: { changed: Object.keys(l) },
+      });
     } catch (e) {
       fail('Änderung fehlgeschlagen – Lead wurde zurückgesetzt.', e);
       set({ leads: prev });
@@ -567,6 +657,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   },
   deleteLead: async (id) => {
     const prev = get().leads;
+    const before = prev.find((x) => x.id === id);
     set({ leads: prev.filter((x) => x.id !== id) });
     try {
       await deleteLeadRow(id);
@@ -578,6 +669,12 @@ export const useStore = create<StoreState>()((set, get) => ({
         return { leadActivities: next };
       });
       toast.success('Lead gelöscht.');
+      logAudit({
+        action: 'delete',
+        entityType: 'lead',
+        entityId: id,
+        entityLabel: before?.customerName ?? id,
+      });
     } catch (e) {
       fail('Löschen fehlgeschlagen – Lead wiederhergestellt.', e);
       set({ leads: prev });
@@ -610,6 +707,31 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (e) {
       fail('Löschen fehlgeschlagen.', e);
       set({ leadActivities: prev });
+    }
+  },
+
+  purgeCustomer: async (customerNumber, customerName) => {
+    try {
+      const counts = await purgeCustomerData(customerNumber);
+      set((s) => ({
+        contracts: s.contracts.filter((x) => x.customerNumber !== customerNumber),
+        tariffChanges: s.tariffChanges.filter((x) => x.customerNumber !== customerNumber),
+        notes: s.notes.filter((x) => x.customerNumber !== customerNumber),
+        customerOwners: Object.fromEntries(
+          Object.entries(s.customerOwners).filter(([k]) => k !== customerNumber),
+        ),
+      }));
+      const total = counts.contracts + counts.tariffChanges + counts.notes;
+      toast.success(`Kunde gelöscht (${total} Einträge entfernt).`);
+      logAudit({
+        action: 'purge',
+        entityType: 'customer',
+        entityId: customerNumber,
+        entityLabel: customerName ?? customerNumber,
+        details: counts as unknown as Record<string, unknown>,
+      });
+    } catch (e) {
+      fail('Kundendaten konnten nicht gelöscht werden.', e);
     }
   },
 }));

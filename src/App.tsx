@@ -17,6 +17,8 @@ import { AgentDetail } from './pages/AgentDetail';
 import { Incentives } from './pages/Incentives';
 import { IncentiveManager } from './pages/IncentiveManager';
 import { Leads } from './pages/Leads';
+import { AuditLog } from './pages/AuditLog';
+import { PrivacyConsent } from './components/PrivacyConsent';
 import { QuickAddProvider } from './components/QuickAdd';
 import { ToastHost } from './components/ToastHost';
 import { CommandPalette } from './components/CommandPalette';
@@ -47,6 +49,7 @@ const TITLES: Record<RouteName, string> = {
   incentives: 'Incentives',
   incentivemanager: 'Incentive-Verwaltung',
   leads: 'Leads',
+  auditlog: 'Audit-Log',
 };
 
 function Shell() {
@@ -98,6 +101,7 @@ function Shell() {
             {route.name === 'incentives' && <Incentives />}
             {route.name === 'incentivemanager' && <IncentiveManager />}
             {route.name === 'leads' && <Leads />}
+            {route.name === 'auditlog' && <AuditLog />}
           </div>
         </div>
       </main>
@@ -204,13 +208,15 @@ export default function App() {
   }
 
   const user = users[currentUserKey];
-  const needsOnboarding = user && !user.onboardingCompleted;
+  const needsConsent = user && !user.consentGivenAt;
+  const needsOnboarding = user && user.consentGivenAt && !user.onboardingCompleted;
 
   return (
     <Router>
       <QuickAddProvider>
         <OfflineBanner />
         <Shell />
+        {needsConsent && <PrivacyConsent />}
         {needsOnboarding && <OnboardingTour />}
         <CommandPalette />
         <ToastHost />

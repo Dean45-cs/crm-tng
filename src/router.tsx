@@ -16,7 +16,8 @@ export type Route =
   | { name: 'agentdetail'; agentKey: string }
   | { name: 'incentives' }
   | { name: 'incentivemanager' }
-  | { name: 'leads' };
+  | { name: 'leads' }
+  | { name: 'auditlog' };
 
 export type RouteName = Route['name'];
 

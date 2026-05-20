@@ -20,6 +20,7 @@ create table if not exists public.users (
   leaderboard_opt_in boolean default true,
   role text default 'agent' check (role in ('agent', 'manager')),
   is_active boolean default true,
+  consent_given_at timestamptz,            -- DSGVO-Hinweis bestätigt
   created_at timestamptz default now(),
   last_login_at timestamptz
 );
@@ -176,6 +177,29 @@ create table if not exists public.lead_activities (
 );
 create index if not exists idx_lead_activities_lead_id on public.lead_activities(lead_id);
 
+-- ------------------------------------------------------------
+-- AUDIT LOG
+-- ------------------------------------------------------------
+-- Wer hat wann welche Aktion auf welche Entität ausgeführt? DSGVO Art. 30.
+-- actor_name ist denormalisiert, damit Logs auch nach User-Löschung lesbar
+-- bleiben. Einträge sind unveränderlich (keine update/delete-Policy).
+-- ------------------------------------------------------------
+create table if not exists public.audit_log (
+  id uuid primary key default gen_random_uuid(),
+  actor_id uuid references public.users(id) on delete set null,
+  actor_name text not null,
+  action text not null,
+  entity_type text not null,
+  entity_id text,
+  entity_label text,
+  details jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_audit_log_created_at on public.audit_log(created_at desc);
+create index if not exists idx_audit_log_actor on public.audit_log(actor_id);
+create index if not exists idx_audit_log_entity on public.audit_log(entity_type, entity_id);
+create index if not exists idx_audit_log_action on public.audit_log(action);
+
 -- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
@@ -190,6 +214,7 @@ alter table public.shared_settings enable row level security;
 alter table public.incentives enable row level security;
 alter table public.leads enable row level security;
 alter table public.lead_activities enable row level security;
+alter table public.audit_log enable row level security;
 
 -- USERS: alle authentifizierten User dürfen alle Profile lesen
 -- (fürs Leaderboard und Sharing). Schreiben nur das eigene Profil –
@@ -348,6 +373,14 @@ create policy "lead_activities insert all" on public.lead_activities
 create policy "lead_activities delete own" on public.lead_activities
   for delete using (auth.uid() = created_by);
 
+-- AUDIT LOG: nur Manager lesen; jeder loggt nur seine eigenen Aktionen; immutable.
+create policy "audit_log read manager only" on public.audit_log
+  for select using (
+    exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
+  );
+create policy "audit_log insert own actions" on public.audit_log
+  for insert with check (auth.role() = 'authenticated' and actor_id = auth.uid());
+
 -- ============================================================================
 -- REALTIME
 -- ============================================================================
@@ -360,3 +393,4 @@ alter publication supabase_realtime add table public.users;
 alter publication supabase_realtime add table public.incentives;
 alter publication supabase_realtime add table public.leads;
 alter publication supabase_realtime add table public.lead_activities;
+alter publication supabase_realtime add table public.audit_log;

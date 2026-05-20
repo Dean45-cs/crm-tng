@@ -14,6 +14,8 @@ import {
   Lock,
   UserIcon,
   Globe,
+  ShieldAlert,
+  Eraser,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
@@ -38,13 +40,15 @@ interface Props {
 }
 
 export function CustomerDetail({ kdnr }: Props) {
-  const { contracts, tariffChanges, notes, settings, customerOwners, deleteContract, deleteTariffChange, deleteNote } =
+  const { contracts, tariffChanges, notes, settings, customerOwners, deleteContract, deleteTariffChange, deleteNote, purgeCustomer } =
     useStore();
-  const { currentUserKey, users } = useAuth();
+  const { currentUserKey, users, isManager } = useAuth();
   const { navigate } = useRouter();
   const { openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote } =
     useQuickAdd();
   const [shareOpen, setShareOpen] = useState(false);
+  const [purgeConfirmStep, setPurgeConfirmStep] = useState(0);
+  const [purging, setPurging] = useState(false);
 
   const ownership = useMemo(
     () => getEffectiveOwnership(kdnr, customerOwners, contracts, tariffChanges, notes),
@@ -366,6 +370,60 @@ export function CustomerDetail({ kdnr }: Props) {
           </div>
         )}
       </Section>
+
+      {isManager() && (
+        <section className="customer-purge-section">
+          <div className="customer-purge-head">
+            <ShieldAlert size={16} />
+            <div>
+              <div className="customer-purge-title">DSGVO: Recht auf Vergessenwerden</div>
+              <div className="customer-purge-sub">
+                Löscht <strong>alle</strong> Verträge, Tarifwechsel und Notizen zu diesem Kunden
+                endgültig. Der Vorgang ist im Audit-Log nachvollziehbar und nicht rückgängig zu machen.
+              </div>
+            </div>
+          </div>
+          <div className="customer-purge-actions">
+            {purgeConfirmStep === 0 && (
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => setPurgeConfirmStep(1)}
+              >
+                <Eraser size={13} /> Alle Kundendaten löschen
+              </button>
+            )}
+            {purgeConfirmStep === 1 && (
+              <>
+                <span className="customer-purge-confirm">
+                  Wirklich alle Daten zu <strong>{customerName || kdnr}</strong> unwiderruflich löschen?
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setPurgeConfirmStep(0)}
+                  disabled={purging}
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  disabled={purging}
+                  onClick={async () => {
+                    setPurging(true);
+                    await purgeCustomer(kdnr, customerName);
+                    setPurging(false);
+                    navigate({ name: 'customers' });
+                  }}
+                >
+                  {purging ? 'Lösche …' : 'Ja, endgültig löschen'}
+                </button>
+              </>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
