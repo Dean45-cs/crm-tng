@@ -85,7 +85,6 @@ const DEFAULT_SETTINGS: Settings = {
   products: DEFAULT_PRODUCTS,
   tariffCommission: DEFAULT_TARIFF_COMMISSION,
   monthlyTarget: 500,
-  jiraBaseUrl: 'https://jira.tng.de/browse/',
   spClientId: '',
   spTenantId: '',
   spFilePath: '',
