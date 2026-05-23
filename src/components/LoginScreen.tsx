@@ -14,6 +14,9 @@ export function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [fromChoice, setFromChoice] = useState(false);
+  // Bei falscher PIN bleibt der Schritt 'pin-login' — über diesen Zähler wird
+  // PinStep neu gemountet, damit die PIN-Felder geleert werden.
+  const [attempt, setAttempt] = useState(0);
 
   const knownUsers = Object.values(users).sort((a, b) =>
     (b.lastLoginAt ?? b.createdAt).localeCompare(a.lastLoginAt ?? a.createdAt),
@@ -45,6 +48,7 @@ export function LoginScreen() {
       if (!res.ok) {
         setError(res.error);
         setPin('');
+        setAttempt((a) => a + 1);
         return;
       }
     } else if (step === 'pin-setup-new') {
@@ -125,6 +129,7 @@ export function LoginScreen() {
 
           {isPinStep && (
             <PinStep
+              key={`pin-${attempt}`}
               mode={step as 'pin-login' | 'pin-setup-new' | 'pin-setup-confirm'}
               name={name}
               error={error}

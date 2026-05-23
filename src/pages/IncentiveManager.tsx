@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { formatCurrency, weekLabel, monthLabel } from '../lib/utils';
 import { IncentiveForm } from '../components/IncentiveForm';
+import { confirmDialog } from '../store/useConfirm';
 import type { Incentive, IncentiveMechanic, IncentiveMetric, IncentivePeriod } from '../types';
 
 const MECHANIC_SHORT: Record<IncentiveMechanic, string> = {
@@ -26,7 +27,6 @@ export function IncentiveManager() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Incentive | undefined>(undefined);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   if (!isManager()) {
     return (
@@ -133,20 +133,16 @@ export function IncentiveManager() {
                 </button>
                 <button
                   className="btn btn-sm btn-danger"
-                  onClick={() => {
-                    if (confirmId === inc.id) {
-                      deleteIncentive(inc.id);
-                      setConfirmId(null);
-                    } else {
-                      setConfirmId(inc.id);
-                    }
-                  }}
-                  onBlur={() =>
-                    setConfirmId((c) => (c === inc.id ? null : c))
+                  onClick={() =>
+                    confirmDialog({
+                      title: 'Incentive löschen?',
+                      message: `„${inc.title}" wird dauerhaft entfernt.`,
+                      confirmLabel: 'Löschen',
+                      danger: true,
+                    }).then((ok) => { if (ok) deleteIncentive(inc.id); })
                   }
                 >
-                  <Trash2 size={13} />{' '}
-                  {confirmId === inc.id ? 'Wirklich löschen?' : 'Löschen'}
+                  <Trash2 size={13} /> Löschen
                 </button>
               </div>
             </div>

@@ -97,7 +97,6 @@ export interface Settings {
   products: ProductInfo[];
   tariffCommission: TariffCommissionMatrix;
   monthlyTarget: number;
-  jiraBaseUrl: string;
   spClientId: string;
   spTenantId: string;
   spFilePath: string;

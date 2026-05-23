@@ -5,6 +5,7 @@ import { formatDate } from '../lib/utils';
 import { JiraLink } from '../components/JiraLink';
 import { SkeletonCardGrid } from '../components/Skeleton';
 import { useQuickAdd } from '../components/QuickAdd';
+import { confirmDialog } from '../store/useConfirm';
 
 export function Notes() {
   const { notes, deleteNote, loaded } = useStore();
@@ -26,8 +27,14 @@ export function Notes() {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }, [notes, search]);
 
-  const remove = (id: string) => {
-    if (confirm('Notiz wirklich löschen?')) deleteNote(id);
+  const remove = async (id: string) => {
+    const ok = await confirmDialog({
+      title: 'Notiz löschen?',
+      message: 'Diese Notiz wird dauerhaft entfernt.',
+      confirmLabel: 'Löschen',
+      danger: true,
+    });
+    if (ok) deleteNote(id);
   };
 
   if (!loaded) {

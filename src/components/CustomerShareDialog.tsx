@@ -3,6 +3,7 @@ import { X, Check, UserIcon, Crown, ArrowRightLeft } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { getEffectiveOwnership } from '../lib/customerOwnership';
+import { confirmDialog } from '../store/useConfirm';
 
 interface Props {
   customerNumber: string;
@@ -52,9 +53,14 @@ export function CustomerShareDialog({ customerNumber, customerName, onClose }: P
     }
   };
 
-  const transferOwnership = (newOwnerKey: string) => {
+  const transferOwnership = async (newOwnerKey: string) => {
     if (!canManage) return;
-    if (!confirm(`Besitz an ${users[newOwnerKey]?.displayName} übertragen? Du wirst dann nur noch als geteilter Nutzer geführt.`)) return;
+    const ok = await confirmDialog({
+      title: 'Besitz übertragen?',
+      message: `Besitz an ${users[newOwnerKey]?.displayName} übertragen? Du wirst dann nur noch als geteilter Nutzer geführt.`,
+      confirmLabel: 'Übertragen',
+    });
+    if (!ok) return;
     setCustomerOwner(customerNumber, newOwnerKey);
     if (currentUserKey && currentUserKey !== newOwnerKey) {
       shareCustomer(customerNumber, currentUserKey);

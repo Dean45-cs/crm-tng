@@ -24,6 +24,7 @@ import { JiraLink } from '../components/JiraLink';
 import { StatusBadge } from '../components/StatusBadge';
 import { SkeletonTable } from '../components/Skeleton';
 import { useQuickAdd } from '../components/QuickAdd';
+import { confirmDialog } from '../store/useConfirm';
 
 type SortKey = 'date' | 'customer' | 'commission';
 type SortDir = 'asc' | 'desc';
@@ -90,8 +91,14 @@ export function Contracts() {
     [filtered],
   );
 
-  const remove = (id: string) => {
-    if (confirm('Vertrag wirklich löschen?')) deleteContract(id);
+  const remove = async (id: string) => {
+    const ok = await confirmDialog({
+      title: 'Vertrag löschen?',
+      message: 'Dieser Vertrag wird dauerhaft entfernt.',
+      confirmLabel: 'Löschen',
+      danger: true,
+    });
+    if (ok) deleteContract(id);
   };
 
   const exportData = () => {

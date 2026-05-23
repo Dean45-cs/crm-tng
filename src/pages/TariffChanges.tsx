@@ -28,6 +28,7 @@ import {
 import { JiraLink } from '../components/JiraLink';
 import { SkeletonTable } from '../components/Skeleton';
 import { useQuickAdd } from '../components/QuickAdd';
+import { confirmDialog } from '../store/useConfirm';
 import { exportTariffChange } from '../lib/sharepointGraph';
 import type { TariffChange } from '../types';
 
@@ -96,8 +97,14 @@ export function TariffChanges() {
 
   const unexported = tariffChanges.filter((t) => !t.exportedAt);
 
-  const remove = (id: string) => {
-    if (confirm('Tarifwechsel wirklich löschen?')) deleteTariffChange(id);
+  const remove = async (id: string) => {
+    const ok = await confirmDialog({
+      title: 'Tarifwechsel löschen?',
+      message: 'Dieser Tarifwechsel wird dauerhaft entfernt.',
+      confirmLabel: 'Löschen',
+      danger: true,
+    });
+    if (ok) deleteTariffChange(id);
   };
 
   const exportCsvData = () => {
