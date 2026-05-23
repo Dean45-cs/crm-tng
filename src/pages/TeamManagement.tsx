@@ -80,7 +80,8 @@ function AgentManageCard({ user, isSelf, onSetRole, onSetActive, onSetTarget }: 
 
   const dealCount = useMemo(
     () =>
-      contracts.filter((c) => c.createdBy === user.key).length +
+      // Stornierte Verträge zählen nicht als Abschluss (konsistent mit agentStats).
+      contracts.filter((c) => c.createdBy === user.key && c.status !== 'storniert').length +
       tariffChanges.filter((t) => t.createdBy === user.key).length,
     [contracts, tariffChanges, user.key],
   );

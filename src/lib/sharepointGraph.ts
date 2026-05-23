@@ -1,7 +1,7 @@
-import {
+import type {
+  AccountInfo,
+  Configuration,
   PublicClientApplication,
-  type AccountInfo,
-  type Configuration,
 } from '@azure/msal-browser';
 import type { TariffChange, TariffContext, TariffChangeType } from '../types';
 
@@ -9,14 +9,23 @@ const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 const SP_SITE = 'ennitserver.sharepoint.com:/sites/Kommunikations-Coaching';
 const SCOPES = ['https://graph.microsoft.com/Files.ReadWrite'];
 
+// MSAL ist groß — erst bei tatsächlichem Bedarf nachladen (dynamischer Import),
+// statt die Bibliothek ins Haupt-Bundle zu ziehen.
+let _PCA: typeof PublicClientApplication | null = null;
+async function loadPCA(): Promise<typeof PublicClientApplication> {
+  if (!_PCA) _PCA = (await import('@azure/msal-browser')).PublicClientApplication;
+  return _PCA;
+}
+
 // Singleton MSAL app — recreated if clientId/tenantId change
 let _app: PublicClientApplication | null = null;
 let _clientId = '';
 let _tenantId = '';
 const _initialized = new WeakMap<PublicClientApplication, boolean>();
 
-function buildApp(clientId: string, tenantId: string): PublicClientApplication {
+async function buildApp(clientId: string, tenantId: string): Promise<PublicClientApplication> {
   if (_app && _clientId === clientId && _tenantId === tenantId) return _app;
+  const PCA = await loadPCA();
   const config: Configuration = {
     auth: {
       clientId,
@@ -25,7 +34,7 @@ function buildApp(clientId: string, tenantId: string): PublicClientApplication {
     },
     cache: { cacheLocation: 'localStorage' },
   };
-  _app = new PublicClientApplication(config);
+  _app = new PCA(config);
   _clientId = clientId;
   _tenantId = tenantId;
   return _app;
@@ -39,7 +48,7 @@ async function ensureInit(app: PublicClientApplication): Promise<void> {
 }
 
 async function acquireToken(clientId: string, tenantId: string): Promise<string> {
-  const app = buildApp(clientId, tenantId);
+  const app = await buildApp(clientId, tenantId);
   await ensureInit(app);
   const accounts = app.getAllAccounts();
   if (accounts.length > 0) {
@@ -55,14 +64,14 @@ async function acquireToken(clientId: string, tenantId: string): Promise<string>
 }
 
 export async function spSignIn(clientId: string, tenantId: string): Promise<AccountInfo> {
-  const app = buildApp(clientId, tenantId);
+  const app = await buildApp(clientId, tenantId);
   await ensureInit(app);
   const r = await app.loginPopup({ scopes: SCOPES });
   return r.account;
 }
 
 export async function spSignOut(clientId: string, tenantId: string): Promise<void> {
-  const app = buildApp(clientId, tenantId);
+  const app = await buildApp(clientId, tenantId);
   await ensureInit(app);
   const accounts = app.getAllAccounts();
   if (accounts.length > 0) await app.logoutPopup({ account: accounts[0] });
@@ -71,7 +80,7 @@ export async function spSignOut(clientId: string, tenantId: string): Promise<voi
 export async function spGetAccount(clientId: string, tenantId: string): Promise<AccountInfo | null> {
   if (!clientId || !tenantId) return null;
   try {
-    const app = buildApp(clientId, tenantId);
+    const app = await buildApp(clientId, tenantId);
     await ensureInit(app);
     const accounts = app.getAllAccounts();
     return accounts[0] ?? null;

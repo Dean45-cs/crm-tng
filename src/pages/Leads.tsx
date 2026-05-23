@@ -22,6 +22,7 @@ import {
 import { useQuickAdd } from '../components/QuickAdd';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
+import { confirmDialog } from '../store/useConfirm';
 import {
   formatDate,
   formatCurrency,
@@ -157,7 +158,6 @@ export function Leads() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Lead | undefined>(undefined);
   const [prefill, setPrefill] = useState<LeadPrefill | undefined>(undefined);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Auslaufende Verträge (alle Team-Verträge), nach Ablauf-Dringlichkeit sortiert.
@@ -351,29 +351,20 @@ export function Leads() {
                           >
                             <Pencil size={13} />
                           </button>
-                          {confirmId === lead.id ? (
-                            <button
-                              className="btn btn-sm btn-danger"
-                              autoFocus
-                              onClick={() => {
-                                deleteLead(lead.id);
-                                setConfirmId(null);
-                              }}
-                              onBlur={() =>
-                                setConfirmId((c) => (c === lead.id ? null : c))
-                              }
-                            >
-                              Wirklich?
-                            </button>
-                          ) : (
-                            <button
-                              className="lead-icon-btn"
-                              onClick={() => setConfirmId(lead.id)}
-                              title="Löschen"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          )}
+                          <button
+                            className="lead-icon-btn"
+                            onClick={() =>
+                              confirmDialog({
+                                title: 'Lead löschen?',
+                                message: `„${lead.customerName}" wird dauerhaft entfernt.`,
+                                confirmLabel: 'Löschen',
+                                danger: true,
+                              }).then((ok) => { if (ok) deleteLead(lead.id); })
+                            }
+                            title="Löschen"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </div>
                       </div>
 

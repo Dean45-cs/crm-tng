@@ -20,6 +20,7 @@ import {
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { useRouter } from '../router';
+import { confirmDialog } from '../store/useConfirm';
 import {
   calcContractCommission,
   calcTariffCommission,
@@ -263,7 +264,10 @@ export function CustomerDetail({ kdnr }: Props) {
                         </button>
                         <button
                           className="btn btn-ghost btn-sm"
-                          onClick={() => confirm('Wirklich löschen?') && deleteContract(c.id)}
+                          onClick={() =>
+                            confirmDialog({ title: 'Vertrag löschen?', confirmLabel: 'Löschen', danger: true })
+                              .then((ok) => { if (ok) deleteContract(c.id); })
+                          }
                         >
                           <Trash2 size={13} color="var(--red)" />
                         </button>
@@ -318,7 +322,10 @@ export function CustomerDetail({ kdnr }: Props) {
                         </button>
                         <button
                           className="btn btn-ghost btn-sm"
-                          onClick={() => confirm('Wirklich löschen?') && deleteTariffChange(t.id)}
+                          onClick={() =>
+                            confirmDialog({ title: 'Tarifwechsel löschen?', confirmLabel: 'Löschen', danger: true })
+                              .then((ok) => { if (ok) deleteTariffChange(t.id); })
+                          }
                         >
                           <Trash2 size={13} color="var(--red)" />
                         </button>
@@ -351,7 +358,10 @@ export function CustomerDetail({ kdnr }: Props) {
                     </button>
                     <button
                       className="btn btn-ghost btn-sm"
-                      onClick={() => confirm('Wirklich löschen?') && deleteNote(n.id)}
+                      onClick={() =>
+                        confirmDialog({ title: 'Notiz löschen?', confirmLabel: 'Löschen', danger: true })
+                          .then((ok) => { if (ok) deleteNote(n.id); })
+                      }
                     >
                       <Trash2 size={12} color="var(--red)" />
                     </button>

@@ -41,6 +41,7 @@ import { agentStats, attainmentPct } from '../lib/teamStats';
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
 import { useQuickAdd } from '../components/QuickAdd';
+import { confirmDialog } from '../store/useConfirm';
 
 interface Props {
   agentKey: string;
@@ -307,7 +308,10 @@ export function AgentDetail({ agentKey }: Props) {
                         </button>
                         <button
                           className="btn btn-ghost btn-sm"
-                          onClick={() => confirm('Wirklich löschen?') && deleteContract(c.id)}
+                          onClick={() =>
+                            confirmDialog({ title: 'Vertrag löschen?', confirmLabel: 'Löschen', danger: true })
+                              .then((ok) => { if (ok) deleteContract(c.id); })
+                          }
                         >
                           <Trash2 size={13} color="var(--red)" />
                         </button>
@@ -360,7 +364,10 @@ export function AgentDetail({ agentKey }: Props) {
                         </button>
                         <button
                           className="btn btn-ghost btn-sm"
-                          onClick={() => confirm('Wirklich löschen?') && deleteTariffChange(t.id)}
+                          onClick={() =>
+                            confirmDialog({ title: 'Tarifwechsel löschen?', confirmLabel: 'Löschen', danger: true })
+                              .then((ok) => { if (ok) deleteTariffChange(t.id); })
+                          }
                         >
                           <Trash2 size={13} color="var(--red)" />
                         </button>
@@ -389,7 +396,10 @@ export function AgentDetail({ agentKey }: Props) {
                     </button>
                     <button
                       className="btn btn-ghost btn-sm"
-                      onClick={() => confirm('Wirklich löschen?') && deleteNote(n.id)}
+                      onClick={() =>
+                        confirmDialog({ title: 'Notiz löschen?', confirmLabel: 'Löschen', danger: true })
+                          .then((ok) => { if (ok) deleteNote(n.id); })
+                      }
                     >
                       <Trash2 size={12} color="var(--red)" />
                     </button>
