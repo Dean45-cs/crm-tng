@@ -83,8 +83,11 @@ Die App braucht die Zugangsdaten des Supabase-Projekts. Zwei Wege:
 - Anmeldung mit **Name + 4-stelliger PIN** (synthetische Email pro Name,
   verwaltet über Supabase Auth). Nach mehreren Fehlversuchen greift eine
   eskalierende Login-Sperre.
-- Zwei Rollen: **agent** (Vertrieb) und **manager** (Chef-Bereich). Der erste
-  Manager wird einmalig per SQL gesetzt — siehe Hinweis in `db/README.md`.
+- Zwei Rollen: **agent** (Vertrieb) und **manager** (Chef-Bereich).
+- **Konten legt nur der Chef an** (Team-Verwaltung → „Neues Konto"). Eine
+  Selbst-Registrierung gibt es nicht — Ausnahme: das allererste Konto einer
+  frischen Installation richtet sich beim ersten Start selbst ein und wird
+  automatisch zum ersten Chef. Details in `db/README.md`.
 
 ## Tests
 

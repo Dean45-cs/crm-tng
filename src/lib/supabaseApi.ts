@@ -180,6 +180,17 @@ export async function fetchAllUsers(): Promise<Record<string, AuthUser>> {
   return map;
 }
 
+/**
+ * Existiert mindestens ein Nutzerprofil? Über die RPC users_exist() — auch ohne
+ * Anmeldung lesbar, damit der Login-Screen den Bootstrap des ersten Kontos
+ * erkennt (RLS verbietet einem anon-Client das direkte Lesen von public.users).
+ */
+export async function fetchUsersExist(): Promise<boolean> {
+  const { data, error } = await getSupabase().rpc('users_exist');
+  if (error) throw error;
+  return data === true;
+}
+
 export async function updateUserRole(id: string, role: 'agent' | 'manager'): Promise<void> {
   const { error } = await getSupabase().from('users').update({ role }).eq('id', id);
   if (error) throw error;

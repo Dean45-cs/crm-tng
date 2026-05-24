@@ -1,4 +1,4 @@
-import type { Contract, TariffChange, Settings } from '../types';
+import type { Contract, TariffChange, Settings, Lead } from '../types';
 
 /** Minimale, deterministische Settings für Tests. */
 export const testSettings: Settings = {
@@ -48,6 +48,20 @@ export function makeTariff(over: Partial<TariffChange> = {}): TariffChange {
     changeDate: '2024-06-15',
     jiraTicket: '',
     createdAt: '2024-06-15T10:00:00.000Z',
+    createdBy: 'agent-1',
+    ...over,
+  };
+}
+
+export function makeLead(over: Partial<Lead> = {}): Lead {
+  seq += 1;
+  return {
+    id: `l${seq}`,
+    customerName: 'Lead Kunde',
+    status: 'neu',
+    priority: 'normal',
+    createdAt: '2024-06-15T10:00:00.000Z',
+    updatedAt: '2024-06-15T10:00:00.000Z',
     createdBy: 'agent-1',
     ...over,
   };

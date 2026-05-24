@@ -1,8 +1,10 @@
 import { create } from 'zustand';
-import { getSupabase, pinToPassword, nameToEmail } from '../lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+import { getSupabase, getConfig, pinToPassword, nameToEmail } from '../lib/supabase';
 import {
   fetchAllUsers,
   fetchUserActive,
+  fetchUsersExist,
   upsertUserProfile,
   upsertUserSettings,
   updateUserFlags,
@@ -53,6 +55,12 @@ interface AuthState {
   currentUserKey: string | null;
   /** True solange wir die Auth-Session beim App-Start prüfen */
   initializing: boolean;
+  /**
+   * True nur im Bootstrap: es existiert noch KEIN Nutzer, daher darf sich das
+   * allererste Konto selbst anlegen (und wird automatisch zum ersten Manager).
+   * Danach legt nur noch der Chef Konten an.
+   */
+  registrationOpen: boolean;
 
   /** Wird einmalig vom App-Bootstrap aufgerufen */
   init: () => Promise<void>;
@@ -60,7 +68,14 @@ interface AuthState {
   refreshUsers: () => Promise<void>;
 
   hasUser: (name: string) => boolean;
+  /** Bootstrap-Selbstregistrierung des ersten Kontos (sonst gesperrt). */
   registerUser: (name: string, pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Chef-Aktion: legt ein neues Mitarbeitenden-Konto an (ohne die eigene Session zu verlieren). */
+  createUser: (
+    name: string,
+    pin: string,
+    role?: UserRole,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   loginUser: (name: string, pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   logout: () => Promise<void>;
   getCurrentUser: () => AuthUser | null;
@@ -81,6 +96,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   users: {},
   currentUserKey: null,
   initializing: true,
+  registrationOpen: false,
 
   init: async () => {
     try {
@@ -96,10 +112,21 @@ export const useAuth = create<AuthState>()((set, get) => ({
         users = {};
       }
 
+      // Bootstrap erkennen: existiert noch gar kein Konto, darf sich das erste
+      // selbst anlegen. Schlägt die Prüfung fehl (z. B. Migration 012 fehlt),
+      // bleibt die Registrierung sicherheitshalber zu.
+      let registrationOpen = false;
+      try {
+        registrationOpen = !(await fetchUsersExist());
+      } catch {
+        registrationOpen = false;
+      }
+
       set({
         users,
         currentUserKey: session?.user.id ?? null,
         initializing: false,
+        registrationOpen,
       });
 
       // Auth-State-Changes abonnieren (genau einmal).
@@ -138,11 +165,29 @@ export const useAuth = create<AuthState>()((set, get) => ({
     const trimmed = name.trim();
     if (!trimmed) return { ok: false, error: 'Bitte gib deinen Namen ein.' };
     if (!/^\d{4}$/.test(pin)) return { ok: false, error: 'PIN muss aus genau 4 Ziffern bestehen.' };
+    // Selbst-Registrierung ist nur im Bootstrap (noch kein Konto) erlaubt.
+    if (!get().registrationOpen) {
+      return {
+        ok: false,
+        error: 'Neue Konten werden von der Chefin/dem Chef angelegt. Bitte wende dich an deine:n Vorgesetzte:n.',
+      };
+    }
 
     const sb = getSupabase();
     const email = nameToEmail(trimmed);
     const password = pinToPassword(trimmed, pin);
     const key = normalizeUserKey(trimmed);
+
+    // Das allererste Konto wird automatisch der erste Manager (Bootstrap).
+    const finishBootstrap = async (uid: string) => {
+      try {
+        await apiUpdateUserRole(uid, 'manager');
+      } catch {
+        /* Beförderung kann später per SQL nachgeholt werden */
+      }
+      await get().refreshUsers();
+      set({ registrationOpen: false });
+    };
 
     const { data, error } = await sb.auth.signUp({
       email,
@@ -168,8 +213,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
             await sb.auth.signOut();
             return { ok: false, error: 'Anmeldung konnte nicht verifiziert werden. Bitte erneut versuchen.' };
           }
-          await get().refreshUsers();
           set({ currentUserKey: uid });
+          await finishBootstrap(uid);
           return { ok: true };
         }
         return { ok: false, error: 'Dieser Name ist bereits belegt. Falls du einen Account hast, melde dich über "Anmelden" an.' };
@@ -191,8 +236,78 @@ export const useAuth = create<AuthState>()((set, get) => ({
       return { ok: false, error: (e as Error).message };
     }
 
-    await get().refreshUsers();
     set({ currentUserKey: uid });
+    await finishBootstrap(uid);
+    return { ok: true };
+  },
+
+  createUser: async (name, pin, role = 'agent') => {
+    if (!get().isManager()) {
+      return { ok: false, error: 'Nur Chefs dürfen Konten anlegen.' };
+    }
+    const trimmed = name.trim();
+    if (!trimmed) return { ok: false, error: 'Bitte einen Namen eingeben.' };
+    if (!/^\d{4}$/.test(pin)) return { ok: false, error: 'PIN muss aus genau 4 Ziffern bestehen.' };
+    if (get().hasUser(trimmed)) return { ok: false, error: 'Diesen Namen gibt es bereits.' };
+
+    const cfg = getConfig();
+    if (!cfg) return { ok: false, error: 'Keine Verbindung zum Backend.' };
+
+    // Isolierter Client mit eigener, NICHT persistierter Session: signUp legt
+    // ein neues Konto an, ohne die Chef-Session im localStorage zu überschreiben.
+    const temp = createClient(cfg.url, cfg.anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false, storageKey: 'crm-tng-admin-temp' },
+    });
+
+    const email = nameToEmail(trimmed);
+    const password = pinToPassword(trimmed, pin);
+    const key = normalizeUserKey(trimmed);
+
+    const { data, error } = await temp.auth.signUp({
+      email,
+      password,
+      options: { data: { display_name: trimmed } },
+    });
+    if (error) {
+      if (error.message.toLowerCase().includes('already')) {
+        return { ok: false, error: 'Für diesen Namen existiert bereits ein Konto.' };
+      }
+      return { ok: false, error: error.message };
+    }
+    const uid = data.user?.id;
+    if (!uid) return { ok: false, error: 'Konto konnte nicht angelegt werden.' };
+
+    // Falls keine Session zurückkam: nachholen, damit der Profil-Insert als der
+    // neue Nutzer läuft (RLS-Insert verlangt auth.uid() = id).
+    if (!data.session) {
+      const { error: se } = await temp.auth.signInWithPassword({ email, password });
+      if (se) return { ok: false, error: 'Konto angelegt, aber Profil-Initialisierung schlug fehl.' };
+    }
+
+    const { error: pe } = await temp.from('users').upsert(
+      { id: uid, key, display_name: trimmed },
+      { onConflict: 'id' },
+    );
+    await temp.auth.signOut();
+    if (pe) return { ok: false, error: pe.message };
+
+    // Rolle setzt der angemeldete Chef über die Hauptsession (Trigger erlaubt es).
+    if (role === 'manager') {
+      try {
+        await apiUpdateUserRole(uid, 'manager');
+      } catch {
+        /* bleibt vorerst Vertrieb, kann in der Team-Verwaltung nachgeholt werden */
+      }
+    }
+
+    await get().refreshUsers();
+    logAudit({
+      action: 'create',
+      entityType: 'user',
+      entityId: uid,
+      entityLabel: trimmed,
+      details: { role },
+    });
     return { ok: true };
   },
 

@@ -12,6 +12,12 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Crown,
+  TrendingDown,
+  Coins,
+  Inbox,
+  Trophy,
+  Clock,
+  CalendarClock,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -38,7 +44,7 @@ import {
   calcContractCommission,
   calcTariffCommission,
 } from '../lib/utils';
-import { attainmentPct } from '../lib/teamStats';
+import { attainmentPct, teamKpis } from '../lib/teamStats';
 import { SkeletonTable } from '../components/Skeleton';
 
 function initialsOf(name: string): string {
@@ -84,9 +90,14 @@ interface AgentRow {
 }
 
 export function TeamDashboard() {
-  const { contracts, tariffChanges, settings, loaded } = useStore();
+  const { contracts, tariffChanges, leads, settings, loaded } = useStore();
   const { users, isManager } = useAuth();
   const { navigate } = useRouter();
+
+  const kpis = useMemo(
+    () => teamKpis(contracts, tariffChanges, leads, settings),
+    [contracts, tariffChanges, leads, settings],
+  );
 
   const rows = useMemo<AgentRow[]>(() => {
     const now = new Date();
@@ -339,6 +350,52 @@ export function TeamDashboard() {
           label="Mitarbeitende"
           value={`${team.activeAgents}`}
           sub={`von ${rows.length} im Team`}
+        />
+      </div>
+
+      <div className="team-kpis-subhead">Qualität &amp; Pipeline</div>
+      <div className="team-kpis">
+        <KpiTile
+          icon={<TrendingDown size={15} />}
+          accent="red"
+          label="Storno-Quote"
+          value={kpis.cancelRate === null ? '–' : `${kpis.cancelRate} %`}
+          sub="stornierte von allen Verträgen"
+        />
+        <KpiTile
+          icon={<Coins size={15} />}
+          accent="blue"
+          label="Ø Provision / Abschluss"
+          value={formatCurrency(kpis.avgCommissionPerDeal)}
+          sub="aktueller Monat"
+        />
+        <KpiTile
+          icon={<Inbox size={15} />}
+          accent="orange"
+          label="Offene Leads"
+          value={`${kpis.openLeads}`}
+          sub="neu + in Bearbeitung"
+        />
+        <KpiTile
+          icon={<Trophy size={15} />}
+          accent="green"
+          label="Lead-Conversion"
+          value={kpis.leadConversion === null ? '–' : `${kpis.leadConversion} %`}
+          sub="gewonnen von abgeschlossenen"
+        />
+        <KpiTile
+          icon={<Clock size={15} />}
+          accent="purple"
+          label="Verträge laufen aus"
+          value={`${kpis.expiringSoon}`}
+          sub="Laufzeitende in ≤ 90 Tagen"
+        />
+        <KpiTile
+          icon={<CalendarClock size={15} />}
+          accent="orange"
+          label="Fällige Wiedervorlagen"
+          value={`${kpis.dueFollowUps}`}
+          sub="heute + überfällig"
         />
       </div>
 

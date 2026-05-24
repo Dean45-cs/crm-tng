@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { agentStats, attainmentPct } from './teamStats';
-import { testSettings, makeContract, makeTariff } from '../test/fixtures';
+import { agentStats, attainmentPct, teamKpis } from './teamStats';
+import { today } from './utils';
+import { testSettings, makeContract, makeTariff, makeLead } from '../test/fixtures';
 
 describe('agentStats', () => {
   const ref = new Date(2024, 5, 15); // Juni 2024
@@ -52,5 +53,63 @@ describe('attainmentPct', () => {
 
   it('liefert null ohne gesetztes Ziel', () => {
     expect(attainmentPct(500, 0)).toBeNull();
+  });
+});
+
+describe('teamKpis', () => {
+  it('berechnet die Storno-Quote', () => {
+    const contracts = [
+      makeContract({ status: 'aktiv' }),
+      makeContract({ status: 'aktiv' }),
+      makeContract({ status: 'aktiv' }),
+      makeContract({ status: 'storniert' }),
+    ];
+    const k = teamKpis(contracts, [], [], testSettings);
+    expect(k.cancelRate).toBe(25);
+  });
+
+  it('cancelRate ist null ohne Verträge', () => {
+    expect(teamKpis([], [], [], testSettings).cancelRate).toBeNull();
+  });
+
+  it('berechnet Ø Provision pro Abschluss im Monat', () => {
+    const contracts = [
+      makeContract({ contractDate: today(), products: ['Fibrefamily'] }), // 50
+      makeContract({ contractDate: today(), products: ['Fibrepro'] }), // 80
+    ];
+    const k = teamKpis(contracts, [], [], testSettings);
+    expect(k.avgCommissionPerDeal).toBe(65);
+  });
+
+  it('zählt offene Leads und die Lead-Conversion', () => {
+    const leads = [
+      makeLead({ status: 'neu' }),
+      makeLead({ status: 'inBearbeitung' }),
+      makeLead({ status: 'gewonnen' }),
+      makeLead({ status: 'gewonnen' }),
+      makeLead({ status: 'verloren' }),
+    ];
+    const k = teamKpis([], [], leads, testSettings);
+    expect(k.openLeads).toBe(2);
+    expect(k.leadConversion).toBe(67); // 2 / 3
+  });
+
+  it('leadConversion ist null ohne abgeschlossene Leads', () => {
+    const leads = [makeLead({ status: 'neu' })];
+    expect(teamKpis([], [], leads, testSettings).leadConversion).toBeNull();
+  });
+
+  it('zählt fällige Wiedervorlagen (heute + überfällig) über Verträge und Leads', () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const contracts = [
+      makeContract({ followUpDate: today() }),
+      makeContract({ followUpDate: iso(yesterday) }),
+      makeContract({ followUpDate: undefined }),
+    ];
+    const leads = [makeLead({ followUpDate: today() })];
+    const k = teamKpis(contracts, [], leads, testSettings);
+    expect(k.dueFollowUps).toBe(3);
   });
 });

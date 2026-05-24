@@ -1,7 +1,8 @@
 import { useId, useMemo, useState } from 'react';
-import { Lock, Unlock, ShieldCheck, UserCog, Crown, Users } from 'lucide-react';
-import { useAuth, type AuthUser } from '../store/useAuth';
+import { Lock, Unlock, ShieldCheck, UserCog, Crown, Users, UserPlus, Loader2 } from 'lucide-react';
+import { useAuth, type AuthUser, type UserRole } from '../store/useAuth';
 import { useStore } from '../store/useStore';
+import { toast } from '../store/useToast';
 import { formatCurrency } from '../lib/utils';
 
 function initialsOf(name: string): string {
@@ -15,7 +16,9 @@ function initialsOf(name: string): string {
 }
 
 export function TeamManagement() {
-  const { users, currentUserKey, isManager, setUserRole, setUserActive, setAgentTarget } = useAuth();
+  const { users, currentUserKey, isManager, setUserRole, setUserActive, setAgentTarget, createUser } =
+    useAuth();
+  const [showCreate, setShowCreate] = useState(false);
 
   const sorted = useMemo(
     () => Object.values(users).sort((a, b) => a.displayName.localeCompare(b.displayName, 'de')),
@@ -37,15 +40,25 @@ export function TeamManagement() {
       <div className="page-header">
         <div>
           <h2>Team-Verwaltung</h2>
-          <p>Rollen vergeben, Monatsziele setzen und Zugänge sperren.</p>
+          <p>Konten anlegen, Rollen vergeben, Monatsziele setzen und Zugänge sperren.</p>
         </div>
+        <button className="btn btn-primary" onClick={() => setShowCreate((v) => !v)}>
+          <UserPlus size={14} /> Neues Konto
+        </button>
       </div>
+
+      {showCreate && (
+        <CreateAccountForm
+          onCreate={createUser}
+          onDone={() => setShowCreate(false)}
+        />
+      )}
 
       {sorted.length === 0 ? (
         <div className="widget empty">
           <Users size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>Noch keine Mitarbeitenden</h3>
-          <p>Sobald sich Kolleg:innen registrieren, erscheinen sie hier.</p>
+          <p>Lege über „Neues Konto" den ersten Zugang für dein Team an.</p>
         </div>
       ) : (
         <div className="agent-manage-grid">
@@ -62,6 +75,110 @@ export function TeamManagement() {
         </div>
       )}
     </div>
+  );
+}
+
+function CreateAccountForm({
+  onCreate,
+  onDone,
+}: {
+  onCreate: (name: string, pin: string, role?: UserRole) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onDone: () => void;
+}) {
+  const fid = useId();
+  const [name, setName] = useState('');
+  const [pin, setPin] = useState('');
+  const [role, setRole] = useState<UserRole>('agent');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!name.trim()) {
+      setError('Bitte einen Namen eingeben.');
+      return;
+    }
+    if (!/^\d{4}$/.test(pin)) {
+      setError('Die Start-PIN muss aus genau 4 Ziffern bestehen.');
+      return;
+    }
+    setBusy(true);
+    const res = await onCreate(name, pin, role);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    toast.success(`Konto für ${name.trim()} angelegt.`);
+    setName('');
+    setPin('');
+    setRole('agent');
+    onDone();
+  };
+
+  return (
+    <form className="widget create-account" onSubmit={submit}>
+      <h3 className="widget-title" style={{ marginTop: 0 }}>
+        <UserPlus size={15} style={{ marginRight: 7, verticalAlign: '-2px' }} />
+        Neues Konto anlegen
+      </h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 12.5 }}>
+        Lege Name und eine 4-stellige Start-PIN fest und gib sie an die:den
+        Mitarbeitende:n weiter. Die PIN kann später nicht eingesehen werden.
+      </p>
+
+      <div className="create-account-row">
+        <div className="field">
+          <label htmlFor={`${fid}-name`}>Name</label>
+          <input
+            id={`${fid}-name`}
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="z. B. Max Mustermann"
+            maxLength={32}
+            autoComplete="off"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`${fid}-pin`}>Start-PIN</label>
+          <input
+            id={`${fid}-pin`}
+            type="text"
+            inputMode="numeric"
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            placeholder="4 Ziffern"
+            maxLength={4}
+            autoComplete="off"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`${fid}-role`}>Rolle</label>
+          <select
+            id={`${fid}-role`}
+            value={role}
+            onChange={(e) => setRole(e.target.value as UserRole)}
+          >
+            <option value="agent">Vertrieb</option>
+            <option value="manager">Chef</option>
+          </select>
+        </div>
+      </div>
+
+      {error && <div className="login-error" style={{ marginTop: 4 }}>{error}</div>}
+
+      <div className="row" style={{ gap: 8, marginTop: 12 }}>
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? <Loader2 size={14} className="spin" /> : <UserPlus size={14} />}
+          {busy ? 'Lege an …' : 'Konto anlegen'}
+        </button>
+        <button type="button" className="btn" onClick={onDone} disabled={busy}>
+          Abbrechen
+        </button>
+      </div>
+    </form>
   );
 }
 

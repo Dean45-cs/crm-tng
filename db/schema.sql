@@ -236,8 +236,19 @@ $$;
 grant execute on function public.auth_is_active() to authenticated, anon;
 grant execute on function public.auth_is_manager() to authenticated, anon;
 
+-- Existiert mindestens ein Nutzerprofil? Nur ein Boolean (anon-lesbar), damit
+-- der Login-Screen den Bootstrap des ersten Kontos erkennt.
+create or replace function public.users_exist()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.users);
+$$;
+
+grant execute on function public.users_exist() to anon, authenticated;
+
 -- Privilege-Escalation verhindern: role/is_active/key/id nur durch Manager:innen
 -- (oder serverseitig per service_role / SQL-Editor, wo auth.uid() NULL ist).
+-- Ausnahme: Solange noch KEIN Manager existiert, darf der erste Account sich
+-- selbst befördern (Bootstrap).
 create or replace function public.prevent_user_privilege_change()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
@@ -246,7 +257,8 @@ begin
       or new.key is distinct from old.key
       or new.id is distinct from old.id)
      and auth.uid() is not null
-     and not public.auth_is_manager() then
+     and not public.auth_is_manager()
+     and exists (select 1 from public.users where role = 'manager') then
     raise exception 'Nicht erlaubt: Rolle, Status oder Schlüssel dürfen nur von Manager:innen geändert werden.'
       using errcode = '42501';
   end if;

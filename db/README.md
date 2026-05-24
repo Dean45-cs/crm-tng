@@ -43,13 +43,22 @@ bereits — Migrationen sind dann nicht nötig.
 - `011_security_hardening.sql` — **wichtig:** verhindert Privilege-Escalation
   (Nutzer können sich nicht mehr selbst zum Manager machen) und sperrt
   deaktivierte Nutzer (`is_active = false`) serverseitig vom Datenzugriff aus.
+- `012_account_management.sql` — Selbst-Registrierung wird abgeschafft: Konten
+  legt nur noch der Chef in der Team-Verwaltung an. Lediglich das allererste
+  Konto darf sich im Bootstrap selbst anlegen und wird automatisch zum ersten
+  Manager. `users_exist()` erlaubt dem Login-Screen, diesen Bootstrap zu erkennen.
 
-> **Nach `011`:** Den ersten Manager einmalig manuell setzen, sonst kann
-> niemand jemanden befördern:
+> **Erster Zugang (frische Installation):** Beim allerersten Start bietet der
+> Login-Screen automatisch „Erstes Konto einrichten" an — dieses Konto wird der
+> erste Chef. Alle weiteren Konten legt der Chef unter **Team-Verwaltung →
+> Neues Konto** an. Alternativ lässt sich der erste Manager per SQL setzen:
 > ```sql
 > update public.users set role = 'manager' where key = '<name-klein-geschrieben>';
 > ```
-> (Im SQL-Editor erlaubt, weil dort `auth.uid()` NULL ist.)
+>
+> **Wichtig:** Die „User Signups" müssen in Supabase unter **Authentication →
+> Sign In / Providers** AKTIVIERT bleiben — der Chef legt Konten technisch per
+> Signup an; die Sperre der Selbst-Registrierung erfolgt in der App.
 
 ## 3. Email-Bestätigung deaktivieren
 

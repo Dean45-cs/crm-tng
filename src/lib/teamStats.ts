@@ -1,5 +1,11 @@
-import type { Contract, TariffChange, Settings } from '../types';
-import { calcContractCommission, calcTariffCommission, isSameMonth } from './utils';
+import type { Contract, TariffChange, Settings, Lead } from '../types';
+import {
+  calcContractCommission,
+  calcTariffCommission,
+  isSameMonth,
+  expiryBucket,
+  followUpBucket,
+} from './utils';
 
 export interface AgentStats {
   /** Provision im Referenzmonat (Verträge + Tarifwechsel) */
@@ -64,4 +70,72 @@ export function agentStats(
 export function attainmentPct(commission: number, target: number): number | null {
   if (target <= 0) return null;
   return Math.round((commission / target) * 100);
+}
+
+/** Zusätzliche Team-Kennzahlen für die Chef-Übersicht (Qualität & Pipeline). */
+export interface TeamKpis {
+  /** Storno-Quote in % (stornierte / alle Verträge), null ohne Verträge. */
+  cancelRate: number | null;
+  /** Durchschnittliche Provision pro Abschluss im Referenzmonat. */
+  avgCommissionPerDeal: number;
+  /** Offene Leads in der Pipeline (neu + in Bearbeitung). */
+  openLeads: number;
+  /** Lead-Conversion in % (gewonnen / (gewonnen + verloren)), null ohne Abschluss. */
+  leadConversion: number | null;
+  /** Verträge, deren Laufzeit in ≤ 90 Tagen endet (Retention-Risiko). */
+  expiringSoon: number;
+  /** Fällige Wiedervorlagen (heute + überfällig) über Verträge und Leads. */
+  dueFollowUps: number;
+}
+
+export function teamKpis(
+  contracts: Contract[],
+  tariffChanges: TariffChange[],
+  leads: Lead[],
+  settings: Settings,
+  ref: Date = new Date(),
+): TeamKpis {
+  const totalContracts = contracts.length;
+  const cancelled = contracts.filter((c) => c.status === 'storniert').length;
+  const cancelRate = totalContracts > 0 ? Math.round((cancelled / totalContracts) * 100) : null;
+
+  let monthCommission = 0;
+  let monthDeals = 0;
+  for (const c of contracts) {
+    if (!isSameMonth(c.contractDate, ref)) continue;
+    monthCommission += calcContractCommission(c, settings);
+    if (c.status !== 'storniert') monthDeals += 1;
+  }
+  for (const t of tariffChanges) {
+    if (!isSameMonth(t.changeDate, ref)) continue;
+    monthCommission += calcTariffCommission(t, settings);
+    monthDeals += 1;
+  }
+  const avgCommissionPerDeal = monthDeals > 0 ? monthCommission / monthDeals : 0;
+
+  const openLeads = leads.filter(
+    (l) => l.status === 'neu' || l.status === 'inBearbeitung',
+  ).length;
+  const won = leads.filter((l) => l.status === 'gewonnen').length;
+  const lost = leads.filter((l) => l.status === 'verloren').length;
+  const leadConversion = won + lost > 0 ? Math.round((won / (won + lost)) * 100) : null;
+
+  const expiringSoon = contracts.filter((c) => expiryBucket(c) !== null).length;
+
+  const isDue = (iso?: string) => {
+    const b = followUpBucket(iso);
+    return b === 'overdue' || b === 'today';
+  };
+  const dueFollowUps =
+    contracts.filter((c) => isDue(c.followUpDate)).length +
+    leads.filter((l) => isDue(l.followUpDate)).length;
+
+  return {
+    cancelRate,
+    avgCommissionPerDeal,
+    openLeads,
+    leadConversion,
+    expiringSoon,
+    dueFollowUps,
+  };
 }
