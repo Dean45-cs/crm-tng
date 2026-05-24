@@ -82,6 +82,13 @@ function Shell() {
     );
   }
 
+  const pageKey =
+    route.name === 'customer'
+      ? `customer-${route.kdnr}`
+      : route.name === 'agentdetail'
+        ? `agent-${route.agentKey}`
+        : route.name;
+
   return (
     <div className="app">
       <Sidebar />
@@ -106,7 +113,7 @@ function Shell() {
           </div>
         </header>
         <div className="content">
-          <div className="content-inner">
+          <div className="content-inner" key={pageKey}>
             <Suspense fallback={<PageFallback />}>
               {route.name === 'dashboard' && <Dashboard />}
               {route.name === 'contracts' && <Contracts />}
