@@ -253,6 +253,8 @@ export function OnboardingTour() {
   // Spotlight-Position laufend nachführen
   useEffect(() => {
     if (!step.target) {
+      // Spotlight aus, wenn der Schritt kein Ziel-Element hat (DOM-Sync-Effekt).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSpot(null);
       return;
     }

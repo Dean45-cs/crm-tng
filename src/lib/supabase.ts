@@ -44,6 +44,21 @@ function readEnvConfig(): SupabaseConfig | null {
 let client: SupabaseClient | null = null;
 let currentConfig: SupabaseConfig | null = null;
 
+const configListeners = new Set<() => void>();
+
+/**
+ * Benachrichtigt über Änderungen an der Supabase-Config (gesetzt/gelöscht).
+ * Gibt eine Abmelde-Funktion zurück.
+ */
+export function onConfigChange(cb: () => void): () => void {
+  configListeners.add(cb);
+  return () => configListeners.delete(cb);
+}
+
+function notifyConfigChange(): void {
+  configListeners.forEach((cb) => cb());
+}
+
 function initClient(cfg: SupabaseConfig): SupabaseClient {
   currentConfig = cfg;
   client = createClient(cfg.url, cfg.anonKey, {
@@ -79,12 +94,14 @@ export function getConfig(): SupabaseConfig | null {
 export function setSupabaseConfig(cfg: SupabaseConfig): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   initClient(cfg);
+  notifyConfigChange();
 }
 
 export function clearSupabaseConfig(): void {
   localStorage.removeItem(STORAGE_KEY);
   client = null;
   currentConfig = null;
+  notifyConfigChange();
 }
 
 /**

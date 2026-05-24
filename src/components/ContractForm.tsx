@@ -74,6 +74,9 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
     if (editing) {
+      // Bewusster Formular-Reset beim Öffnen / Datensatzwechsel — synchrones
+      // setState ist hier korrekt (Sync auf die open/editing/prefill-Props).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDraft({
         customerNumber: editing.customerNumber,
         customerName: editing.customerName,

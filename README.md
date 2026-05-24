@@ -1,46 +1,97 @@
 # TNG Stadtnetz CRM
 
-Ein minimales, lokal laufendes CRM im Apple-/macOS-Stil mit TNG Stadtnetz Branding.
-Gebaut für die Ausbildung bei der TNG.
+Ein CRM im Apple-/macOS-Stil mit TNG-Stadtnetz-Branding für den Vertriebsalltag.
+Verträge, Tarifwechsel, Provisionen, Leads und Team-Auswertungen — als
+installierbare PWA, mit gemeinsamem Supabase-Backend und Live-Sync.
 
 ## Features
 
-- **Dashboard** mit Provisions-Übersicht, Monatsziel-Fortschritt, Charts (Provision pro Monat, Produktverteilung) und Aktivitäts-Feed.
-- **Verträge** mit Kundennummer, Produkt, Monatspreis, Status (Offen / Aktiv / Storniert), Jira-Vorgang, Wiedervorlage-Datum und Notizen.
-- **Tarifwechsel** mit altem/neuem Tarif, Preisdifferenz, Jira-Referenz.
+- **Dashboard** mit Provisions-Übersicht, Monatsziel-Fortschritt, Charts
+  (Provision pro Monat, Produktverteilung) und Aktivitäts-Feed.
+- **Verträge** mit Kundennummer, Produkt(en), Status (Offen / Aktiv / Storniert),
+  Laufzeit (12/24 Monate), Jira-Vorgang, Wiedervorlage-Datum und Notizen.
+- **Tarifwechsel** (Upgrade / Sidegrade / VVL) mit Kontext und Jira-Referenz.
+- **Auslauf-Radar** für Verträge, deren Laufzeit endet.
+- **Leads** mit 4-Stufen-Pipeline, Dringlichkeit und Aktivitäts-Log.
 - **Notizen** als freie Karten, optional verknüpft mit Kunde + Jira-Ticket.
-- **Provisionsberechnung** automatisch pro Produkt – konfigurierbare Sätze in den Einstellungen.
-- **Monatsziel** mit Fortschrittsanzeige.
-- **CSV-Export** für Verträge / Tarifwechsel und **JSON-Backup** / Import.
-- Alle Daten werden lokal im Browser gespeichert (LocalStorage).
-- Dark Mode wird automatisch erkannt (macOS Systemeinstellung).
+- **Provisionsberechnung** automatisch pro Produkt — konfigurierbare Sätze.
+- **Chef-Modus:** Team-Dashboard, Mitarbeiter-Detail, Monats-/Team-Berichte,
+  Incentives (Team-Ziele & Wettbewerbe) und Team-Verwaltung.
+- **DSGVO:** unveränderliches Audit-Log, Kunden-Löschung, Datenschutzhinweis.
+- **CSV-Export** und optionaler **SharePoint-Export** (Microsoft Graph / MSAL).
+- **Online-First** mit Supabase Realtime — alle sehen dieselben Daten live.
+  Installierbar als App (PWA), Dark Mode wird automatisch erkannt.
 
-## Auf dem Mac starten
+## Tech-Stack
 
-Voraussetzung: **Node.js** (>= 18). Falls noch nicht installiert: `brew install node`.
+- React 19 + TypeScript + Vite 8
+- Supabase (Postgres, Auth, Realtime, Row Level Security) als Backend
+- Zustand (State-Management)
+- Recharts (Charts), Lucide (Icons)
+- `@azure/msal-browser` für den optionalen SharePoint-Export
+- vite-plugin-pwa (Service Worker, installierbar)
+- Vitest (Unit-Tests)
+
+## Voraussetzungen
+
+- **Node.js >= 18**
+- Ein **Supabase-Projekt** — Einrichtung Schritt für Schritt in
+  [`db/README.md`](./db/README.md) (Schema einspielen, Migrationen, Email-
+  Bestätigung deaktivieren, Keys holen).
+
+## Lokal starten
 
 ```bash
-# einmalig
 npm install
 
-# Entwicklungsmodus (Hot Reload)
+# Entwicklungsmodus (Hot Reload) → http://localhost:5173
 npm run dev
 
-# oder: optimierten Build erzeugen und ausliefern
+# Tests
+npm test
+
+# Lint
+npm run lint
+
+# Produktions-Build erzeugen und lokal ausliefern → http://localhost:4173
 npm run build
 npm run preview
 ```
 
-Dann öffnet sich die App im Browser unter `http://localhost:5173` (dev) bzw. `http://localhost:4173` (preview).
+## Konfiguration (Supabase)
 
-### Als App auf dem Dock (optional)
+Die App braucht die Zugangsdaten des Supabase-Projekts. Zwei Wege:
 
-In Safari → "Datei" → "Zum Dock hinzufügen" – die CRM-App liegt anschließend wie ein natives Programm im Dock.
+1. **`.env`-Datei** (empfohlen für Entwicklung): `.env.example` nach `.env`
+   kopieren und die Werte eintragen:
 
-## Tech-Stack
+   ```
+   VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+   VITE_SUPABASE_ANON_KEY=<anon-public-key>
+   ```
 
-- React 18 + TypeScript + Vite
-- Zustand (State + LocalStorage Persistenz)
-- Recharts (Charts)
-- Lucide Icons
-- CSS mit Apple-inspiriertem Design-System
+2. **Setup-Screen in der App**: Ohne `.env` fragt die App die Werte beim ersten
+   Start ab und speichert sie lokal im Browser.
+
+> Der **Anon-/Public-Key** ist für den Browser bestimmt und kein Geheimnis,
+> solange Row Level Security aktiv ist (siehe `db/schema.sql`). Der
+> **service_role-Key** gehört niemals ins Frontend oder ins Repo. `.env` ist
+> in `.gitignore` und wird nicht eingecheckt.
+
+## Anmeldung & Rollen
+
+- Anmeldung mit **Name + 4-stelliger PIN** (synthetische Email pro Name,
+  verwaltet über Supabase Auth). Nach mehreren Fehlversuchen greift eine
+  eskalierende Login-Sperre.
+- Zwei Rollen: **agent** (Vertrieb) und **manager** (Chef-Bereich). Der erste
+  Manager wird einmalig per SQL gesetzt — siehe Hinweis in `db/README.md`.
+
+## Tests
+
+Reine Logik-Tests (Provisions-, Datums-, Incentive- und Team-Berechnungen,
+Login-Throttle, Validierung) liegen als `*.test.ts` neben den Quelldateien:
+
+```bash
+npm test          # einmalig
+npm run test:watch
+```

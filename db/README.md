@@ -16,7 +16,8 @@ Die App läuft online über Supabase als Backend. Einmalige Einrichtung:
 
 Erzeugt:
 - Tabellen: `users`, `contracts`, `tariff_changes`, `notes`, `customer_ownerships`, `user_settings`, `shared_settings`, `incentives`
-- Row-Level-Security: alle authentifizierten User lesen, jeder schreibt seine eigenen Daten
+- Row-Level-Security: alle aktiven User lesen, jeder schreibt seine eigenen Daten;
+  gesperrte Nutzer haben keinen Datenzugriff, Rollen sind escalation-sicher
 - Realtime-Publikationen, damit Änderungen live an alle Clients gehen
 
 ## 2a. Migrationen (für bereits laufende Projekte)
@@ -32,6 +33,23 @@ bereits — Migrationen sind dann nicht nötig.
   hinzu und gibt Chefs erweiterte Lese-/Schreibrechte.
 - `003_incentives.sql` — legt die Tabelle `incentives` an (Team-Ziele mit
   Belohnung); anlegen/ändern nur für Chefs, lesen für alle.
+- `004_contracts_laufzeit.sql` — Laufzeit-Feld (12/24 Monate) für Verträge.
+- `005_leads.sql` — Tabelle `leads` für die Vertriebs-Pipeline.
+- `006_lead_activities.sql` — Aktivitäts-Log pro Lead.
+- `007_lead_priority.sql` — Dringlichkeit (`normal`/`hoch`/`dringend`) für Leads.
+- `008_indexes.sql` — zusätzliche Indizes für Performance.
+- `009_audit_log.sql` — unveränderliches Audit-Log (DSGVO Art. 30).
+- `010_user_consent.sql` — Spalte für die Datenschutzhinweis-Zustimmung.
+- `011_security_hardening.sql` — **wichtig:** verhindert Privilege-Escalation
+  (Nutzer können sich nicht mehr selbst zum Manager machen) und sperrt
+  deaktivierte Nutzer (`is_active = false`) serverseitig vom Datenzugriff aus.
+
+> **Nach `011`:** Den ersten Manager einmalig manuell setzen, sonst kann
+> niemand jemanden befördern:
+> ```sql
+> update public.users set role = 'manager' where key = '<name-klein-geschrieben>';
+> ```
+> (Im SQL-Editor erlaubt, weil dort `auth.uid()` NULL ist.)
 
 ## 3. Email-Bestätigung deaktivieren
 

@@ -23,6 +23,9 @@ interface QuickAddCtx {
 
 const Ctx = createContext<QuickAddCtx | null>(null);
 
+// Context-Hook bewusst neben dem Provider — der Fast-Refresh-Hinweis ist
+// nur eine Dev-DX-Warnung und ohne Laufzeit-Auswirkung.
+// eslint-disable-next-line react-refresh/only-export-components
 export const useQuickAdd = () => {
   const c = useContext(Ctx);
   if (!c) throw new Error('useQuickAdd must be used within QuickAddProvider');

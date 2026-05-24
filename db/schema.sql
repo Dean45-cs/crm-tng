@@ -216,170 +216,207 @@ alter table public.leads enable row level security;
 alter table public.lead_activities enable row level security;
 alter table public.audit_log enable row level security;
 
--- USERS: alle authentifizierten User dürfen alle Profile lesen
--- (fürs Leaderboard und Sharing). Schreiben nur das eigene Profil –
--- Chefs (role = 'manager') dürfen auch fremde Profile ändern.
+-- ----------------------------------------------------------------------------
+-- Helper-Funktionen (SECURITY DEFINER → umgehen RLS, verhindern Rekursion bei
+-- Policies, die public.users abfragen).
+-- ----------------------------------------------------------------------------
+create or replace function public.auth_is_active()
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select u.is_active from public.users u where u.id = auth.uid()), false);
+$$;
+
+create or replace function public.auth_is_manager()
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select u.role = 'manager' and u.is_active from public.users u where u.id = auth.uid()),
+    false
+  );
+$$;
+
+grant execute on function public.auth_is_active() to authenticated, anon;
+grant execute on function public.auth_is_manager() to authenticated, anon;
+
+-- Privilege-Escalation verhindern: role/is_active/key/id nur durch Manager:innen
+-- (oder serverseitig per service_role / SQL-Editor, wo auth.uid() NULL ist).
+create or replace function public.prevent_user_privilege_change()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if (new.role is distinct from old.role
+      or new.is_active is distinct from old.is_active
+      or new.key is distinct from old.key
+      or new.id is distinct from old.id)
+     and auth.uid() is not null
+     and not public.auth_is_manager() then
+    raise exception 'Nicht erlaubt: Rolle, Status oder Schlüssel dürfen nur von Manager:innen geändert werden.'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_prevent_user_privilege_change on public.users;
+create trigger trg_prevent_user_privilege_change
+  before update on public.users
+  for each row execute function public.prevent_user_privilege_change();
+
+-- USERS: aktive Nutzer lesen alle Profile (Leaderboard, Sharing). Schreiben nur
+-- das eigene Profil; Manager:innen auch fremde. Schutz-Spalten siehe Trigger.
 create policy "users read all" on public.users
-  for select using (auth.role() = 'authenticated');
+  for select using (public.auth_is_active());
 create policy "users insert own" on public.users
   for insert with check (auth.uid() = id);
 create policy "users update own or manager" on public.users
-  for update using (
-    auth.uid() = id
-    or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
-  );
+  for update using (auth.uid() = id or public.auth_is_manager());
 
--- CONTRACTS / TARIFF / NOTES: alle authentifizierten lesen alles.
+-- CONTRACTS / TARIFF / NOTES: aktive Nutzer lesen alles.
 -- Bearbeiten/Löschen nur, wenn der User den Datensatz selbst erfasst hat,
 -- Owner/Co-Owner des zugehörigen Kunden ODER ein Chef (role = 'manager') ist.
 create policy "contracts read all" on public.contracts
-  for select using (auth.role() = 'authenticated');
+  for select using (public.auth_is_active());
 create policy "contracts insert own" on public.contracts
-  for insert with check (auth.uid() = created_by);
+  for insert with check (public.auth_is_active() and auth.uid() = created_by);
 create policy "contracts update own" on public.contracts
   for update using (
-    auth.uid() = created_by
-    or exists (
-      select 1 from public.customer_ownerships o
-      where o.customer_number = contracts.customer_number
-        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    public.auth_is_active() and (
+      auth.uid() = created_by
+      or exists (
+        select 1 from public.customer_ownerships o
+        where o.customer_number = contracts.customer_number
+          and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+      )
+      or public.auth_is_manager()
     )
-    or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
   );
 create policy "contracts delete own" on public.contracts
   for delete using (
-    auth.uid() = created_by
-    or exists (
-      select 1 from public.customer_ownerships o
-      where o.customer_number = contracts.customer_number
-        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    public.auth_is_active() and (
+      auth.uid() = created_by
+      or exists (
+        select 1 from public.customer_ownerships o
+        where o.customer_number = contracts.customer_number
+          and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+      )
+      or public.auth_is_manager()
     )
-    or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
   );
 
 create policy "tariff read all" on public.tariff_changes
-  for select using (auth.role() = 'authenticated');
+  for select using (public.auth_is_active());
 create policy "tariff insert own" on public.tariff_changes
-  for insert with check (auth.uid() = created_by);
+  for insert with check (public.auth_is_active() and auth.uid() = created_by);
 create policy "tariff update own" on public.tariff_changes
   for update using (
-    auth.uid() = created_by
-    or exists (
-      select 1 from public.customer_ownerships o
-      where o.customer_number = tariff_changes.customer_number
-        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    public.auth_is_active() and (
+      auth.uid() = created_by
+      or exists (
+        select 1 from public.customer_ownerships o
+        where o.customer_number = tariff_changes.customer_number
+          and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+      )
+      or public.auth_is_manager()
     )
-    or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
   );
 create policy "tariff delete own" on public.tariff_changes
   for delete using (
-    auth.uid() = created_by
-    or exists (
-      select 1 from public.customer_ownerships o
-      where o.customer_number = tariff_changes.customer_number
-        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    public.auth_is_active() and (
+      auth.uid() = created_by
+      or exists (
+        select 1 from public.customer_ownerships o
+        where o.customer_number = tariff_changes.customer_number
+          and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+      )
+      or public.auth_is_manager()
     )
-    or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
   );
 
 create policy "notes read all" on public.notes
-  for select using (auth.role() = 'authenticated');
+  for select using (public.auth_is_active());
 create policy "notes insert own" on public.notes
-  for insert with check (auth.uid() = created_by);
+  for insert with check (public.auth_is_active() and auth.uid() = created_by);
 create policy "notes update own" on public.notes
   for update using (
-    auth.uid() = created_by
-    or exists (
-      select 1 from public.customer_ownerships o
-      where o.customer_number = notes.customer_number
-        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    public.auth_is_active() and (
+      auth.uid() = created_by
+      or exists (
+        select 1 from public.customer_ownerships o
+        where o.customer_number = notes.customer_number
+          and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+      )
+      or public.auth_is_manager()
     )
-    or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
   );
 create policy "notes delete own" on public.notes
   for delete using (
-    auth.uid() = created_by
-    or exists (
-      select 1 from public.customer_ownerships o
-      where o.customer_number = notes.customer_number
-        and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+    public.auth_is_active() and (
+      auth.uid() = created_by
+      or exists (
+        select 1 from public.customer_ownerships o
+        where o.customer_number = notes.customer_number
+          and (o.owner = auth.uid() or auth.uid() = any(o.shared_with))
+      )
+      or public.auth_is_manager()
     )
-    or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
   );
 
--- OWNERSHIPS: alle lesen, alle anlegen, nur owner ändern/löschen
+-- OWNERSHIPS: aktive Nutzer lesen/anlegen, nur owner ändern/löschen
 create policy "ownership read all" on public.customer_ownerships
-  for select using (auth.role() = 'authenticated');
+  for select using (public.auth_is_active());
 create policy "ownership insert" on public.customer_ownerships
-  for insert with check (auth.role() = 'authenticated');
+  for insert with check (public.auth_is_active());
 create policy "ownership update owner" on public.customer_ownerships
-  for update using (auth.uid() = owner);
+  for update using (public.auth_is_active() and auth.uid() = owner);
 create policy "ownership delete owner" on public.customer_ownerships
-  for delete using (auth.uid() = owner);
+  for delete using (public.auth_is_active() and auth.uid() = owner);
 
 -- SETTINGS: jeder verwaltet seine eigene Zeile, Chefs verwalten alle
 -- (z.B. um Monatsziele im Team-Bereich zu setzen).
 create policy "user_settings read own or manager" on public.user_settings
-  for select using (
-    auth.uid() = user_id
-    or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
-  );
+  for select using (public.auth_is_active() and (auth.uid() = user_id or public.auth_is_manager()));
 create policy "user_settings insert own or manager" on public.user_settings
-  for insert with check (
-    auth.uid() = user_id
-    or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
-  );
+  for insert with check (public.auth_is_active() and (auth.uid() = user_id or public.auth_is_manager()));
 create policy "user_settings update own or manager" on public.user_settings
-  for update using (
-    auth.uid() = user_id
-    or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
-  );
+  for update using (public.auth_is_active() and (auth.uid() = user_id or public.auth_is_manager()));
 
 create policy "shared_settings read all" on public.shared_settings
-  for select using (auth.role() = 'authenticated');
+  for select using (public.auth_is_active());
 create policy "shared_settings upsert all" on public.shared_settings
-  for insert with check (auth.role() = 'authenticated');
+  for insert with check (public.auth_is_active());
 create policy "shared_settings update all" on public.shared_settings
-  for update using (auth.role() = 'authenticated');
+  for update using (public.auth_is_active());
 
--- INCENTIVES: alle lesen laufende Incentives; anlegen/ändern/löschen nur Chefs.
+-- INCENTIVES: alle aktiven lesen laufende Incentives; schreiben nur Chefs.
 create policy "incentives read all" on public.incentives
-  for select using (auth.role() = 'authenticated');
+  for select using (public.auth_is_active());
 create policy "incentives insert manager" on public.incentives
-  for insert with check (
-    exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager'));
+  for insert with check (public.auth_is_manager());
 create policy "incentives update manager" on public.incentives
-  for update using (
-    exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager'));
+  for update using (public.auth_is_manager());
 create policy "incentives delete manager" on public.incentives
-  for delete using (
-    exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager'));
+  for delete using (public.auth_is_manager());
 
--- LEADS: geteiltes Team-Werkzeug — alle authentifizierten Nutzer dürfen alles.
+-- LEADS: geteiltes Team-Werkzeug — alle aktiven Nutzer dürfen alles.
 create policy "leads read all" on public.leads
-  for select using (auth.role() = 'authenticated');
+  for select using (public.auth_is_active());
 create policy "leads insert all" on public.leads
-  for insert with check (auth.role() = 'authenticated');
+  for insert with check (public.auth_is_active());
 create policy "leads update all" on public.leads
-  for update using (auth.role() = 'authenticated');
+  for update using (public.auth_is_active());
 create policy "leads delete all" on public.leads
-  for delete using (auth.role() = 'authenticated');
+  for delete using (public.auth_is_active());
 
--- LEAD ACTIVITIES: alle lesen, alle dürfen anlegen, nur Ersteller darf löschen.
+-- LEAD ACTIVITIES: alle aktiven lesen/anlegen, nur Ersteller darf löschen.
 create policy "lead_activities read all" on public.lead_activities
-  for select using (auth.role() = 'authenticated');
+  for select using (public.auth_is_active());
 create policy "lead_activities insert all" on public.lead_activities
-  for insert with check (auth.role() = 'authenticated');
+  for insert with check (public.auth_is_active());
 create policy "lead_activities delete own" on public.lead_activities
-  for delete using (auth.uid() = created_by);
+  for delete using (public.auth_is_active() and auth.uid() = created_by);
 
 -- AUDIT LOG: nur Manager lesen; jeder loggt nur seine eigenen Aktionen; immutable.
 create policy "audit_log read manager only" on public.audit_log
-  for select using (
-    exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'manager')
-  );
+  for select using (public.auth_is_manager());
 create policy "audit_log insert own actions" on public.audit_log
-  for insert with check (auth.role() = 'authenticated' and actor_id = auth.uid());
+  for insert with check (public.auth_is_active() and actor_id = auth.uid());
 
 -- ============================================================================
 -- REALTIME

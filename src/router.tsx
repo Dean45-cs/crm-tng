@@ -28,6 +28,9 @@ interface RouterCtx {
 
 const Ctx = createContext<RouterCtx | null>(null);
 
+// Context-Hook bewusst neben dem Provider — der Fast-Refresh-Hinweis ist
+// nur eine Dev-DX-Warnung und ohne Laufzeit-Auswirkung.
+// eslint-disable-next-line react-refresh/only-export-components
 export const useRouter = () => {
   const c = useContext(Ctx);
   if (!c) throw new Error('useRouter must be used within Router');

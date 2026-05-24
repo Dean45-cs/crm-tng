@@ -126,6 +126,9 @@ export function AuditLog() {
 
   useEffect(() => {
     if (!isManager()) return;
+    // Laden + Live-Abo gegen Supabase (externe Datenquelle) — der setState
+    // im reload() ist hier beabsichtigt.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     reload(limit);
     const sb = getSupabase();
     const channel = sb

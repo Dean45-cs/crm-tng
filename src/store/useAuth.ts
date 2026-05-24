@@ -12,6 +12,12 @@ import {
 } from '../lib/supabaseApi';
 import { toast } from './useToast';
 import { logAudit } from '../lib/audit';
+import {
+  lockStatus,
+  recordFailure,
+  clearFailures,
+  formatLockMessage,
+} from '../lib/loginThrottle';
 
 export function normalizeUserKey(name: string): string {
   return name.trim().toLowerCase();
@@ -191,6 +197,12 @@ export const useAuth = create<AuthState>()((set, get) => ({
   },
 
   loginUser: async (name, pin) => {
+    // Brute-Force-Bremse: nach mehreren Fehlversuchen kurz sperren.
+    const lock = lockStatus(name);
+    if (lock.locked) {
+      return { ok: false, error: formatLockMessage(lock.secondsLeft) };
+    }
+
     const sb = getSupabase();
     const email = nameToEmail(name);
     const password = pinToPassword(name, pin);
@@ -198,6 +210,10 @@ export const useAuth = create<AuthState>()((set, get) => ({
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) {
       if (error.message.toLowerCase().includes('invalid')) {
+        const next = recordFailure(name);
+        if (next.locked) {
+          return { ok: false, error: formatLockMessage(next.secondsLeft) };
+        }
         return { ok: false, error: 'Falscher Name oder PIN.' };
       }
       return { ok: false, error: error.message };
@@ -232,6 +248,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       };
     }
 
+    clearFailures(name);
     await get().refreshUsers();
     set({ currentUserKey: uid });
     logAudit({ action: 'login', entityType: 'auth', entityId: uid });

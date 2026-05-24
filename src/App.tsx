@@ -1,23 +1,6 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { WifiOff } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
-import { Dashboard } from './pages/Dashboard';
-import { Contracts } from './pages/Contracts';
-import { TariffChanges } from './pages/TariffChanges';
-import { Notes } from './pages/Notes';
-import { Settings } from './pages/Settings';
-import { Customers } from './pages/Customers';
-import { CustomerDetail } from './pages/CustomerDetail';
-import { Leaderboard } from './pages/Leaderboard';
-import { MonthlyReport } from './pages/MonthlyReport';
-import { TeamDashboard } from './pages/TeamDashboard';
-import { TeamManagement } from './pages/TeamManagement';
-import { TeamReport } from './pages/TeamReport';
-import { AgentDetail } from './pages/AgentDetail';
-import { Incentives } from './pages/Incentives';
-import { IncentiveManager } from './pages/IncentiveManager';
-import { Leads } from './pages/Leads';
-import { AuditLog } from './pages/AuditLog';
 import { PrivacyConsent } from './components/PrivacyConsent';
 import { QuickAddProvider } from './components/QuickAdd';
 import { ToastHost } from './components/ToastHost';
@@ -30,7 +13,28 @@ import { TngMark, TngTile } from './components/TngLogo';
 import { Router, useRouter, type RouteName } from './router';
 import { useAuth } from './store/useAuth';
 import { useStore } from './store/useStore';
-import { isConfigured } from './lib/supabase';
+import { isConfigured, onConfigChange } from './lib/supabase';
+
+// Seiten werden bei Bedarf nachgeladen (Code-Splitting). Das hält das
+// Start-Bundle klein — schwere Abhängigkeiten wie Charts (recharts) und
+// der SharePoint-Login (MSAL) landen nur in den Chunks, die sie brauchen.
+const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
+const Contracts = lazy(() => import('./pages/Contracts').then((m) => ({ default: m.Contracts })));
+const TariffChanges = lazy(() => import('./pages/TariffChanges').then((m) => ({ default: m.TariffChanges })));
+const Notes = lazy(() => import('./pages/Notes').then((m) => ({ default: m.Notes })));
+const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+const Customers = lazy(() => import('./pages/Customers').then((m) => ({ default: m.Customers })));
+const CustomerDetail = lazy(() => import('./pages/CustomerDetail').then((m) => ({ default: m.CustomerDetail })));
+const Leaderboard = lazy(() => import('./pages/Leaderboard').then((m) => ({ default: m.Leaderboard })));
+const MonthlyReport = lazy(() => import('./pages/MonthlyReport').then((m) => ({ default: m.MonthlyReport })));
+const TeamDashboard = lazy(() => import('./pages/TeamDashboard').then((m) => ({ default: m.TeamDashboard })));
+const TeamManagement = lazy(() => import('./pages/TeamManagement').then((m) => ({ default: m.TeamManagement })));
+const TeamReport = lazy(() => import('./pages/TeamReport').then((m) => ({ default: m.TeamReport })));
+const AgentDetail = lazy(() => import('./pages/AgentDetail').then((m) => ({ default: m.AgentDetail })));
+const Incentives = lazy(() => import('./pages/Incentives').then((m) => ({ default: m.Incentives })));
+const IncentiveManager = lazy(() => import('./pages/IncentiveManager').then((m) => ({ default: m.IncentiveManager })));
+const Leads = lazy(() => import('./pages/Leads').then((m) => ({ default: m.Leads })));
+const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m.AuditLog })));
 
 const TITLES: Record<RouteName, string> = {
   dashboard: 'Dashboard',
@@ -52,14 +56,30 @@ const TITLES: Record<RouteName, string> = {
   auditlog: 'Audit-Log',
 };
 
+function PageFallback() {
+  return (
+    <div className="page-fallback">
+      <div className="boot-spinner" />
+    </div>
+  );
+}
+
 function Shell() {
   const { route } = useRouter();
 
   if (route.name === 'report') {
-    return <MonthlyReport />;
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <MonthlyReport />
+      </Suspense>
+    );
   }
   if (route.name === 'teamreport') {
-    return <TeamReport />;
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <TeamReport />
+      </Suspense>
+    );
   }
 
   return (
@@ -87,21 +107,23 @@ function Shell() {
         </header>
         <div className="content">
           <div className="content-inner">
-            {route.name === 'dashboard' && <Dashboard />}
-            {route.name === 'contracts' && <Contracts />}
-            {route.name === 'tariff' && <TariffChanges />}
-            {route.name === 'notes' && <Notes />}
-            {route.name === 'customers' && <Customers />}
-            {route.name === 'customer' && <CustomerDetail kdnr={route.kdnr} />}
-            {route.name === 'leaderboard' && <Leaderboard />}
-            {route.name === 'settings' && <Settings />}
-            {route.name === 'teamdashboard' && <TeamDashboard />}
-            {route.name === 'teammanager' && <TeamManagement />}
-            {route.name === 'agentdetail' && <AgentDetail agentKey={route.agentKey} />}
-            {route.name === 'incentives' && <Incentives />}
-            {route.name === 'incentivemanager' && <IncentiveManager />}
-            {route.name === 'leads' && <Leads />}
-            {route.name === 'auditlog' && <AuditLog />}
+            <Suspense fallback={<PageFallback />}>
+              {route.name === 'dashboard' && <Dashboard />}
+              {route.name === 'contracts' && <Contracts />}
+              {route.name === 'tariff' && <TariffChanges />}
+              {route.name === 'notes' && <Notes />}
+              {route.name === 'customers' && <Customers />}
+              {route.name === 'customer' && <CustomerDetail kdnr={route.kdnr} />}
+              {route.name === 'leaderboard' && <Leaderboard />}
+              {route.name === 'settings' && <Settings />}
+              {route.name === 'teamdashboard' && <TeamDashboard />}
+              {route.name === 'teammanager' && <TeamManagement />}
+              {route.name === 'agentdetail' && <AgentDetail agentKey={route.agentKey} />}
+              {route.name === 'incentives' && <Incentives />}
+              {route.name === 'incentivemanager' && <IncentiveManager />}
+              {route.name === 'leads' && <Leads />}
+              {route.name === 'auditlog' && <AuditLog />}
+            </Suspense>
           </div>
         </div>
       </main>
@@ -187,13 +209,7 @@ export default function App() {
     return () => unsub();
   }, [configured, currentUserKey, loadAll, subscribeRealtime, resetStore]);
 
-  useEffect(() => {
-    const t = setInterval(() => {
-      const next = isConfigured();
-      if (next !== configured) setConfigured(next);
-    }, 800);
-    return () => clearInterval(t);
-  }, [configured]);
+  useEffect(() => onConfigChange(() => setConfigured(isConfigured())), []);
 
   if (!configured) {
     return <SupabaseSetup />;
