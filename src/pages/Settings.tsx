@@ -150,8 +150,9 @@ export function Settings() {
             <input
               type="number"
               step="10"
+              min="0"
               value={target}
-              onChange={(e) => setTarget(parseFloat(e.target.value) || 0)}
+              onChange={(e) => setTarget(Math.max(0, parseFloat(e.target.value) || 0))}
             />
           </div>
         </div>
@@ -221,12 +222,13 @@ export function Settings() {
                           <input
                             type="number"
                             step="0.5"
+                            min="0"
                             className="commission-input"
                             value={p.commission}
                             onChange={(e) =>
                               updateProductCommission(
                                 p.name,
-                                parseFloat(e.target.value) || 0,
+                                Math.max(0, parseFloat(e.target.value) || 0),
                               )
                             }
                           />
@@ -266,10 +268,11 @@ export function Settings() {
                       <input
                         type="number"
                         step="0.5"
+                        min="0"
                         className="commission-input"
                         value={settings.tariffCommission[t][c]}
                         onChange={(e) =>
-                          updateMatrix(t, c, parseFloat(e.target.value) || 0)
+                          updateMatrix(t, c, Math.max(0, parseFloat(e.target.value) || 0))
                         }
                       />
                       <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>

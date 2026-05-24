@@ -29,6 +29,10 @@ export function Modal({ title, subtitle, open, onClose, children, footer }: Prop
 
     restoreFocusRef.current = document.activeElement as HTMLElement | null;
 
+    // Hintergrund-Scroll sperren, solange das Modal offen ist.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     const focusables = () =>
       Array.from(
         modalRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
@@ -65,6 +69,7 @@ export function Modal({ title, subtitle, open, onClose, children, footer }: Prop
     return () => {
       window.clearTimeout(t);
       window.removeEventListener('keydown', handler);
+      document.body.style.overflow = prevOverflow;
       restoreFocusRef.current?.focus?.();
     };
   }, [open]);

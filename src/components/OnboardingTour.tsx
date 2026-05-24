@@ -259,9 +259,29 @@ export function OnboardingTour() {
       return;
     }
     let raf = 0;
+    // Letzte gesetzte Position merken und nur bei echter Änderung neu rendern —
+    // sonst löst der RAF-Loop ~60×/s ein State-Update aus (neues DOMRect-Objekt).
+    let last: { top: number; left: number; width: number; height: number } | null = null;
     const update = () => {
       const el = document.querySelector(step.target!) as HTMLElement | null;
-      setSpot(el ? el.getBoundingClientRect() : null);
+      if (!el) {
+        if (last !== null) {
+          last = null;
+          setSpot(null);
+        }
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      if (
+        !last ||
+        last.top !== r.top ||
+        last.left !== r.left ||
+        last.width !== r.width ||
+        last.height !== r.height
+      ) {
+        last = { top: r.top, left: r.left, width: r.width, height: r.height };
+        setSpot(r);
+      }
     };
     const tick = () => {
       update();

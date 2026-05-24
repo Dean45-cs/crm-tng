@@ -388,14 +388,16 @@ export const useAuth = create<AuthState>()((set, get) => ({
   completeOnboarding: async () => {
     const uid = get().currentUserKey;
     if (!uid) return;
+    // Lokal sofort als erledigt markieren, damit die Tour auch dann schließt,
+    // wenn der Schreibvorgang scheitert (sonst bliebe das Overlay hängen).
+    const u = get().users[uid];
+    if (u) {
+      set((s) => ({
+        users: { ...s.users, [uid]: { ...u, onboardingCompleted: true } },
+      }));
+    }
     try {
       await updateUserFlags(uid, { onboardingCompleted: true });
-      const u = get().users[uid];
-      if (u) {
-        set((s) => ({
-          users: { ...s.users, [uid]: { ...u, onboardingCompleted: true } },
-        }));
-      }
     } catch (e) {
       console.error(e);
     }
