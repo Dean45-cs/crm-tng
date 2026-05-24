@@ -12,7 +12,6 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Crown,
-  TrendingDown,
   Coins,
   Inbox,
   Trophy,
@@ -355,13 +354,6 @@ export function TeamDashboard() {
 
       <div className="team-kpis-subhead">Qualität &amp; Pipeline</div>
       <div className="team-kpis">
-        <KpiTile
-          icon={<TrendingDown size={15} />}
-          accent="red"
-          label="Storno-Quote"
-          value={kpis.cancelRate === null ? '–' : `${kpis.cancelRate} %`}
-          sub="stornierte von allen Verträgen"
-        />
         <KpiTile
           icon={<Coins size={15} />}
           accent="blue"

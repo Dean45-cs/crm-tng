@@ -74,8 +74,6 @@ export function attainmentPct(commission: number, target: number): number | null
 
 /** Zusätzliche Team-Kennzahlen für die Chef-Übersicht (Qualität & Pipeline). */
 export interface TeamKpis {
-  /** Storno-Quote in % (stornierte / alle Verträge), null ohne Verträge. */
-  cancelRate: number | null;
   /** Durchschnittliche Provision pro Abschluss im Referenzmonat. */
   avgCommissionPerDeal: number;
   /** Offene Leads in der Pipeline (neu + in Bearbeitung). */
@@ -95,10 +93,6 @@ export function teamKpis(
   settings: Settings,
   ref: Date = new Date(),
 ): TeamKpis {
-  const totalContracts = contracts.length;
-  const cancelled = contracts.filter((c) => c.status === 'storniert').length;
-  const cancelRate = totalContracts > 0 ? Math.round((cancelled / totalContracts) * 100) : null;
-
   let monthCommission = 0;
   let monthDeals = 0;
   for (const c of contracts) {
@@ -131,7 +125,6 @@ export function teamKpis(
     leads.filter((l) => isDue(l.followUpDate)).length;
 
   return {
-    cancelRate,
     avgCommissionPerDeal,
     openLeads,
     leadConversion,

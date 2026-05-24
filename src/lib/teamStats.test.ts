@@ -57,21 +57,6 @@ describe('attainmentPct', () => {
 });
 
 describe('teamKpis', () => {
-  it('berechnet die Storno-Quote', () => {
-    const contracts = [
-      makeContract({ status: 'aktiv' }),
-      makeContract({ status: 'aktiv' }),
-      makeContract({ status: 'aktiv' }),
-      makeContract({ status: 'storniert' }),
-    ];
-    const k = teamKpis(contracts, [], [], testSettings);
-    expect(k.cancelRate).toBe(25);
-  });
-
-  it('cancelRate ist null ohne Verträge', () => {
-    expect(teamKpis([], [], [], testSettings).cancelRate).toBeNull();
-  });
-
   it('berechnet Ø Provision pro Abschluss im Monat', () => {
     const contracts = [
       makeContract({ contractDate: today(), products: ['Fibrefamily'] }), // 50
