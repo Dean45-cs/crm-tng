@@ -131,6 +131,7 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
     if (!trimmed.customerNumber) errs.customerNumber = 'Bitte Kundennummer eingeben.';
     if (!trimmed.customerName) errs.customerName = 'Bitte Kundenname eingeben.';
     if (trimmed.products.length === 0) errs.products = 'Mindestens ein Produkt wählen.';
+    if (!trimmed.contractDate) errs.contractDate = 'Bitte ein Datum angeben.';
     if (!isJiraTicket(trimmed.jiraTicket)) errs.jiraTicket = 'Ungültiges Format – z.B. TNG-1234.';
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
@@ -324,9 +325,14 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
           <input
             id={`${fid}-date`}
             type="date"
+            aria-invalid={!!errors.contractDate}
+            aria-describedby={errors.contractDate ? `${fid}-date-err` : undefined}
             value={draft.contractDate}
             onChange={(e) => update({ contractDate: e.target.value })}
           />
+          {errors.contractDate && (
+            <div className="field-error" id={`${fid}-date-err`}>{errors.contractDate}</div>
+          )}
         </div>
         <div className="field">
           <label htmlFor={`${fid}-laufzeit`}>Laufzeit</label>

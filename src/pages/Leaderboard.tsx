@@ -59,7 +59,8 @@ export function Leaderboard() {
       );
       const com = calcContractCommission(c, settings);
       row.totalCommission += com;
-      row.deals += 1;
+      // Stornierte Verträge zählen nicht als Abschluss.
+      if (c.status !== 'storniert') row.deals += 1;
       if (isSameMonth(c.contractDate)) row.monthCommission += com;
     });
 

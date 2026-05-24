@@ -58,8 +58,9 @@ export function MonthlyReport() {
     year: 'numeric',
   });
 
-  const totalDeals = monthContracts.length + monthTariffs.length;
   const activeContracts = monthContracts.filter((c) => c.status !== 'storniert').length;
+  // Abschlüsse = aktive/offene Verträge + Tarifwechsel (Stornos zählen nicht).
+  const totalDeals = activeContracts + monthTariffs.length;
 
   return (
     <div className="report-shell">

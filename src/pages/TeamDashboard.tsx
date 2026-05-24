@@ -141,12 +141,14 @@ export function TeamDashboard() {
       const r = c.createdBy ? map.get(c.createdBy) : undefined;
       if (!r) return;
       const com = calcContractCommission(c, settings);
+      // Stornierte Verträge zählen nicht als Abschluss (konsistent mit agentStats/teamKpis).
+      const counts = c.status !== 'storniert';
       r.totalCommission += com;
-      r.totalDeals += 1;
+      if (counts) r.totalDeals += 1;
       if (c.contractDate > r.lastActivity) r.lastActivity = c.contractDate;
       if (isSameMonth(c.contractDate, now)) {
         r.monthContractCom += com;
-        r.monthContracts += 1;
+        if (counts) r.monthContracts += 1;
       } else if (isSameMonth(c.contractDate, prevRef)) {
         r.prevCommission += com;
       }
