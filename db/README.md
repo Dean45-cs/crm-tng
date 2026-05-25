@@ -88,3 +88,13 @@ truncate public.contracts, public.tariff_changes, public.notes,
          public.shared_settings, public.incentives restart identity;
 delete from auth.users;  -- löscht auch public.users via cascade
 ```
+
+## Demo-/Präsentationsdaten
+
+Zum Vorführen (Mitarbeiter mit Umsatz, Verträge, Leads, Incentives) gibt es
+[`seed_demo.sql`](./seed_demo.sql). Im SQL Editor komplett ausführen — das
+Skript legt vier Demo-Mitarbeiter (Anna Becker, Tom Fischer, Lena Wagner,
+Jonas Schmidt, PIN **1234**) samt gefüllten Team-Dashboards, Leaderboard,
+Leads und Berichten an. Es räumt vorher alte Demo-Daten weg, ist also beliebig
+oft wiederholbar. Zum Entfernen genügt der Abschnitt „(1) Aufräumen" im Skript.
+
