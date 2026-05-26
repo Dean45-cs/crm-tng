@@ -87,36 +87,37 @@
   background: var(--bg-app);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-app: #1a1a1c;
-    --bg-canvas: #16161a;
-    --bg-card: #232327;
-    --bg-card-hover: #2a2a2f;
-    --bg-elevated: rgba(36, 36, 40, 0.78);
-    --sidebar-bg: rgba(26, 26, 30, 0.82);
-    --surface-2: #28282d;
-    --surface-3: #2f2f35;
+/* Dunkles Theme — wird über data-theme="dark" am <html> aktiviert. Die Wahl
+   (Hell/Dunkel/System) steuert ein Inline-Skript in index.html + src/lib/theme.ts;
+   „System" wird dabei zu light/dark aufgelöst, daher genügt hier ein Selektor. */
+:root[data-theme='dark'] {
+  --bg-app: #1a1a1c;
+  --bg-canvas: #16161a;
+  --bg-card: #232327;
+  --bg-card-hover: #2a2a2f;
+  --bg-elevated: rgba(36, 36, 40, 0.78);
+  --sidebar-bg: rgba(26, 26, 30, 0.82);
+  --surface-2: #28282d;
+  --surface-3: #2f2f35;
 
-    --border: rgba(255, 255, 255, 0.08);
-    --border-strong: rgba(255, 255, 255, 0.14);
-    --separator: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --separator: rgba(255, 255, 255, 0.06);
 
-    --text: #f5f5f7;
-    --text-secondary: #a1a1a6;
-    --text-tertiary: #7a7a80;
-    --text-quaternary: #5a5a60;
+  --text: #f5f5f7;
+  --text-secondary: #a1a1a6;
+  --text-tertiary: #7a7a80;
+  --text-quaternary: #5a5a60;
 
-    --tng-blue-50: rgba(0, 102, 179, 0.14);
-    --tng-blue-100: rgba(0, 102, 179, 0.22);
-    --tng-gradient-soft: linear-gradient(135deg, rgba(0, 102, 179, 0.18), rgba(0, 163, 224, 0.18));
+  --tng-blue-50: rgba(0, 102, 179, 0.14);
+  --tng-blue-100: rgba(0, 102, 179, 0.22);
+  --tng-gradient-soft: linear-gradient(135deg, rgba(0, 102, 179, 0.18), rgba(0, 163, 224, 0.18));
 
-    --widget-bg: rgba(36, 36, 40, 0.86);
-    --widget-bg-tint: linear-gradient(135deg, rgba(0, 102, 179, 0.10), rgba(0, 163, 224, 0.06));
-    --widget-border: rgba(255, 255, 255, 0.08);
-    --widget-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.35);
-    --widget-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.35), 0 18px 38px rgba(0, 0, 0, 0.45);
-  }
+  --widget-bg: rgba(36, 36, 40, 0.86);
+  --widget-bg-tint: linear-gradient(135deg, rgba(0, 102, 179, 0.10), rgba(0, 163, 224, 0.06));
+  --widget-border: rgba(255, 255, 255, 0.08);
+  --widget-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.35);
+  --widget-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.35), 0 18px 38px rgba(0, 0, 0, 0.45);
 }
 
 * { box-sizing: border-box; }
@@ -132,14 +133,12 @@ body {
   overflow: hidden;
 }
 
-@media (prefers-color-scheme: dark) {
-  body {
-    background:
-      radial-gradient(ellipse 1200px 600px at 0% -10%, rgba(0, 102, 179, 0.18), transparent 60%),
-      radial-gradient(ellipse 800px 500px at 100% 100%, rgba(0, 163, 224, 0.10), transparent 60%),
-      var(--bg-app);
-    background-attachment: fixed;
-  }
+:root[data-theme='dark'] body {
+  background:
+    radial-gradient(ellipse 1200px 600px at 0% -10%, rgba(0, 102, 179, 0.18), transparent 60%),
+    radial-gradient(ellipse 800px 500px at 100% 100%, rgba(0, 163, 224, 0.10), transparent 60%),
+    var(--bg-app);
+  background-attachment: fixed;
 }
 
 button {
@@ -660,9 +659,7 @@ code {
   font-size: 11.5px;
   color: #b7791f;
 }
-@media (prefers-color-scheme: dark) {
-  .field-warning { color: #e0a64a; }
-}
+:root[data-theme='dark'] .field-warning { color: #e0a64a; }
 
 .select-pill {
   padding: 7px 30px 7px 14px;
@@ -736,12 +733,10 @@ table.crm-table td[style*="text-align: right"] {
 .badge-orange { background: var(--orange-bg); color: #aa5f00; }
 .badge-red { background: var(--red-bg); color: #b8261d; }
 .badge-blue { background: var(--tng-blue-50); color: var(--tng-blue-dark); }
-@media (prefers-color-scheme: dark) {
-  .badge-green { color: #6fdc8c; }
-  .badge-orange { color: #ffb55a; }
-  .badge-red { color: #ff6b63; }
-  .badge-blue { color: #6cbef0; }
-}
+:root[data-theme='dark'] .badge-green { color: #6fdc8c; }
+:root[data-theme='dark'] .badge-orange { color: #ffb55a; }
+:root[data-theme='dark'] .badge-red { color: #ff6b63; }
+:root[data-theme='dark'] .badge-blue { color: #6cbef0; }
 
 .product-chips {
   display: flex;
@@ -763,11 +758,9 @@ table.crm-table td[style*="text-align: right"] {
 .product-chip.cat-Business { background: var(--purple-bg); color: #6b21a8; border-color: rgba(168, 85, 247, 0.22); }
 .product-chip.cat-Zusatz { background: var(--orange-bg); color: #aa5f00; border-color: rgba(255, 149, 0, 0.22); }
 .product-chip-more { color: var(--text-tertiary); }
-@media (prefers-color-scheme: dark) {
-  .product-chip.cat-Privat { color: #6cbef0; }
-  .product-chip.cat-Business { color: #c084fc; }
-  .product-chip.cat-Zusatz { color: #ffb55a; }
-}
+:root[data-theme='dark'] .product-chip.cat-Privat { color: #6cbef0; }
+:root[data-theme='dark'] .product-chip.cat-Business { color: #c084fc; }
+:root[data-theme='dark'] .product-chip.cat-Zusatz { color: #ffb55a; }
 
 .cat-chip {
   display: inline-block;
@@ -781,11 +774,9 @@ table.crm-table td[style*="text-align: right"] {
 .cat-Privat { background: var(--tng-blue-50); color: var(--tng-blue-dark); }
 .cat-Business { background: var(--purple-bg); color: #6b21a8; }
 .cat-Zusatz { background: var(--orange-bg); color: #aa5f00; }
-@media (prefers-color-scheme: dark) {
-  .cat-Privat { color: #6cbef0; }
-  .cat-Business { color: #c084fc; }
-  .cat-Zusatz { color: #ffb55a; }
-}
+:root[data-theme='dark'] .cat-Privat { color: #6cbef0; }
+:root[data-theme='dark'] .cat-Business { color: #c084fc; }
+:root[data-theme='dark'] .cat-Zusatz { color: #ffb55a; }
 
 /* ---------- Modal ---------- */
 .modal-backdrop {
@@ -1044,9 +1035,7 @@ table.crm-table td[style*="text-align: right"] {
     0 1px 0 rgba(0, 0, 0, 0.02);
   font-weight: 600;
 }
-@media (prefers-color-scheme: dark) {
-  .seg.active { color: #6cbef0; }
-}
+:root[data-theme='dark'] .seg.active { color: #6cbef0; }
 
 /* ---------- Notes ---------- */
 .notes-grid {
@@ -1200,9 +1189,7 @@ table.crm-table td[style*="text-align: right"] {
   color: var(--tng-blue-dark);
   letter-spacing: -0.2px;
 }
-@media (prefers-color-scheme: dark) {
-  .customer-commission { color: #6cbef0; }
-}
+:root[data-theme='dark'] .customer-commission { color: #6cbef0; }
 .customer-chevron {
   color: var(--text-quaternary);
   margin-top: 4px;
@@ -1252,12 +1239,10 @@ table.crm-table td[style*="text-align: right"] {
   font-size: 11.5px;
   font-weight: 500;
 }
-@media (prefers-color-scheme: dark) {
-  .customer-hero-kdnr code {
+:root[data-theme='dark'] .customer-hero-kdnr code {
     background: rgba(0, 102, 179, 0.18);
     color: #6cbef0;
   }
-}
 .customer-hero-avatar {
   width: 56px;
   height: 56px;
@@ -1296,9 +1281,7 @@ table.crm-table td[style*="text-align: right"] {
   letter-spacing: -0.3px;
   color: var(--tng-blue-dark);
 }
-@media (prefers-color-scheme: dark) {
-  .hero-stat-value { color: #6cbef0; }
-}
+:root[data-theme='dark'] .hero-stat-value { color: #6cbef0; }
 
 .customer-quick-actions {
   display: flex;
@@ -1434,9 +1417,7 @@ table.crm-table td[style*="text-align: right"] {
   letter-spacing: -0.2px;
   white-space: nowrap;
 }
-@media (prefers-color-scheme: dark) {
-  .recent-amount { color: #6cbef0; }
-}
+:root[data-theme='dark'] .recent-amount { color: #6cbef0; }
 .recent-meta {
   display: flex;
   align-items: center;
@@ -2979,10 +2960,8 @@ table.crm-table td[style*="text-align: right"] {
   border-style: dashed;
   border-color: var(--border-strong);
 }
-@media (prefers-color-scheme: dark) {
-  .customer-owner-tag.mine { color: #6cbef0; }
-  .customer-owner-tag.shared { color: #c084fc; }
-}
+:root[data-theme='dark'] .customer-owner-tag.mine { color: #6cbef0; }
+:root[data-theme='dark'] .customer-owner-tag.shared { color: #c084fc; }
 
 /* Share dialog */
 .share-modal {
@@ -3856,11 +3835,9 @@ table.crm-table td[style*="text-align: right"] {
 .target-ring-track {
   stroke: rgba(0, 102, 179, 0.10);
 }
-@media (prefers-color-scheme: dark) {
-  .target-ring-track {
+:root[data-theme='dark'] .target-ring-track {
     stroke: rgba(255, 255, 255, 0.08);
   }
-}
 .target-ring-fill {
   stroke: url(#tng-ring-gradient);
   transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);
@@ -4032,11 +4009,9 @@ table.crm-table td[style*="text-align: right"] {
   border-radius: 999px;
   overflow: hidden;
 }
-@media (prefers-color-scheme: dark) {
-  .top-product-bar {
+:root[data-theme='dark'] .top-product-bar {
     background: rgba(255, 255, 255, 0.06);
   }
-}
 .top-product-bar-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--tng-blue), var(--tng-cyan));
@@ -5127,9 +5102,7 @@ table.crm-table tbody tr:hover td:first-child {
   color: var(--tng-blue-dark);
   font-variant-numeric: tabular-nums;
 }
-@media (prefers-color-scheme: dark) {
-  .commission-preview-total span:last-child { color: #6cbef0; }
-}
+:root[data-theme='dark'] .commission-preview-total span:last-child { color: #6cbef0; }
 .commission-preview-target {
   font-size: 12px;
   color: var(--text-tertiary);
@@ -5196,9 +5169,7 @@ table.crm-table tbody tr:hover td:first-child {
   white-space: nowrap;
   flex-shrink: 0;
 }
-@media (prefers-color-scheme: dark) {
-  .expiry-radar-com { color: #6cbef0; }
-}
+:root[data-theme='dark'] .expiry-radar-com { color: #6cbef0; }
 .expiry-radar-avatar {
   width: 24px;
   height: 24px;
@@ -5232,11 +5203,9 @@ table.crm-table tbody tr:hover td:first-child {
   background: rgba(255, 204, 0, 0.15);
   color: #8a6d00;
 }
-@media (prefers-color-scheme: dark) {
-  .expiry-days-pill.soon   { color: #ff6b63; }
-  .expiry-days-pill.medium { color: #ffb55a; }
-  .expiry-days-pill.later  { color: #ffe066; }
-}
+:root[data-theme='dark'] .expiry-days-pill.soon { color: #ff6b63; }
+:root[data-theme='dark'] .expiry-days-pill.medium { color: #ffb55a; }
+:root[data-theme='dark'] .expiry-days-pill.later { color: #ffe066; }
 
 /* Summary pills in widget header */
 .expiry-summary-pill {
@@ -5303,9 +5272,7 @@ table.crm-table tbody tr:hover td:first-child {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-@media (prefers-color-scheme: dark) {
-  .lead-renewal-com { color: #6cbef0; }
-}
+:root[data-theme='dark'] .lead-renewal-com { color: #6cbef0; }
 .lead-renewal-done {
   display: inline-flex;
   align-items: center;
@@ -6133,14 +6100,12 @@ table.crm-table tbody tr:hover td:first-child {
 }
 
 /* Dark mode tweaks */
-@media (prefers-color-scheme: dark) {
-  .login-choice-btn:hover {
+:root[data-theme='dark'] .login-choice-btn:hover {
     background: rgba(0, 102, 179, 0.15);
   }
-  .login-choice-icon--secondary {
+:root[data-theme='dark'] .login-choice-icon--secondary {
     background: var(--surface-2);
   }
-}
 
 /* =================================================================
    Audit Log — Chef-Ansicht
@@ -6753,3 +6718,44 @@ table.crm-table tbody tr:hover td:first-child {
   border-color: var(--tng-blue);
   box-shadow: 0 0 0 3px rgba(0, 102, 179, 0.18);
 }
+
+/* =================================================================
+   Erscheinungsbild — Theme-Umschalter (Hell / Dunkel / System)
+   ================================================================= */
+.theme-seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  max-width: 480px;
+}
+.theme-seg-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  text-align: center;
+  transition: border-color var(--dur-2) var(--ease-out),
+    background var(--dur-2) var(--ease-out),
+    color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.theme-seg-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.theme-seg-btn:active { transform: scale(0.98); }
+.theme-seg-btn.active {
+  background: var(--bg-card);
+  border-color: var(--tng-blue);
+  color: var(--tng-blue);
+  box-shadow: var(--shadow-sm), 0 0 0 3px rgba(0, 102, 179, 0.14);
+}
+.theme-seg-label { font-size: 13.5px; font-weight: 600; }
+.theme-seg-hint { font-size: 11.5px; color: var(--text-tertiary); }
+.theme-seg-btn.active .theme-seg-hint { color: var(--tng-blue-light); }

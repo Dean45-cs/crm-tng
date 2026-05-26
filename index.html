@@ -12,6 +12,19 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="description" content="Vertriebs-CRM für TNG Stadtnetz GmbH — Verträge, Tarifwechsel, Provisionen, Wiedervorlagen." />
     <title>TNG Stadtnetz CRM</title>
+    <script>
+      // Theme vor dem ersten Paint setzen, um Flackern zu vermeiden.
+      (function () {
+        try {
+          var p = localStorage.getItem('crm-theme') || 'system';
+          var dark = p === 'dark' ||
+            (p === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

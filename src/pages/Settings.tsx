@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Save, Download, Trophy, Sheet, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Save, Download, Trophy, Sheet, Loader2, CheckCircle, XCircle, Sun, Moon, Monitor } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { formatCurrency, TARIFF_CONTEXT_LABEL, TARIFF_TYPE_LABEL } from '../lib/utils';
 import { spSignOut, spGetAccount, testConnection } from '../lib/sharepointGraph';
+import { getStoredTheme, setTheme, type ThemePref } from '../lib/theme';
 import type {
   ProductCategory,
   TariffChangeType,
@@ -12,6 +13,12 @@ import type {
 import type { AccountInfo } from '@azure/msal-browser';
 
 const CATS: ProductCategory[] = ['Privat', 'Business', 'Zusatz'];
+
+const THEME_OPTIONS: { value: ThemePref; label: string; icon: typeof Sun; hint: string }[] = [
+  { value: 'light', label: 'Hell', icon: Sun, hint: 'Immer heller Modus' },
+  { value: 'dark', label: 'Dunkel', icon: Moon, hint: 'Immer dunkler Modus' },
+  { value: 'system', label: 'System', icon: Monitor, hint: 'Folgt dem Gerät' },
+];
 
 export function Settings() {
   const {
@@ -30,6 +37,12 @@ export function Settings() {
   const [target, setTarget] = useState(settings.monthlyTarget);
   const [syncedTarget, setSyncedTarget] = useState(settings.monthlyTarget);
   const [saved, setSaved] = useState(false);
+  const [theme, setThemeState] = useState<ThemePref>(getStoredTheme());
+
+  const chooseTheme = (t: ThemePref) => {
+    setTheme(t);
+    setThemeState(t);
+  };
 
   const [spClientId, setSpClientId] = useState(settings.spClientId);
   const [spTenantId, setSpTenantId] = useState(settings.spTenantId);
@@ -132,6 +145,28 @@ export function Settings() {
         <div>
           <h2>Einstellungen</h2>
           <p>Provisionssätze (TNG Provisionskatalog), Monatsziel und Daten.</p>
+        </div>
+      </div>
+
+      <div className="widget" style={{ marginBottom: 16 }}>
+        <h3 className="widget-title">Erscheinungsbild</h3>
+        <p className="muted" style={{ marginBottom: 14 }}>
+          Farbschema der App. „System" übernimmt automatisch die Einstellung deines Geräts.
+        </p>
+        <div className="theme-seg" role="group" aria-label="Farbschema">
+          {THEME_OPTIONS.map(({ value, label, icon: Icon, hint }) => (
+            <button
+              key={value}
+              type="button"
+              className={`theme-seg-btn${theme === value ? ' active' : ''}`}
+              aria-pressed={theme === value}
+              onClick={() => chooseTheme(value)}
+            >
+              <Icon size={20} strokeWidth={1.8} />
+              <span className="theme-seg-label">{label}</span>
+              <span className="theme-seg-hint">{hint}</span>
+            </button>
+          ))}
         </div>
       </div>
 
