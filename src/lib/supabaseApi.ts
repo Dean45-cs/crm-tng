@@ -23,6 +23,8 @@ import type {
   AuditLogEntry,
   AuditAction,
   AuditEntity,
+  CustomerAccessRequest,
+  AccessRequestStatus,
 } from '../types';
 import type { AuthUser } from '../store/useAuth';
 
@@ -858,6 +860,81 @@ export async function updateUserConsent(id: string, at: string): Promise<void> {
   const { error } = await getSupabase()
     .from('users')
     .update({ consent_given_at: at })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// ============================================================================
+// CUSTOMER ACCESS REQUESTS
+// ============================================================================
+
+interface AccessRequestRow {
+  id: string;
+  customer_number: string;
+  requester_id: string;
+  owner_id: string | null;
+  comment: string | null;
+  status: AccessRequestStatus;
+  created_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+}
+
+const mapAccessRequest = (r: AccessRequestRow): CustomerAccessRequest => ({
+  id: r.id,
+  customerNumber: r.customer_number,
+  requesterId: r.requester_id,
+  ownerId: r.owner_id ?? undefined,
+  comment: r.comment ?? undefined,
+  status: r.status,
+  createdAt: r.created_at,
+  decidedAt: r.decided_at ?? undefined,
+  decidedBy: r.decided_by ?? undefined,
+});
+
+export async function fetchAccessRequests(): Promise<CustomerAccessRequest[]> {
+  const { data, error } = await getSupabase()
+    .from('customer_access_requests')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as AccessRequestRow[]).map(mapAccessRequest);
+}
+
+export async function insertAccessRequest(req: {
+  customerNumber: string;
+  requesterId: string;
+  ownerId?: string;
+  comment?: string;
+}): Promise<CustomerAccessRequest> {
+  const payload = {
+    customer_number: req.customerNumber,
+    requester_id: req.requesterId,
+    owner_id: req.ownerId ?? null,
+    comment: req.comment || null,
+    status: 'pending' as AccessRequestStatus,
+  };
+  const { data, error } = await getSupabase()
+    .from('customer_access_requests')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return mapAccessRequest(data as AccessRequestRow);
+}
+
+export async function updateAccessRequestStatus(
+  id: string,
+  status: AccessRequestStatus,
+  decidedBy?: string,
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from('customer_access_requests')
+    .update({
+      status,
+      decided_at: new Date().toISOString(),
+      decided_by: decidedBy ?? null,
+    })
     .eq('id', id);
   if (error) throw error;
 }

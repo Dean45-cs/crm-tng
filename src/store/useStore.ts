@@ -11,11 +11,13 @@ import type {
   Incentive,
   Lead,
   LeadActivity,
+  CustomerAccessRequest,
 } from '../types';
 import { useAuth } from './useAuth';
 import { toast } from './useToast';
 import { getSupabase } from '../lib/supabase';
 import { logAudit } from '../lib/audit';
+import { getEffectiveOwnership } from '../lib/customerOwnership';
 import {
   fetchContracts,
   fetchTariffChanges,
@@ -46,6 +48,9 @@ import {
   insertLeadActivity,
   deleteLeadActivityRow,
   purgeCustomerData,
+  fetchAccessRequests,
+  insertAccessRequest,
+  updateAccessRequestStatus,
 } from '../lib/supabaseApi';
 
 const currentUserKey = () => useAuth.getState().currentUserKey ?? undefined;
@@ -102,6 +107,8 @@ interface StoreState {
   leads: Lead[];
   /** Aktivitäten pro Lead, absteigend nach created_at */
   leadActivities: Record<string, LeadActivity[]>;
+  /** Zugriffsanfragen auf Kunden (anfragen / annehmen / ablehnen) */
+  accessRequests: CustomerAccessRequest[];
 
   /** Wird gesetzt, sobald wir initial alle Daten geladen haben. */
   loaded: boolean;
@@ -145,6 +152,13 @@ interface StoreState {
   addLeadActivity: (a: Pick<LeadActivity, 'leadId' | 'type' | 'content'>) => Promise<void>;
   deleteLeadActivity: (id: string, leadId: string) => Promise<void>;
 
+  /** Bearbeitungszugriff auf einen fremden Kunden anfragen (mit Begründung). */
+  requestCustomerAccess: (customerNumber: string, ownerId: string | undefined, comment: string) => Promise<void>;
+  /** Anfrage annehmen: Anfragende:n als geteilt eintragen + Anfrage abschließen. */
+  approveCustomerAccess: (req: CustomerAccessRequest) => Promise<void>;
+  /** Anfrage ablehnen. */
+  rejectCustomerAccess: (req: CustomerAccessRequest) => Promise<void>;
+
   /**
    * Recht auf Vergessenwerden (DSGVO Art. 17): löscht alle CRM-Daten eines
    * Kunden (Verträge, Tarifwechsel, Notizen, Ownership) endgültig. Loggt den
@@ -180,13 +194,14 @@ export const useStore = create<StoreState>()((set, get) => ({
   incentives: [],
   leads: [],
   leadActivities: {},
+  accessRequests: [],
   settings: DEFAULT_SETTINGS,
   loaded: false,
 
   loadAll: async () => {
     const uid = useAuth.getState().currentUserKey;
     try {
-      const [contracts, tariffChanges, notes, owners, incentives, leads, activities, settingsRes] = await Promise.all([
+      const [contracts, tariffChanges, notes, owners, incentives, leads, activities, accessRequests, settingsRes] = await Promise.all([
         fetchContracts(),
         fetchTariffChanges(),
         fetchNotes(),
@@ -198,6 +213,8 @@ export const useStore = create<StoreState>()((set, get) => ({
         fetchLeads().catch(() => [] as Lead[]),
         // Lead-Aktivitäten (Migration 006).
         fetchLeadActivities().catch(() => [] as LeadActivity[]),
+        // Zugriffsanfragen (Migration 013).
+        fetchAccessRequests().catch(() => [] as CustomerAccessRequest[]),
         uid ? fetchSettings(uid) : Promise.resolve({ user: null, shared: null }),
       ]);
 
@@ -246,6 +263,7 @@ export const useStore = create<StoreState>()((set, get) => ({
         incentives,
         leads,
         leadActivities,
+        accessRequests,
         settings: mergedSettings,
         loaded: true,
       });
@@ -264,6 +282,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       incentives: [],
       leads: [],
       leadActivities: {},
+      accessRequests: [],
       settings: DEFAULT_SETTINGS,
       loaded: false,
     }),
@@ -303,6 +322,9 @@ export const useStore = create<StoreState>()((set, get) => ({
         })
         .catch(() => {});
     });
+    const reloadAccessRequests = debounce(() => {
+      fetchAccessRequests().then((rows) => set({ accessRequests: rows })).catch(() => {});
+    });
 
     const channel = sb
       .channel('crm-tng-changes')
@@ -313,6 +335,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incentives' }, reloadIncentives)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, reloadLeads)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_activities' }, reloadActivities)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_access_requests' }, reloadAccessRequests)
       .subscribe();
     return () => {
       sb.removeChannel(channel);
@@ -707,6 +730,79 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (e) {
       fail('Löschen fehlgeschlagen.', e);
       set({ leadActivities: prev });
+    }
+  },
+
+  requestCustomerAccess: async (customerNumber, ownerId, comment) => {
+    const uid = currentUserKey();
+    if (!uid) return;
+    try {
+      const created = await insertAccessRequest({
+        customerNumber,
+        requesterId: uid,
+        ownerId,
+        comment: comment.trim(),
+      });
+      set((s) => ({
+        accessRequests: [created, ...s.accessRequests.filter((r) => r.id !== created.id)],
+      }));
+      toast.success('Zugriff angefragt – der/die Besitzer:in entscheidet.');
+    } catch (e) {
+      fail('Anfrage konnte nicht gesendet werden.', e);
+    }
+  },
+
+  approveCustomerAccess: async (req) => {
+    const uid = currentUserKey();
+    const prevReq = get().accessRequests;
+    const prevOwners = get().customerOwners;
+    const eff = getEffectiveOwnership(
+      req.customerNumber,
+      prevOwners,
+      get().contracts,
+      get().tariffChanges,
+      get().notes,
+    );
+    const ownerKey = eff.owner ?? req.ownerId ?? uid;
+    if (!ownerKey) {
+      fail('Freigabe fehlgeschlagen.', new Error('Kein Besitzer ermittelbar.'));
+      return;
+    }
+    const sharedWith = Array.from(new Set([...eff.sharedWith, req.requesterId])).filter(
+      (k) => k !== ownerKey,
+    );
+    const now = new Date().toISOString();
+    set({
+      customerOwners: { ...prevOwners, [req.customerNumber]: { owner: ownerKey, sharedWith } },
+      accessRequests: prevReq.map((r) =>
+        r.id === req.id ? { ...r, status: 'approved', decidedAt: now, decidedBy: uid ?? undefined } : r,
+      ),
+    });
+    try {
+      await upsertOwnership(req.customerNumber, ownerKey, sharedWith);
+      await updateAccessRequestStatus(req.id, 'approved', uid ?? undefined);
+      toast.success('Zugriff gewährt.');
+    } catch (e) {
+      fail('Freigabe fehlgeschlagen.', e);
+      set({ customerOwners: prevOwners, accessRequests: prevReq });
+    }
+  },
+
+  rejectCustomerAccess: async (req) => {
+    const uid = currentUserKey();
+    const prev = get().accessRequests;
+    const now = new Date().toISOString();
+    set({
+      accessRequests: prev.map((r) =>
+        r.id === req.id ? { ...r, status: 'rejected', decidedAt: now, decidedBy: uid ?? undefined } : r,
+      ),
+    });
+    try {
+      await updateAccessRequestStatus(req.id, 'rejected', uid ?? undefined);
+      toast.success('Anfrage abgelehnt.');
+    } catch (e) {
+      fail('Aktion fehlgeschlagen.', e);
+      set({ accessRequests: prev });
     }
   },
 

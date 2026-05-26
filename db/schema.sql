@@ -94,6 +94,30 @@ create table if not exists public.customer_ownerships (
 );
 
 -- ------------------------------------------------------------
+-- CUSTOMER ACCESS REQUESTS
+-- ------------------------------------------------------------
+-- Kunden sind für alle aktiven Nutzer lesbar. Bearbeiten bleibt an Rechte
+-- gebunden (Besitzer:in / geteilt / Chef:in). Wer keine Rechte hat, fragt sie
+-- mit Begründung an; Besitzer:in oder Chef:in nimmt an oder lehnt ab.
+-- ------------------------------------------------------------
+create table if not exists public.customer_access_requests (
+  id uuid primary key default gen_random_uuid(),
+  customer_number text not null,
+  requester_id uuid not null references public.users(id) on delete cascade,
+  owner_id uuid references public.users(id) on delete set null,
+  comment text,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  created_at timestamptz default now(),
+  decided_at timestamptz,
+  decided_by uuid references public.users(id) on delete set null
+);
+create index if not exists idx_access_req_owner on public.customer_access_requests(owner_id);
+create index if not exists idx_access_req_requester on public.customer_access_requests(requester_id);
+create unique index if not exists uniq_pending_access_request
+  on public.customer_access_requests (customer_number, requester_id)
+  where status = 'pending';
+
+-- ------------------------------------------------------------
 -- SETTINGS
 -- ------------------------------------------------------------
 -- Eine Zeile pro User. Hält individuelle Ziele und Konfiguration.
@@ -215,6 +239,7 @@ alter table public.incentives enable row level security;
 alter table public.leads enable row level security;
 alter table public.lead_activities enable row level security;
 alter table public.audit_log enable row level security;
+alter table public.customer_access_requests enable row level security;
 
 -- ----------------------------------------------------------------------------
 -- Helper-Funktionen (SECURITY DEFINER → umgehen RLS, verhindern Rekursion bei
@@ -375,8 +400,8 @@ create policy "ownership read all" on public.customer_ownerships
   for select using (public.auth_is_active());
 create policy "ownership insert" on public.customer_ownerships
   for insert with check (public.auth_is_active());
-create policy "ownership update owner" on public.customer_ownerships
-  for update using (public.auth_is_active() and auth.uid() = owner);
+create policy "ownership update owner or manager" on public.customer_ownerships
+  for update using (public.auth_is_active() and (auth.uid() = owner or public.auth_is_manager()));
 create policy "ownership delete owner" on public.customer_ownerships
   for delete using (public.auth_is_active() and auth.uid() = owner);
 
@@ -430,6 +455,21 @@ create policy "audit_log read manager only" on public.audit_log
 create policy "audit_log insert own actions" on public.audit_log
   for insert with check (public.auth_is_active() and actor_id = auth.uid());
 
+-- ACCESS REQUESTS: Anfragende:r, Besitzer:in und Chef:innen lesen; anlegen nur
+-- für sich selbst; annehmen/ablehnen nur Besitzer:in oder Chef:in.
+create policy "access_req read involved" on public.customer_access_requests
+  for select using (
+    public.auth_is_active()
+    and (requester_id = auth.uid() or owner_id = auth.uid() or public.auth_is_manager())
+  );
+create policy "access_req insert own" on public.customer_access_requests
+  for insert with check (public.auth_is_active() and requester_id = auth.uid());
+create policy "access_req decide owner or manager" on public.customer_access_requests
+  for update using (
+    public.auth_is_active()
+    and (owner_id = auth.uid() or public.auth_is_manager())
+  );
+
 -- ============================================================================
 -- REALTIME
 -- ============================================================================
@@ -443,3 +483,4 @@ alter publication supabase_realtime add table public.incentives;
 alter publication supabase_realtime add table public.leads;
 alter publication supabase_realtime add table public.lead_activities;
 alter publication supabase_realtime add table public.audit_log;
+alter publication supabase_realtime add table public.customer_access_requests;

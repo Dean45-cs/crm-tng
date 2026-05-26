@@ -37,6 +37,7 @@ import { FollowUpInbox } from '../components/FollowUpInbox';
 import { SkeletonDashboard } from '../components/Skeleton';
 import { IncentiveWidget } from '../components/IncentiveWidget';
 import { ExpiryRadarWidget } from '../components/ExpiryRadarWidget';
+import { AccessRequestInbox } from '../components/AccessRequests';
 import { useRouter } from '../router';
 
 type Scope = 'mine' | 'all';
@@ -301,6 +302,7 @@ export function Dashboard() {
         </div>
       </div>
 
+      <AccessRequestInbox />
       <IncentiveWidget />
       <ExpiryRadarWidget />
 

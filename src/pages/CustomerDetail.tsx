@@ -11,7 +11,6 @@ import {
   Calendar,
   Share2,
   Crown,
-  Lock,
   UserIcon,
   Globe,
   ShieldAlert,
@@ -28,12 +27,13 @@ import {
   TARIFF_CONTEXT_LABEL,
   TARIFF_TYPE_LABEL,
 } from '../lib/utils';
-import { getEffectiveOwnership, canViewCustomer } from '../lib/customerOwnership';
+import { getEffectiveOwnership, canEditCustomer } from '../lib/customerOwnership';
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
 import { useQuickAdd } from '../components/QuickAdd';
 import { CustomerShareDialog } from '../components/CustomerShareDialog';
 import { ActivityTimeline } from '../components/ActivityTimeline';
+import { AccessRequestInbox, AccessRequestBanner } from '../components/AccessRequests';
 
 interface Props {
   kdnr: string;
@@ -54,9 +54,9 @@ export function CustomerDetail({ kdnr }: Props) {
     () => getEffectiveOwnership(kdnr, customerOwners, contracts, tariffChanges, notes),
     [kdnr, customerOwners, contracts, tariffChanges, notes],
   );
-  const canView = canViewCustomer(kdnr, currentUserKey, customerOwners, contracts, tariffChanges, notes);
   const isOwner = ownership.owner === currentUserKey;
   const ownerUser = ownership.owner ? users[ownership.owner] : null;
+  const canEdit = canEditCustomer(kdnr, currentUserKey, isManager(), customerOwners, contracts, tariffChanges, notes);
 
   const contractsList = useMemo(
     () => contracts.filter((c) => c.customerNumber === kdnr).sort((a, b) => b.contractDate.localeCompare(a.contractDate)),
@@ -97,31 +97,6 @@ export function CustomerDetail({ kdnr }: Props) {
           <UserIcon size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>Kunde nicht gefunden</h3>
           <p>Zu KdNr <code>{kdnr}</code> gibt es noch keine Vorgänge.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!canView) {
-    return (
-      <div>
-        <button
-          className="btn btn-ghost"
-          onClick={() => navigate({ name: 'customers' })}
-          style={{ marginBottom: 16 }}
-        >
-          <ArrowLeft size={14} /> Zurück
-        </button>
-        <div className="widget empty">
-          <Lock size={32} strokeWidth={1.4} className="empty-icon" />
-          <h3>Kein Zugriff auf diesen Kunden</h3>
-          <p>
-            {ownerUser
-              ? <>Dieser Kunde gehört <strong>{ownerUser.displayName}</strong> und wurde nicht mit dir geteilt.</>
-              : <>Dieser Kunde ist einer:m anderen Kolleg:in zugeordnet und wurde nicht mit dir geteilt.</>}
-            <br />
-            Bitte um Freigabe oder schau in „Meine Kunden" nach deinen eigenen Vorgängen.
-          </p>
         </div>
       </div>
     );
@@ -175,29 +150,41 @@ export function CustomerDetail({ kdnr }: Props) {
         </div>
       </div>
 
-      <div className="customer-quick-actions">
-        <button
-          className="btn btn-primary"
-          onClick={() => openNewContract({ customerNumber: kdnr, customerName })}
-        >
-          <Plus size={14} /> Vertrag
-        </button>
-        <button
-          className="btn"
-          onClick={() => openNewTariff({ customerNumber: kdnr, customerName })}
-        >
-          <Plus size={14} /> Tarifwechsel
-        </button>
-        <button
-          className="btn"
-          onClick={() => openNewNote({ customerNumber: kdnr, customerName })}
-        >
-          <Plus size={14} /> Notiz
-        </button>
-        <button className="btn" onClick={() => setShareOpen(true)} style={{ marginLeft: 'auto' }}>
-          <Share2 size={14} /> Teilen
-        </button>
-      </div>
+      <AccessRequestInbox customerNumber={kdnr} />
+
+      {!canEdit && (
+        <AccessRequestBanner
+          customerNumber={kdnr}
+          ownerId={ownership.owner ?? undefined}
+          ownerName={ownerUser?.displayName}
+        />
+      )}
+
+      {canEdit && (
+        <div className="customer-quick-actions">
+          <button
+            className="btn btn-primary"
+            onClick={() => openNewContract({ customerNumber: kdnr, customerName })}
+          >
+            <Plus size={14} /> Vertrag
+          </button>
+          <button
+            className="btn"
+            onClick={() => openNewTariff({ customerNumber: kdnr, customerName })}
+          >
+            <Plus size={14} /> Tarifwechsel
+          </button>
+          <button
+            className="btn"
+            onClick={() => openNewNote({ customerNumber: kdnr, customerName })}
+          >
+            <Plus size={14} /> Notiz
+          </button>
+          <button className="btn" onClick={() => setShareOpen(true)} style={{ marginLeft: 'auto' }}>
+            <Share2 size={14} /> Teilen
+          </button>
+        </div>
+      )}
 
       {shareOpen && (
         <CustomerShareDialog
@@ -257,17 +244,19 @@ export function CustomerDetail({ kdnr }: Props) {
                       {formatCurrency(calcContractCommission(c, settings))}
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <div className="row end">
-                        <button className="btn btn-ghost btn-sm" onClick={() => editContract(c)}>
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => confirm('Wirklich löschen?') && deleteContract(c.id)}
-                        >
-                          <Trash2 size={13} color="var(--red)" />
-                        </button>
-                      </div>
+                      {canEdit && (
+                        <div className="row end">
+                          <button className="btn btn-ghost btn-sm" onClick={() => editContract(c)}>
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => confirm('Wirklich löschen?') && deleteContract(c.id)}
+                          >
+                            <Trash2 size={13} color="var(--red)" />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -312,17 +301,19 @@ export function CustomerDetail({ kdnr }: Props) {
                       {formatCurrency(calcTariffCommission(t, settings))}
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <div className="row end">
-                        <button className="btn btn-ghost btn-sm" onClick={() => editTariff(t)}>
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => confirm('Wirklich löschen?') && deleteTariffChange(t.id)}
-                        >
-                          <Trash2 size={13} color="var(--red)" />
-                        </button>
-                      </div>
+                      {canEdit && (
+                        <div className="row end">
+                          <button className="btn btn-ghost btn-sm" onClick={() => editTariff(t)}>
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => confirm('Wirklich löschen?') && deleteTariffChange(t.id)}
+                          >
+                            <Trash2 size={13} color="var(--red)" />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -345,17 +336,19 @@ export function CustomerDetail({ kdnr }: Props) {
               <div key={n.id} className="note-card">
                 <div className="row between">
                   <h4>{n.title}</h4>
-                  <div className="row" style={{ gap: 2 }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => editNote(n)}>
-                      <Pencil size={12} />
-                    </button>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => confirm('Wirklich löschen?') && deleteNote(n.id)}
-                    >
-                      <Trash2 size={12} color="var(--red)" />
-                    </button>
-                  </div>
+                  {canEdit && (
+                    <div className="row" style={{ gap: 2 }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => editNote(n)}>
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => confirm('Wirklich löschen?') && deleteNote(n.id)}
+                      >
+                        <Trash2 size={12} color="var(--red)" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="body">{n.content}</div>
                 <div className="meta">

@@ -42,18 +42,24 @@ export function getEffectiveOwnership(
   };
 }
 
-/** Darf der User diesen Kunden sehen? */
-export function canViewCustomer(
+/**
+ * Darf der User diesen Kunden bearbeiten (Verträge/Tarife/Notizen anlegen,
+ * ändern, löschen, teilen)? Nur Besitzer:in, geteilte Nutzer:innen, Chef:innen
+ * oder bei verwaisten Kunden alle. Spiegelt die RLS-Regeln im Backend.
+ */
+export function canEditCustomer(
   kdnr: string,
   userKey: string | null | undefined,
+  isManager: boolean,
   ownerships: Record<string, CustomerOwnership>,
   contracts: Contract[],
   tariffChanges: TariffChange[],
   notes: Note[],
 ): boolean {
-  if (!userKey) return true;
+  if (isManager) return true;
+  if (!userKey) return false;
   const { owner, sharedWith } = getEffectiveOwnership(kdnr, ownerships, contracts, tariffChanges, notes);
-  if (owner === null) return true; // verwaist
+  if (owner === null) return true; // verwaist → für alle bearbeitbar
   if (owner === userKey) return true;
   return sharedWith.includes(userKey);
 }

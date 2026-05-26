@@ -47,6 +47,10 @@ bereits — Migrationen sind dann nicht nötig.
   legt nur noch der Chef in der Team-Verwaltung an. Lediglich das allererste
   Konto darf sich im Bootstrap selbst anlegen und wird automatisch zum ersten
   Manager. `users_exist()` erlaubt dem Login-Screen, diesen Bootstrap zu erkennen.
+- `013_customer_access_requests.sql` — Kunden sind für alle aktiven Nutzer
+  lesbar; Bearbeiten bleibt an Rechte gebunden (Besitzer:in / geteilt / Chef:in).
+  Neue Tabelle `customer_access_requests`: wer keine Rechte hat, fragt sie mit
+  Begründung an, Besitzer:in oder Chef:in nimmt an oder lehnt ab.
 
 > **Erster Zugang (frische Installation):** Beim allerersten Start bietet der
 > Login-Screen automatisch „Erstes Konto einrichten" an — dieses Konto wird der

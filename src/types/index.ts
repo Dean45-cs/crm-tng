@@ -123,6 +123,25 @@ export interface CustomerOwnership {
   sharedWith: string[];
 }
 
+export type AccessRequestStatus = 'pending' | 'approved' | 'rejected';
+
+/** Anfrage auf Bearbeitungszugriff eines Kunden, den ein:e Kolleg:in besitzt */
+export interface CustomerAccessRequest {
+  id: string;
+  customerNumber: string;
+  /** User-Key (UUID) des/der Anfragenden */
+  requesterId: string;
+  /** User-Key (UUID) des/der Besitzer:in zum Zeitpunkt der Anfrage */
+  ownerId?: string;
+  /** Begründung der Anfrage */
+  comment?: string;
+  status: AccessRequestStatus;
+  createdAt: string;
+  decidedAt?: string;
+  /** Wer hat entschieden (UUID) */
+  decidedBy?: string;
+}
+
 /** Zielprämie (jede:r, der/die das Ziel erreicht) oder Wettbewerb (nur Platz 1) */
 export type IncentiveMechanic = 'goal' | 'competition';
 /** Was gemessen wird: Provision (€), Anzahl Verträge oder Abschlüsse gesamt */
