@@ -1,0 +1,113 @@
+# Referenz-Screen: Verträge (Liste + Suche + Statusfilter). Siehe 05.
+Screens:
+  scrContracts:
+    Properties:
+      Fill: =Theme.Background
+    Children:
+      - lblTitle:
+          Control: Label
+          Properties:
+            Text: ="Verträge"
+            Color: =Theme.Primary
+            Font: =FontMain
+            Size: =28
+            FontWeight: =FontWeight.Semibold
+            X: =Space.xl
+            Y: =Space.xl
+      - txtSearch:
+          Control: TextInput@0.0.51
+          Properties:
+            HintText: ="Kundennummer oder Name suchen…"
+            BorderColor: =Theme.Border
+            Color: =Theme.Text
+            X: =Space.xl
+            Y: =64
+            Width: =360
+      - ddStatus:
+          Control: Dropdown@0.0.44
+          Properties:
+            Items: |
+              =Table(
+                { Value:"Alle",      Choice: Blank() },
+                { Value:"Offen",     Choice: 'Contract Status'.Offen },
+                { Value:"Aktiv",     Choice: 'Contract Status'.Aktiv },
+                { Value:"Storniert", Choice: 'Contract Status'.Storniert })
+            Value: ="Value"
+            X: =400
+            Y: =64
+            Width: =180
+      - btnNew:
+          Control: Button@0.0.45
+          Properties:
+            Text: ="Neuer Vertrag"
+            Fill: =Theme.Accent
+            Color: =Theme.Surface
+            OnSelect: =Set(varContract, Defaults(tng_Contracts)); Navigate(scrContractEdit, ScreenTransition.CoverRight)
+            X: =600
+            Y: =64
+      - galContracts:
+          Control: Gallery@0.0.53
+          Variant: Vertical
+          Properties:
+            X: =Space.xl
+            Y: =116
+            Width: =Parent.Width - 2*Space.xl
+            Height: =Parent.Height - 132
+            TemplatePadding: =Space.sm
+            Items: |
+              =SortByColumns(
+                Filter(tng_Contracts,
+                  (IsBlank(txtSearch.Value)
+                    || StartsWith(tng_customer.tng_customernumber, txtSearch.Value)
+                    || StartsWith(tng_customer.tng_displayname, txtSearch.Value))
+                  && (ddStatus.Selected.Value = "Alle" || tng_status = ddStatus.Selected.Choice)),
+                "tng_contractdate", SortOrder.Descending)
+          Children:
+            - rowBg:
+                Control: Rectangle@0.0.24
+                Properties:
+                  Fill: =Theme.Surface
+                  RadiusTopLeft: =Radius.card
+                  RadiusBottomRight: =Radius.card
+            - lblCustomer:
+                Control: Label
+                Properties:
+                  Text: =ThisItem.tng_customer.tng_displayname & "  ·  " & ThisItem.tng_customer.tng_customernumber
+                  Color: =Theme.Text
+                  Font: =FontMain
+                  FontWeight: =FontWeight.Semibold
+            - lblCommission:
+                Control: Label
+                Properties:
+                  Text: |
+                    =Text(If(ThisItem.tng_status='Contract Status'.Storniert, 0,
+                             Sum(ThisItem.tng_contractproduct_Contract, tng_commissionsnapshot)),
+                          "[$-de-DE]€ #,##0.00")
+                  Color: =Theme.Primary
+            - badgeStatus:
+                Control: Label
+                Properties:
+                  Text: =Text(ThisItem.tng_status)
+                  Align: =Align.Center
+                  Color: =Theme.Surface
+                  Fill: |
+                    =Switch(Text(ThisItem.tng_status),
+                       "Aktiv", Theme.Success, "Storniert", Theme.Danger, Theme.TextMuted)
+                  RadiusTopLeft: =Radius.pill
+                  RadiusTopRight: =Radius.pill
+                  RadiusBottomLeft: =Radius.pill
+                  RadiusBottomRight: =Radius.pill
+            - lblExpiry:
+                Control: Label
+                Properties:
+                  Text: =ExpiryLabel(ThisItem.tng_contractdate, Value(ThisItem.tng_laufzeit))
+                  Color: |
+                    =Switch(ExpiryBucket(ThisItem.tng_contractdate, Value(ThisItem.tng_laufzeit)),
+                       "soon", Theme.Danger, "medium", Theme.Warning, "later", ColorValue("#CA8A04"), Theme.TextMuted)
+            - btnOpen:
+                Control: Button@0.0.45
+                Properties:
+                  Text: ="Bearbeiten"
+                  Fill: =Theme.Accent
+                  Color: =Theme.Surface
+                  OnSelect: =Set(varContract, ThisItem); Navigate(scrContractEdit, ScreenTransition.CoverRight)
