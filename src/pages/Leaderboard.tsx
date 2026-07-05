@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Trophy, Crown, Medal, Award, EyeOff, Sparkles, BarChart3 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
+import { SkeletonTable } from '../components/Skeleton';
 import {
   calcContractCommission,
   calcTariffCommission,
@@ -20,7 +21,7 @@ interface Row {
 }
 
 export function Leaderboard() {
-  const { contracts, tariffChanges, settings } = useStore();
+  const { contracts, tariffChanges, settings, loaded } = useStore();
   const { users, currentUserKey, setLeaderboardOptIn } = useAuth();
 
   const me = currentUserKey ? users[currentUserKey] : null;
@@ -131,7 +132,9 @@ export function Leaderboard() {
         </div>
       </div>
 
-      {visibleRows.length === 0 ? (
+      {!loaded ? (
+        <SkeletonTable rows={6} cols={4} />
+      ) : visibleRows.length === 0 ? (
         <div className="widget empty">
           <BarChart3 size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>Noch keine Daten</h3>

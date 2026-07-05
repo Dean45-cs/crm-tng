@@ -13,6 +13,7 @@ import {
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { useRouter } from '../router';
+import { SkeletonCardGrid } from '../components/Skeleton';
 import { formatCurrency, weekLabel, monthLabel } from '../lib/utils';
 import {
   incentiveValue,
@@ -97,10 +98,7 @@ export function Incentives() {
       </div>
 
       {!loaded ? (
-        <div className="widget empty">
-          <Gift size={32} strokeWidth={1.4} className="empty-icon" />
-          <h3>Lade Incentives …</h3>
-        </div>
+        <SkeletonCardGrid count={4} />
       ) : !hasAny ? (
         <div className="widget empty">
           <Gift size={32} strokeWidth={1.4} className="empty-icon" />

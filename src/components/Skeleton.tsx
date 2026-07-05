@@ -56,6 +56,70 @@ export function SkeletonCardGrid({ count = 6 }: { count?: number }) {
   );
 }
 
+/**
+ * Generisches Seiten-Gerüst für Lazy-Chunk-Ladezeiten (Suspense-Fallback):
+ * Kopfzeile plus Widget-Blöcke, damit der Seitenwechsel nie "leer" wirkt.
+ */
+export function SkeletonPage() {
+  return (
+    <div aria-hidden aria-busy="true">
+      <div className="page-header">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+          <Skeleton height={22} width={220} radius={8} />
+          <Skeleton height={13} width={340} />
+        </div>
+      </div>
+      <div className="widget skeleton-block" style={{ minHeight: 120, marginBottom: 14 }} />
+      <div className="widget skeleton-block" style={{ minHeight: 320 }} />
+    </div>
+  );
+}
+
+/**
+ * App-Shell-Gerüst für den Start („Verbinde mit Server"): Sidebar, Titelleiste
+ * und Dashboard-Blöcke als Skeleton — die App wirkt sofort da, statt hinter
+ * einem Spinner zu warten.
+ */
+export function SkeletonShell({ brand }: { brand?: React.ReactNode }) {
+  return (
+    <div className="app" aria-hidden aria-busy="true">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          {brand ?? <Skeleton width={40} height={40} radius={12} />}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+            <Skeleton height={13} width="80%" />
+            <Skeleton height={10} width="60%" />
+          </div>
+        </div>
+        {[3, 4, 1].map((count, s) => (
+          <div key={s}>
+            <div className="sidebar-section">
+              <Skeleton height={9} width={64} />
+            </div>
+            {Array.from({ length: count }).map((_, i) => (
+              <div key={i} className="sidebar-item" style={{ pointerEvents: 'none' }}>
+                <Skeleton width={16} height={16} radius={5} />
+                <Skeleton height={12} width={`${55 + ((i * 13) % 30)}%`} />
+              </div>
+            ))}
+          </div>
+        ))}
+      </aside>
+      <main className="main">
+        <header className="titlebar">
+          <Skeleton height={18} width={160} radius={7} />
+          <Skeleton height={14} width={260} radius={7} />
+        </header>
+        <div className="content">
+          <div className="content-inner">
+            <SkeletonDashboard />
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
 /** Dashboard-Gerüst: Hero-Reihe plus zwei Widget-Reihen. */
 export function SkeletonDashboard() {
   return (

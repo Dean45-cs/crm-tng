@@ -9,6 +9,7 @@ import { CustomerSearchBar } from './components/CustomerSearchBar';
 import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
 import { SupabaseSetup } from './components/SupabaseSetup';
+import { SkeletonPage, SkeletonShell } from './components/Skeleton';
 import { TngMark, TngTile } from './components/TngLogo';
 import { Router, useRouter, type RouteName } from './router';
 import { useAuth } from './store/useAuth';
@@ -58,11 +59,43 @@ const TITLES: Record<RouteName, string> = {
 };
 
 function PageFallback() {
-  return (
-    <div className="page-fallback">
-      <div className="boot-spinner" />
-    </div>
-  );
+  return <SkeletonPage />;
+}
+
+/**
+ * Lädt alle Seiten-Chunks einmalig im Browser-Leerlauf vor. Seitenwechsel
+ * treffen danach nie mehr aufs Netz — kein Skeleton-Aufblitzen beim ersten
+ * Öffnen einer Seite.
+ */
+let pagesPrefetched = false;
+function prefetchAllPages() {
+  if (pagesPrefetched) return;
+  pagesPrefetched = true;
+  const idle: (cb: () => void) => void =
+    'requestIdleCallback' in window
+      ? (cb) => window.requestIdleCallback(cb, { timeout: 4000 })
+      : (cb) => window.setTimeout(cb, 1500);
+  idle(() => {
+    void Promise.allSettled([
+      import('./pages/Dashboard'),
+      import('./pages/Contracts'),
+      import('./pages/TariffChanges'),
+      import('./pages/Notes'),
+      import('./pages/Settings'),
+      import('./pages/Customers'),
+      import('./pages/CustomerDetail'),
+      import('./pages/Leaderboard'),
+      import('./pages/MonthlyReport'),
+      import('./pages/TeamDashboard'),
+      import('./pages/TeamManagement'),
+      import('./pages/TeamReport'),
+      import('./pages/AgentDetail'),
+      import('./pages/Incentives'),
+      import('./pages/IncentiveManager'),
+      import('./pages/Leads'),
+      import('./pages/AuditLog'),
+    ]);
+  });
 }
 
 function Shell() {
@@ -70,14 +103,14 @@ function Shell() {
 
   if (route.name === 'report') {
     return (
-      <Suspense fallback={<LoadingScreen />}>
+      <Suspense fallback={<ReportFallback />}>
         <MonthlyReport />
       </Suspense>
     );
   }
   if (route.name === 'teamreport') {
     return (
-      <Suspense fallback={<LoadingScreen />}>
+      <Suspense fallback={<ReportFallback />}>
         <TeamReport />
       </Suspense>
     );
@@ -139,14 +172,16 @@ function Shell() {
   );
 }
 
-function LoadingScreen({ label = 'Verbinde mit Server …' }: { label?: string }) {
+/** Start-Ansicht: App-Gerüst als Skeleton statt Spinner — wirkt sofort da. */
+function LoadingScreen() {
+  return <SkeletonShell brand={<TngTile size={40} />} />;
+}
+
+/** Fallback für die Druck-/Berichtsansichten (eigenes Layout ohne Sidebar). */
+function ReportFallback() {
   return (
-    <div className="boot-screen">
-      <div className="boot-brand">
-        <TngTile size={80} radius={20} />
-      </div>
-      <div className="boot-spinner" />
-      <div className="boot-label">{label}</div>
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px' }}>
+      <SkeletonPage />
     </div>
   );
 }
@@ -225,12 +260,18 @@ export default function App() {
 
   useEffect(() => onConfigChange(() => setConfigured(isConfigured())), []);
 
+  // Alle Seiten-Chunks im Leerlauf vorladen, sobald das Backend konfiguriert
+  // ist — jeder spätere Seitenwechsel ist dann sofort da.
+  useEffect(() => {
+    if (configured) prefetchAllPages();
+  }, [configured]);
+
   if (!configured) {
     return <SupabaseSetup />;
   }
 
   if (initializing) {
-    return <LoadingScreen label="Verbinde mit Server …" />;
+    return <LoadingScreen />;
   }
 
   if (!currentUserKey) {
