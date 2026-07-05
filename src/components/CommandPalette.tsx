@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -33,46 +32,45 @@ interface CmdItem {
   run: () => void;
 }
 
+/**
+ * Äußere Hülle: hält nur den Offen/Zu-Zustand und das ⌘K-Tastenkürzel.
+ * Der eigentliche Dialog (inkl. Store-Abo und Suchindex-Aufbau) wird erst
+ * gemountet, wenn die Palette offen ist — so kostet sie im Alltag nichts,
+ * auch wenn sich Verträge/Notizen im Hintergrund per Realtime ändern.
+ */
 export function CommandPalette() {
-  const { contracts, tariffChanges, notes, settings } = useStore();
-  const { navigate } = useRouter();
-  const { openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote } =
-    useQuickAdd();
-
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [activeIdx, setActiveIdx] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const openRef = useRef(false);
-  useEffect(() => {
-    openRef.current = open;
-  }, [open]);
-
-  const openPalette = useCallback(() => {
-    setQuery('');
-    setActiveIdx(0);
-    setOpen(true);
-  }, []);
-  const closePalette = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        if (openRef.current) closePalette();
-        else openPalette();
+        setOpen((o) => !o);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [openPalette, closePalette]);
+  }, []);
+
+  if (!open) return null;
+  return <PaletteDialog close={() => setOpen(false)} />;
+}
+
+function PaletteDialog({ close: closePalette }: { close: () => void }) {
+  const { contracts, tariffChanges, notes, settings } = useStore();
+  const { navigate } = useRouter();
+  const { openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote } =
+    useQuickAdd();
+
+  const [query, setQuery] = useState('');
+  const [activeIdx, setActiveIdx] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return;
     const t = window.setTimeout(() => inputRef.current?.focus(), 0);
     return () => window.clearTimeout(t);
-  }, [open]);
+  }, []);
 
   const customers = useMemo(
     () => buildCustomerSummaries(contracts, tariffChanges, notes, settings),
@@ -81,7 +79,7 @@ export function CommandPalette() {
 
   const items: CmdItem[] = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const close = () => setOpen(false);
+    const close = closePalette;
     const go = (r: Route) => () => {
       navigate(r);
       close();
@@ -162,7 +160,7 @@ export function CommandPalette() {
     const navMatches = navItems.filter((n) => matches(n.label));
 
     return [...customerItems, ...contractItems, ...tariffItems, ...noteItems, ...navMatches];
-  }, [query, customers, contracts, tariffChanges, notes, navigate, openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote]);
+  }, [query, customers, contracts, tariffChanges, notes, navigate, closePalette, openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote]);
 
   const safeIdx = items.length === 0 ? 0 : Math.min(activeIdx, items.length - 1);
 
@@ -172,11 +170,9 @@ export function CommandPalette() {
       ?.scrollIntoView({ block: 'nearest' });
   }, [safeIdx]);
 
-  if (!open) return null;
-
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      setOpen(false);
+      closePalette();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setActiveIdx(items.length === 0 ? 0 : (safeIdx + 1) % items.length);
@@ -192,7 +188,7 @@ export function CommandPalette() {
   let lastGroup = '';
 
   return (
-    <div className="cmdk-backdrop" onClick={() => setOpen(false)}>
+    <div className="cmdk-backdrop" onClick={closePalette}>
       <div
         className="cmdk"
         role="dialog"

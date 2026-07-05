@@ -159,7 +159,7 @@ export function Sidebar() {
       )}
 
       <div className="sidebar-footer">
-        CRM v1.3 · 2026
+        CRM v1.4 · 2026
       </div>
     </aside>
   );

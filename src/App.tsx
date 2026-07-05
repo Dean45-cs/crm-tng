@@ -12,6 +12,7 @@ import { SupabaseSetup } from './components/SupabaseSetup';
 import { TngMark, TngTile } from './components/TngLogo';
 import { Router, useRouter, type RouteName } from './router';
 import { useAuth } from './store/useAuth';
+import { useOnboarding, useOnboardingHotkey } from './store/useOnboarding';
 import { useStore } from './store/useStore';
 import { isConfigured, onConfigChange } from './lib/supabase';
 
@@ -200,6 +201,12 @@ export default function App() {
 
   const [configured, setConfigured] = useState(isConfigured());
 
+  // Tour-Steuerung: „." + „o" gleichzeitig öffnet die Einführungstour erneut
+  // (aktiv, sobald jemand angemeldet ist und den Datenschutzhinweis bestätigt hat).
+  const tourRequested = useOnboarding((s) => s.open);
+  const signedInUser = currentUserKey ? users[currentUserKey] : null;
+  useOnboardingHotkey(Boolean(configured && signedInUser?.consentGivenAt));
+
   useEffect(() => {
     if (!configured) return;
     clearLegacyLocalStores();
@@ -232,7 +239,9 @@ export default function App() {
 
   const user = users[currentUserKey];
   const needsConsent = user && !user.consentGivenAt;
-  const needsOnboarding = user && user.consentGivenAt && !user.onboardingCompleted;
+  // Tour beim ersten Login automatisch, danach jederzeit per „." + „o"
+  // oder über die Einstellungen erneut.
+  const showTour = user && user.consentGivenAt && (!user.onboardingCompleted || tourRequested);
 
   return (
     <Router>
@@ -240,7 +249,7 @@ export default function App() {
         <OfflineBanner />
         <Shell />
         {needsConsent && <PrivacyConsent />}
-        {needsOnboarding && <OnboardingTour />}
+        {showTour && <OnboardingTour />}
         <CommandPalette />
         <ToastHost />
       </QuickAddProvider>

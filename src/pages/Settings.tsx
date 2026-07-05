@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Save, Download, Trophy, Sheet, Loader2, CheckCircle, XCircle, Sun, Moon, Monitor } from 'lucide-react';
+import { Save, Download, Trophy, Sheet, Loader2, CheckCircle, XCircle, Sun, Moon, Monitor, Sparkles } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
+import { useOnboarding } from '../store/useOnboarding';
 import { formatCurrency, TARIFF_CONTEXT_LABEL, TARIFF_TYPE_LABEL } from '../lib/utils';
 import { spSignOut, spGetAccount, testConnection } from '../lib/sharepointGraph';
 import { getStoredTheme, setTheme, type ThemePref } from '../lib/theme';
@@ -195,6 +196,26 @@ export function Settings() {
           {saved && <span className="muted" style={{ color: 'var(--green)' }}>Gespeichert ✓</span>}
           <button className="btn btn-primary" onClick={saveGeneral}>
             <Save size={14} /> Speichern
+          </button>
+        </div>
+      </div>
+
+      <div className="widget" style={{ marginBottom: 16 }}>
+        <h3 className="widget-title">
+          <Sparkles size={14} style={{ marginRight: 6, verticalAlign: '-2px' }} />
+          Einführungstour
+        </h3>
+        <div className="row between" style={{ gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+              Die geführte Tour erklärt alle Funktionen Schritt für Schritt — ideal auch, um das
+              CRM Kolleg:innen zu zeigen. Du startest sie hier oder jederzeit mit{' '}
+              <kbd className="settings-kbd">.</kbd> + <kbd className="settings-kbd">o</kbd>{' '}
+              (gleichzeitig gedrückt).
+            </div>
+          </div>
+          <button className="btn btn-primary" onClick={() => useOnboarding.getState().start()}>
+            <Sparkles size={14} /> Tour starten
           </button>
         </div>
       </div>
