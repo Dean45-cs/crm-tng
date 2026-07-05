@@ -76,8 +76,12 @@
   --dur-3: 0.26s;
   --dur-4: 0.4s;
 
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+  /* Inter Variable (gebündelt via @fontsource) — identisch hochwertige
+     Typografie auf jedem System statt Arial/Segoe-Fallback auf Windows.
+     Die Features cv11/ss01 (offene Ziffern, runde Formen) greifen jetzt. */
+  font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'SF Pro Display',
     'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-optical-sizing: auto;
   font-feature-settings: 'cv11', 'ss01', 'kern' on;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -189,8 +193,8 @@ code {
   width: 240px;
   flex-shrink: 0;
   background: var(--sidebar-bg);
-  backdrop-filter: saturate(180%) blur(28px);
-  -webkit-backdrop-filter: saturate(180%) blur(28px);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
   border-right: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
@@ -296,8 +300,8 @@ code {
   justify-content: space-between;
   padding: 0 28px;
   background: var(--bg-elevated);
-  backdrop-filter: saturate(180%) blur(28px);
-  -webkit-backdrop-filter: saturate(180%) blur(28px);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
   border-bottom: 1px solid var(--separator);
 }
 .titlebar h1 {
@@ -320,6 +324,9 @@ code {
   flex: 1;
   overflow-y: auto;
   padding: 30px 32px 110px;
+  /* Kein Scroll-Chaining in den Body, keine Layout-Sprünge durch die Scrollbar */
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .content-inner { max-width: 1280px; margin: 0 auto; }
 
@@ -1022,7 +1029,8 @@ table.crm-table td[style*="text-align: right"] {
   font-weight: 500;
   background: transparent;
   color: var(--text);
-  transition: all 0.18s ease;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease,
+    box-shadow 0.18s ease, transform 0.18s ease;
   white-space: nowrap;
   min-width: max-content;
 }
@@ -1480,7 +1488,8 @@ table.crm-table td[style*="text-align: right"] {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
   flex-shrink: 0;
 }
 .sidebar-user-logout:hover {
@@ -1591,7 +1600,8 @@ table.crm-table td[style*="text-align: right"] {
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   padding: 12px 14px;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
 }
 .login-field:focus-within {
   background: var(--bg-card);
@@ -1629,7 +1639,8 @@ table.crm-table td[style*="text-align: right"] {
   gap: 8px;
   cursor: pointer;
   box-shadow: var(--shadow-tng);
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
 }
 .login-primary:hover:not(:disabled) {
   transform: translateY(-1px);
@@ -1703,7 +1714,8 @@ table.crm-table td[style*="text-align: right"] {
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
 }
 .login-chip:hover {
   background: var(--tng-blue-50);
@@ -1740,7 +1752,8 @@ table.crm-table td[style*="text-align: right"] {
   color: var(--text);
   outline: none;
   caret-color: transparent;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
   font-family: inherit;
 }
 .pin-digit:focus {
@@ -2064,7 +2077,8 @@ table.crm-table td[style*="text-align: right"] {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   box-shadow: var(--shadow-md);
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
 }
 .onboarding-skip:hover {
   color: var(--text);
@@ -2126,7 +2140,7 @@ table.crm-table td[style*="text-align: right"] {
   height: 5px;
   border-radius: 3px;
   background: var(--surface-3);
-  transition: all 0.2s ease;
+  transition: width 0.2s ease, background 0.2s ease;
 }
 .onboarding-dot.active {
   background: var(--tng-gradient);
@@ -4332,6 +4346,7 @@ table.crm-table td[style*="text-align: right"] {
   position: relative;
   height: 100%;
   border-radius: 999px;
+  overflow: hidden;
   background: linear-gradient(90deg, #0066b3, #00a3e0, #00d4ff);
   box-shadow: 0 0 14px rgba(0, 163, 224, 0.65);
   transition: width 0.6s cubic-bezier(0.34, 1.3, 0.64, 1);
@@ -4339,13 +4354,18 @@ table.crm-table td[style*="text-align: right"] {
 .arcade-bar-fill::after {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  /* eine Streifenperiode Überhang links, damit das transform-Scrollen nahtlos ist */
+  left: -31.11px;
+  right: 0;
   background-image: repeating-linear-gradient(
     45deg,
     rgba(255, 255, 255, 0.22) 0 11px,
     transparent 11px 22px
   );
   animation: arcade-stripes 0.7s linear infinite;
+  will-change: transform;
 }
 .incentive-card-goal.is-reached .arcade-bar-fill {
   background: linear-gradient(90deg, #1a9f4a, #34c759, #5fd97f);
@@ -4556,13 +4576,11 @@ table.crm-table td[style*="text-align: right"] {
   flex-shrink: 0;
 }
 
+/* Streifen laufen über transform (Compositor) statt background-position
+   (Paint pro Frame) — gleiche Optik, keine CPU-Rasterung. */
 @keyframes arcade-stripes {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 31px 0;
-  }
+  from { transform: translateX(0); }
+  to   { transform: translateX(31.11px); }
 }
 @keyframes podium-rise {
   from {
@@ -4703,19 +4721,6 @@ table.crm-table td[style*="text-align: right"] {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes glow-pulse {
-  0%, 100% {
-    box-shadow:
-      0 4px 14px rgba(0, 102, 179, 0.28),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  }
-  50% {
-    box-shadow:
-      0 6px 24px rgba(0, 102, 179, 0.52),
-      inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  }
-}
-
 @keyframes shimmer-sweep {
   0%   { transform: translateX(-100%) skewX(-20deg); }
   100% { transform: translateX(240%)  skewX(-20deg); }
@@ -4724,11 +4729,6 @@ table.crm-table td[style*="text-align: right"] {
 @keyframes float-gentle {
   0%, 100% { transform: translateY(0); }
   50%       { transform: translateY(-5px); }
-}
-
-@keyframes logo-glow {
-  0%, 100% { filter: drop-shadow(0 4px 14px rgba(0, 102, 179, 0.4)); }
-  50%       { filter: drop-shadow(0 6px 22px rgba(0, 102, 179, 0.7)); }
 }
 
 @keyframes orb-breathe {
@@ -4768,14 +4768,19 @@ table.crm-table td[style*="text-align: right"] {
   }
 }
 
-/* ---- Sidebar logo glow ---- */
+/* ---- Sidebar logo glow ----
+   Statisch statt animiert: eine Endlos-Animation auf `filter` zwingt den
+   Browser, das Logo in jedem Frame neu zu rastern — dauerhafte GPU-Last
+   auf jeder Seite. Der statische Schein sieht identisch hochwertig aus. */
 .sidebar-header svg {
-  animation: logo-glow 5s ease-in-out infinite;
+  filter: drop-shadow(0 4px 16px rgba(0, 102, 179, 0.5));
 }
 
-/* ---- Sidebar active item: pulsing glow ---- */
+/* ---- Sidebar active item: statischer Glow (box-shadow-Puls = Dauer-Repaint) ---- */
 .sidebar-item.active {
-  animation: glow-pulse 3s ease-in-out infinite;
+  box-shadow:
+    0 5px 18px rgba(0, 102, 179, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 /* ---- Widget hover: lift + glow ---- */
@@ -4878,20 +4883,18 @@ table.crm-table td[style*="text-align: right"] {
     inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
-/* ---- FAB pulsing glow ---- */
+/* ---- FAB: statischer Glow statt Puls (Endlos-box-shadow = Dauer-Repaint) ---- */
 .fab {
-  animation: glow-pulse 3s ease-in-out infinite;
+  box-shadow:
+    0 5px 20px rgba(0, 102, 179, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 .fab:hover {
-  animation: none;
   transform: scale(1.07);
   box-shadow:
     0 16px 40px rgba(0, 102, 179, 0.6),
     0 6px 16px rgba(0, 0, 0, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
-}
-.fab.open {
-  animation: none;
 }
 
 /* ---- Leaderboard rank-1 gold glow ---- */
@@ -4963,24 +4966,14 @@ table.crm-table td[style*="text-align: right"] {
   box-shadow: 0 4px 16px rgba(0, 102, 179, 0.5);
 }
 
-/* ---- Incentive goal card: reached glow pulse ---- */
+/* ---- Incentive goal card: statischer „Geschafft"-Glow
+   (Endlos-box-shadow-Puls verursachte Dauer-Repaints) ---- */
 .incentive-card-goal.is-reached {
-  animation: incentive-reached-glow 2.5s ease-in-out infinite;
-}
-@keyframes incentive-reached-glow {
-  0%, 100% {
-    border-color: rgba(52, 199, 89, 0.45);
-    box-shadow:
-      0 0 0 1px rgba(52, 199, 89, 0.3),
-      0 12px 32px -10px rgba(52, 199, 89, 0.35);
-  }
-  50% {
-    border-color: rgba(52, 199, 89, 0.65);
-    box-shadow:
-      0 0 0 1px rgba(52, 199, 89, 0.45),
-      0 12px 36px -8px rgba(52, 199, 89, 0.55),
-      0 0 28px rgba(52, 199, 89, 0.18);
-  }
+  border-color: rgba(52, 199, 89, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(52, 199, 89, 0.38),
+    0 12px 34px -9px rgba(52, 199, 89, 0.45),
+    0 0 24px rgba(52, 199, 89, 0.14);
 }
 
 /* ---- Customer card hover glow ---- */
@@ -6076,7 +6069,8 @@ table.crm-table tbody tr:hover td:first-child {
   background: var(--surface-2);
   cursor: pointer;
   text-align: left;
-  transition: all 0.18s ease;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease,
+    box-shadow 0.18s ease, transform 0.18s ease;
   width: 100%;
 }
 
@@ -6631,7 +6625,8 @@ table.crm-table tbody tr:hover td:first-child {
   gap: 8px;
   cursor: pointer;
   box-shadow: var(--shadow-tng);
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .consent-accept-btn:hover:not(:disabled) {
@@ -6712,7 +6707,8 @@ table.crm-table tbody tr:hover td:first-child {
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .btn-danger:hover:not(:disabled) {
@@ -6848,3 +6844,90 @@ table.crm-table tbody tr:hover td:first-child {
 .theme-seg-label { font-size: 13.5px; font-weight: 600; }
 .theme-seg-hint { font-size: 11.5px; color: var(--text-tertiary); }
 .theme-seg-btn.active .theme-seg-hint { color: var(--tng-blue-light); }
+
+/* =================================================================
+   Feinschliff-Layer — Typografie, Auswahl, Fokus, Zahlen
+   (bewusst niedrige Spezifität via :where, überschreibt keine States)
+   ================================================================= */
+
+/* Markieren in Markenfarbe */
+::selection {
+  background: rgba(0, 102, 179, 0.18);
+  color: var(--text);
+}
+:root[data-theme='dark'] ::selection {
+  background: rgba(0, 163, 224, 0.32);
+}
+
+/* Scrollbars: Firefox + dunkles Theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(60, 60, 67, 0.25) transparent;
+}
+:root[data-theme='dark'] * {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+:root[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+:root[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+  background-clip: content-box;
+}
+
+/* Tabellenziffern überall dort, wo Zahlen untereinander stehen —
+   Beträge und KPIs „springen" nicht mehr und wirken gesetzt. */
+:where(
+  table.crm-table td,
+  .kpi-value,
+  .kpi-delta,
+  .target-info-value,
+  .target-info-sub,
+  .target-ring-pct,
+  .recent-amount,
+  .customer-commission,
+  .hero-stat-value,
+  .incentive-progress-label,
+  .lead-renewal-com,
+  .expiry-radar-com,
+  .titlebar-date
+) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fokus-Ring als Fallback für alles Interaktive ohne eigenen Fokus-Stil */
+:where(button, a, input, select, textarea, [role='button']):focus-visible {
+  outline: 2px solid rgba(0, 102, 179, 0.55);
+  outline-offset: 2px;
+}
+:root[data-theme='dark'] :where(button, a, input, select, textarea, [role='button']):focus-visible {
+  outline-color: rgba(0, 163, 224, 0.7);
+}
+
+/* Dezentes Drück-Feedback in der Navigation */
+.sidebar-item:active {
+  transform: scale(0.985);
+}
+
+/* Überschriften minimal enger — wirkt gesetzter mit Inter */
+:where(h1, h2, h3) {
+  letter-spacing: -0.02em;
+}
+
+/* Titelleiste: feiner Verlaufs-Hauch statt flacher Fläche */
+.titlebar {
+  background-image: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.35),
+    rgba(255, 255, 255, 0)
+  );
+}
+:root[data-theme='dark'] .titlebar {
+  background-image: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.045),
+    rgba(255, 255, 255, 0)
+  );
+}
