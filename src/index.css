@@ -1856,38 +1856,85 @@ table.crm-table td[style*="text-align: right"] {
   color: var(--text-tertiary);
 }
 
-.podium {
+/* Top 3 — ruhige Daten-Karten mit feinen Metall-Akzenten statt Sieger-Podest */
+.top3 {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr 1.16fr 1fr;
   gap: 14px;
   margin-bottom: 16px;
+  align-items: stretch;
 }
-.podium-col {
+.top3-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  justify-content: center;
+  text-align: center;
+  padding: 24px 16px 20px;
+  background: var(--widget-bg, var(--bg-card));
+  border: 1px solid var(--widget-border, var(--border));
   border-radius: var(--r-lg);
-  padding: 16px 8px 0;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--widget-shadow, var(--shadow-sm));
 }
-.podium-col.place-1 {
-  background: linear-gradient(180deg, rgba(255, 204, 0, 0.18), var(--bg-card) 60%);
-  border-color: rgba(255, 204, 0, 0.5);
+.top3-card.place-1 {
+  padding-top: 32px;
+  padding-bottom: 26px;
+  box-shadow:
+    var(--widget-shadow, var(--shadow-sm)),
+    inset 0 2px 0 rgba(201, 151, 28, 0.55);
 }
-.podium-col.place-2 {
-  background: linear-gradient(180deg, rgba(174, 174, 178, 0.22), var(--bg-card) 60%);
-  border-color: rgba(174, 174, 178, 0.5);
+.top3-card.place-2 {
+  box-shadow:
+    var(--widget-shadow, var(--shadow-sm)),
+    inset 0 2px 0 rgba(142, 142, 147, 0.5);
 }
-.podium-col.place-3 {
-  background: linear-gradient(180deg, rgba(205, 127, 50, 0.18), var(--bg-card) 60%);
-  border-color: rgba(205, 127, 50, 0.45);
+.top3-card.place-3 {
+  box-shadow:
+    var(--widget-shadow, var(--shadow-sm)),
+    inset 0 2px 0 rgba(176, 109, 54, 0.45);
 }
-.podium-avatar {
-  width: 48px;
-  height: 48px;
+.top3-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.place-1 .top3-badge {
+  background: rgba(201, 151, 28, 0.12);
+  color: #a87b0a;
+  border-color: rgba(201, 151, 28, 0.35);
+}
+.place-2 .top3-badge {
+  background: rgba(142, 142, 147, 0.12);
+  color: #6e6e73;
+  border-color: rgba(142, 142, 147, 0.35);
+}
+.place-3 .top3-badge {
+  background: rgba(176, 109, 54, 0.11);
+  color: #9c5c1f;
+  border-color: rgba(176, 109, 54, 0.32);
+}
+:root[data-theme='dark'] .place-1 .top3-badge { color: #e3b94e; }
+:root[data-theme='dark'] .place-2 .top3-badge { color: #b7b7bc; }
+:root[data-theme='dark'] .place-3 .top3-badge { color: #d1935a; }
+.top3-crown {
+  color: #c9971c;
+  margin-bottom: 5px;
+}
+.top3-avatar {
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   background: var(--tng-gradient);
   color: white;
@@ -1895,53 +1942,57 @@ table.crm-table td[style*="text-align: right"] {
   font-size: 16px;
   display: grid;
   place-items: center;
-  box-shadow: var(--shadow-tng);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  box-shadow: 0 2px 8px rgba(9, 30, 54, 0.18);
 }
-.podium-col.place-1 .podium-avatar {
-  background: linear-gradient(135deg, #f5a623 0%, #ffcc00 100%);
-  box-shadow: 0 8px 24px rgba(255, 204, 0, 0.4);
-  width: 56px;
-  height: 56px;
+.place-1 .top3-avatar {
+  width: 60px;
+  height: 60px;
+  font-size: 18px;
+  box-shadow:
+    0 0 0 2px rgba(201, 151, 28, 0.6),
+    0 0 0 6px rgba(201, 151, 28, 0.12),
+    0 3px 10px rgba(9, 30, 54, 0.18);
 }
-.podium-name {
+.place-2 .top3-avatar {
+  box-shadow:
+    0 0 0 2px rgba(142, 142, 147, 0.55),
+    0 0 0 6px rgba(142, 142, 147, 0.12),
+    0 2px 8px rgba(9, 30, 54, 0.18);
+}
+.place-3 .top3-avatar {
+  box-shadow:
+    0 0 0 2px rgba(176, 109, 54, 0.5),
+    0 0 0 6px rgba(176, 109, 54, 0.11),
+    0 2px 8px rgba(9, 30, 54, 0.18);
+}
+.top3-name {
   font-size: 13.5px;
-  font-weight: 600;
+  font-weight: 650;
   letter-spacing: -0.1px;
   color: var(--text);
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.podium-amount {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--tng-blue-dark);
-  margin: 2px 0 10px;
+.top3-amount {
+  font-size: 24px;
+  font-weight: 780;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  margin-top: 7px;
+  line-height: 1.1;
 }
-.podium-block {
-  width: 100%;
-  background: var(--tng-gradient);
-  border-radius: 10px 10px 0 0;
-  display: grid;
-  place-items: center;
-  color: white;
-  font-weight: 800;
-  font-size: 26px;
+.place-1 .top3-amount {
+  font-size: 30px;
 }
-.podium-col.place-1 .podium-block {
-  background: linear-gradient(180deg, #f5a623 0%, #d68706 100%);
-}
-.podium-col.place-2 .podium-block {
-  background: linear-gradient(180deg, #b8b9bc 0%, #8e8e93 100%);
-}
-.podium-col.place-3 .podium-block {
-  background: linear-gradient(180deg, #cd7f32 0%, #9c5c1f 100%);
-}
-.podium-place {
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+.top3-sub {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 .leaderboard-list {
@@ -1967,33 +2018,24 @@ table.crm-table td[style*="text-align: right"] {
   background: linear-gradient(135deg, rgba(0, 102, 179, 0.07), rgba(0, 163, 224, 0.04));
   border-color: rgba(0, 102, 179, 0.28);
 }
-.leaderboard-row.rank-1 {
-  border-color: rgba(245, 166, 35, 0.4);
-}
+/* Rang ohne Farb-Chip: ruhige Ziffer, Top 3 nur dezent metallisch getönt */
 .leaderboard-rank {
-  width: 32px;
+  width: 28px;
   height: 32px;
-  border-radius: 8px;
   display: grid;
   place-items: center;
-  background: var(--surface-2);
-  color: var(--text-secondary);
-  font-weight: 700;
+  color: var(--text-tertiary);
+  font-weight: 650;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
-.leaderboard-row.rank-1 .leaderboard-rank {
-  background: linear-gradient(135deg, #f5a623, #ffcc00);
-  color: white;
-}
-.leaderboard-row.rank-2 .leaderboard-rank {
-  background: linear-gradient(135deg, #b8b9bc, #8e8e93);
-  color: white;
-}
-.leaderboard-row.rank-3 .leaderboard-rank {
-  background: linear-gradient(135deg, #cd7f32, #9c5c1f);
-  color: white;
-}
+.leaderboard-row.rank-1 .leaderboard-rank { color: #b8860b; }
+.leaderboard-row.rank-2 .leaderboard-rank { color: #8e8e93; }
+.leaderboard-row.rank-3 .leaderboard-rank { color: #9c5c1f; }
+:root[data-theme='dark'] .leaderboard-row.rank-1 .leaderboard-rank { color: #e3b94e; }
+:root[data-theme='dark'] .leaderboard-row.rank-2 .leaderboard-rank { color: #b7b7bc; }
+:root[data-theme='dark'] .leaderboard-row.rank-3 .leaderboard-rank { color: #d1935a; }
 .leaderboard-avatar {
   width: 36px;
   height: 36px;
@@ -2029,7 +2071,8 @@ table.crm-table td[style*="text-align: right"] {
 .leaderboard-amount {
   font-size: 14px;
   font-weight: 700;
-  color: var(--tng-blue-dark);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .leaderboard-bar {
@@ -2046,7 +2089,7 @@ table.crm-table td[style*="text-align: right"] {
   transition: width 0.4s cubic-bezier(.4,.0,.2,1);
 }
 .leaderboard-row.rank-1 .leaderboard-bar-fill {
-  background: linear-gradient(90deg, #f5a623, #ffcc00);
+  background: linear-gradient(90deg, #c9971c, #e3b94e);
 }
 
 /* =================================================================
@@ -4251,8 +4294,10 @@ table.crm-table td[style*="text-align: right"] {
   height: 48px;
   border-radius: 14px;
   color: #fff;
-  background: linear-gradient(135deg, #f5a623, #ffcc00);
-  box-shadow: 0 8px 22px rgba(245, 166, 35, 0.45);
+  background: var(--tng-gradient);
+  box-shadow:
+    0 1px 2px rgba(9, 30, 54, 0.16),
+    0 6px 16px rgba(9, 30, 54, 0.16);
   flex-shrink: 0;
 }
 
@@ -4280,12 +4325,12 @@ table.crm-table td[style*="text-align: right"] {
   flex-shrink: 0;
 }
 .incentive-section-icon.week {
-  background: linear-gradient(135deg, #f5a623, #ff7a18);
-  box-shadow: 0 4px 12px rgba(245, 122, 24, 0.4);
+  background: linear-gradient(135deg, #e8963f, #d97a1a);
+  box-shadow: 0 2px 6px rgba(9, 30, 54, 0.16);
 }
 .incentive-section-icon.month {
   background: var(--tng-gradient);
-  box-shadow: 0 4px 12px rgba(0, 102, 179, 0.4);
+  box-shadow: 0 2px 6px rgba(9, 30, 54, 0.16);
 }
 
 .incentive-grid {
@@ -4424,12 +4469,8 @@ table.crm-table td[style*="text-align: right"] {
   padding: 10px 12px;
   margin-top: auto;
   border-radius: 11px;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 204, 0, 0.16),
-    rgba(245, 166, 35, 0.05)
-  );
-  border: 1px dashed rgba(245, 166, 35, 0.5);
+  background: rgba(201, 151, 28, 0.08);
+  border: 1px solid rgba(201, 151, 28, 0.28);
 }
 .incentive-prize strong {
   color: var(--text);
@@ -4457,8 +4498,7 @@ table.crm-table td[style*="text-align: right"] {
   animation-delay: 0.12s;
 }
 .arcade-crown {
-  color: #ffcc00;
-  filter: drop-shadow(0 2px 7px rgba(255, 204, 0, 0.75));
+  color: #c9971c;
   animation: arcade-crown-bounce 2.4s ease-in-out infinite;
 }
 .arcade-podium-avatar {
@@ -4478,14 +4518,20 @@ table.crm-table td[style*="text-align: right"] {
   width: 56px;
   height: 56px;
   font-size: 17px;
-  background: linear-gradient(135deg, #f5a623, #ffcc00);
-  box-shadow: 0 0 22px rgba(255, 204, 0, 0.7);
+  box-shadow:
+    0 0 0 2px rgba(201, 151, 28, 0.6),
+    0 0 0 6px rgba(201, 151, 28, 0.12),
+    0 3px 10px rgba(9, 30, 54, 0.18);
 }
 .place-2 .arcade-podium-avatar {
-  background: linear-gradient(135deg, #c8c9cc, #8e8e93);
+  box-shadow:
+    0 0 0 2px rgba(142, 142, 147, 0.55),
+    0 2px 8px rgba(9, 30, 54, 0.16);
 }
 .place-3 .arcade-podium-avatar {
-  background: linear-gradient(135deg, #e0935a, #cd7f32);
+  box-shadow:
+    0 0 0 2px rgba(176, 109, 54, 0.5),
+    0 2px 8px rgba(9, 30, 54, 0.16);
 }
 .arcade-podium-name {
   display: flex;
@@ -4502,34 +4548,47 @@ table.crm-table td[style*="text-align: right"] {
 }
 .arcade-podium-score {
   font-size: 12.5px;
-  font-weight: 900;
-  color: var(--tng-blue-dark);
+  font-weight: 750;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
   margin: 2px 0 8px;
 }
+/* Podest-Stufen: ruhige, getönte Flächen mit Metall-Ziffer statt
+   satter Gold/Silber/Bronze-Blöcke */
 .arcade-podium-block {
   position: relative;
   width: 100%;
   display: grid;
   place-items: center;
   border-radius: 12px 12px 0 0;
-  color: #fff;
-  font-weight: 900;
-  font-size: 30px;
-  text-shadow: 0 2px 7px rgba(0, 0, 0, 0.35);
+  font-weight: 800;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
 }
 .place-1 .arcade-podium-block {
-  height: 98px;
-  background: linear-gradient(180deg, #ffd633, #f5a623 65%, #d68706);
-  box-shadow: 0 0 26px rgba(255, 204, 0, 0.55);
+  height: 96px;
+  background: rgba(201, 151, 28, 0.13);
+  border: 1px solid rgba(201, 151, 28, 0.32);
+  border-bottom: none;
+  color: #a87b0a;
 }
 .place-2 .arcade-podium-block {
-  height: 72px;
-  background: linear-gradient(180deg, #d6d7d9, #b8b9bc 60%, #8e8e93);
+  height: 70px;
+  background: rgba(142, 142, 147, 0.13);
+  border: 1px solid rgba(142, 142, 147, 0.32);
+  border-bottom: none;
+  color: #6e6e73;
 }
 .place-3 .arcade-podium-block {
-  height: 54px;
-  background: linear-gradient(180deg, #e0935a, #cd7f32 60%, #9c5c1f);
+  height: 52px;
+  background: rgba(176, 109, 54, 0.12);
+  border: 1px solid rgba(176, 109, 54, 0.3);
+  border-bottom: none;
+  color: #9c5c1f;
 }
+:root[data-theme='dark'] .place-1 .arcade-podium-block { color: #e3b94e; }
+:root[data-theme='dark'] .place-2 .arcade-podium-block { color: #b7b7bc; }
+:root[data-theme='dark'] .place-3 .arcade-podium-block { color: #d1935a; }
 .arcade-podium-col.is-me .arcade-podium-block {
   outline: 2px solid var(--tng-blue);
   outline-offset: -2px;
@@ -4908,35 +4967,6 @@ table.crm-table td[style*="text-align: right"] {
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
-/* ---- Leaderboard rank-1 gold glow ---- */
-.leaderboard-row.rank-1 {
-  box-shadow:
-    0 2px 12px rgba(245, 166, 35, 0.22),
-    0 0 0 1px rgba(245, 166, 35, 0.15);
-}
-.leaderboard-row.rank-1:hover {
-  box-shadow:
-    0 4px 20px rgba(245, 166, 35, 0.42),
-    0 0 0 1px rgba(245, 166, 35, 0.28);
-}
-
-/* ---- Podium place-1 gold aura ---- */
-.podium-col.place-1 {
-  box-shadow: 0 0 30px rgba(255, 204, 0, 0.22);
-}
-
-/* ---- Arcade podium place-1 intensified glow ---- */
-.place-1 .arcade-podium-block {
-  box-shadow:
-    0 0 36px rgba(255, 204, 0, 0.75),
-    0 0 72px rgba(255, 204, 0, 0.25) !important;
-}
-.place-1 .arcade-podium-avatar {
-  box-shadow:
-    0 0 28px rgba(255, 204, 0, 0.85),
-    0 4px 14px rgba(0, 0, 0, 0.14);
-}
-
 /* ---- Target ring SVG glow ---- */
 .target-ring-fill {
   filter: drop-shadow(0 0 6px rgba(0, 102, 179, 0.5));
@@ -4952,29 +4982,17 @@ table.crm-table td[style*="text-align: right"] {
   animation: orb-breathe 5s ease-in-out infinite;
 }
 
-/* ---- Arcade bar fill enhanced glow ---- */
+/* ---- Arcade bar fill: dezenter Schein statt Neon ---- */
 .arcade-bar-fill {
-  box-shadow:
-    0 0 18px rgba(0, 163, 224, 0.75),
-    0 0 6px rgba(0, 102, 179, 0.45);
+  box-shadow: 0 0 8px rgba(0, 163, 224, 0.3);
 }
 .incentive-card-goal.is-reached .arcade-bar-fill {
-  box-shadow:
-    0 0 22px rgba(52, 199, 89, 0.8),
-    0 0 8px rgba(52, 199, 89, 0.5);
+  box-shadow: 0 0 8px rgba(52, 199, 89, 0.35);
 }
 
 /* ---- Incentive page icon floating ---- */
 .incentive-page-icon {
   animation: float-gentle 5s ease-in-out infinite;
-}
-
-/* ---- Incentive section icons glow ---- */
-.incentive-section-icon.week {
-  box-shadow: 0 4px 16px rgba(245, 122, 24, 0.55);
-}
-.incentive-section-icon.month {
-  box-shadow: 0 4px 16px rgba(0, 102, 179, 0.5);
 }
 
 /* ---- Incentive goal card: statischer „Geschafft"-Glow
@@ -5104,10 +5122,10 @@ table.crm-table tbody tr:hover td:first-child {
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
-/* ---- Leaderboard avatar glow ---- */
+/* ---- Leaderboard avatar: neutraler Mikro-Schatten ---- */
 .leaderboard-avatar {
   box-shadow:
-    0 2px 8px rgba(0, 102, 179, 0.28),
+    0 1px 3px rgba(9, 30, 54, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
@@ -6706,32 +6724,9 @@ table.crm-table tbody tr:hover td:first-child {
   min-width: 240px;
 }
 
-.btn-danger {
-  background: var(--red);
-  color: white;
-  border: none;
-  border-radius: var(--r-sm);
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
-    box-shadow 0.15s ease, transform 0.15s ease;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #d8312a;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(255, 59, 48, 0.3);
-}
-
-.btn-danger:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+/* .btn-danger bleibt bewusst die ruhige Outline-Variante aus dem
+   Button-System (rote Schrift + Hairline) — destruktive Aktionen
+   sollen erreichbar sein, aber nicht wie Alarmknöpfe schreien. */
 
 /* =================================================================
    Kunden-Zugriffsanfragen — Posteingang & Banner

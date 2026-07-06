@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Trophy, Crown, Medal, Award, EyeOff, Sparkles, BarChart3 } from 'lucide-react';
+import { Crown, Medal, Award, EyeOff, Sparkles, BarChart3 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { SkeletonTable } from '../components/Skeleton';
@@ -94,10 +94,7 @@ export function Leaderboard() {
     <div>
       <div className="page-header">
         <div>
-          <h2>
-            <Trophy size={20} style={{ verticalAlign: '-3px', marginRight: 8, color: '#f5a623' }} />
-            Leaderboard
-          </h2>
+          <h2>Leaderboard</h2>
           <p>Wer hat in diesem Monat die meiste Provision erzielt?</p>
         </div>
       </div>
@@ -142,7 +139,7 @@ export function Leaderboard() {
         </div>
       ) : (
         <>
-          {visibleRows.length >= 3 && <Podium rows={visibleRows.slice(0, 3)} />}
+          {visibleRows.length >= 3 && <TopThree rows={visibleRows.slice(0, 3)} />}
 
           <div className="widget">
             <div className="row between" style={{ marginBottom: 14 }}>
@@ -208,19 +205,32 @@ export function Leaderboard() {
   );
 }
 
-function Podium({ rows }: { rows: Row[] }) {
+/**
+ * Top 3 als ruhige Daten-Karten statt Sieger-Podest: die große Provisions-
+ * zahl ist der Held, die Platzierung zeigt sich nur in feinen Metall-Akzenten
+ * (Ring um den Avatar, kleines Badge) — kein Farbblock, kein Glow.
+ */
+function TopThree({ rows }: { rows: Row[] }) {
   const order = [rows[1], rows[0], rows[2]]; // visuell: 2 – 1 – 3
-  const heights = [110, 140, 90];
   const places = [2, 1, 3];
   return (
-    <div className="podium">
+    <div className="top3">
       {order.map((r, i) => (
-        <div key={r.key} className={`podium-col place-${places[i]}`}>
-          <div className="podium-avatar">{initialsOf(r.displayName)}</div>
-          <div className="podium-name">{r.displayName}</div>
-          <div className="podium-amount">{formatCurrency(r.monthCommission)}</div>
-          <div className="podium-block" style={{ height: heights[i] }}>
-            <span className="podium-place">{places[i]}</span>
+        <div
+          key={r.key}
+          className={`top3-card place-${places[i]} ${r.isMe ? 'is-me' : ''}`}
+        >
+          <div className="top3-badge">{places[i]}</div>
+          {places[i] === 1 && <Crown size={16} className="top3-crown" aria-hidden />}
+          <div className="top3-avatar">{initialsOf(r.displayName)}</div>
+          <div className="top3-name">
+            {r.displayName}
+            {r.isMe && <span className="leaderboard-me">Du</span>}
+          </div>
+          <div className="top3-amount">{formatCurrency(r.monthCommission)}</div>
+          <div className="top3-sub">
+            {r.deals} Abschluss{r.deals === 1 ? '' : 'e'} · Gesamt{' '}
+            {formatCurrency(r.totalCommission)}
           </div>
         </div>
       ))}

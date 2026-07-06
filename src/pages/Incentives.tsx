@@ -83,7 +83,7 @@ export function Incentives() {
           <div>
             <h2 style={{ margin: 0 }}>Incentives</h2>
             <p style={{ margin: '4px 0 0' }}>
-              Schnapp dir die Belohnungen — los geht's!
+              Team-Aktionen mit Belohnung — dein Fortschritt zählt automatisch.
             </p>
           </div>
         </div>
