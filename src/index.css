@@ -209,7 +209,11 @@ code {
 }
 
 .sidebar-header svg {
-  filter: drop-shadow(0 4px 14px rgba(0, 102, 179, 0.4));
+  /* Feiner neutraler Schatten (wie ein macOS-Dock-Icon) statt Farb-Halo */
+  border-radius: 22%;
+  box-shadow:
+    0 1px 1.5px rgba(9, 30, 54, 0.16),
+    0 5px 14px rgba(9, 30, 54, 0.18);
   flex-shrink: 0;
 }
 .sidebar-title {
@@ -219,10 +223,12 @@ code {
   letter-spacing: -0.15px;
 }
 .sidebar-subtitle {
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 600;
   color: var(--text-tertiary);
-  margin-top: 2px;
-  letter-spacing: 0.15px;
+  margin-top: 3px;
+  letter-spacing: 0.55px;
+  text-transform: uppercase;
 }
 
 .sidebar-section {
@@ -2155,7 +2161,10 @@ table.crm-table td[style*="text-align: right"] {
   margin: 4px 0 18px;
 }
 .onboarding-hero-logo svg {
-  filter: drop-shadow(0 8px 24px rgba(0, 102, 179, 0.35));
+  border-radius: 25%;
+  box-shadow:
+    0 2px 4px rgba(9, 30, 54, 0.14),
+    0 12px 28px rgba(9, 30, 54, 0.2);
 }
 .onboarding-title {
   margin: 0 0 8px;
@@ -4768,18 +4777,10 @@ table.crm-table td[style*="text-align: right"] {
   }
 }
 
-/* ---- Sidebar logo glow ----
-   Statisch statt animiert: eine Endlos-Animation auf `filter` zwingt den
-   Browser, das Logo in jedem Frame neu zu rastern — dauerhafte GPU-Last
-   auf jeder Seite. Der statische Schein sieht identisch hochwertig aus. */
-.sidebar-header svg {
-  filter: drop-shadow(0 4px 16px rgba(0, 102, 179, 0.5));
-}
-
-/* ---- Sidebar active item: statischer Glow (box-shadow-Puls = Dauer-Repaint) ---- */
+/* ---- Sidebar active item: dezenter statischer Schein ---- */
 .sidebar-item.active {
   box-shadow:
-    0 5px 18px rgba(0, 102, 179, 0.4),
+    0 3px 12px rgba(0, 102, 179, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
