@@ -3669,7 +3669,8 @@ table.crm-table td[style*="text-align: right"] {
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
   padding: 40px 44px 48px;
   color: #1c1c1e;
-  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-variant-numeric: tabular-nums;
 }
 .report-header {
   display: flex;
@@ -3677,7 +3678,15 @@ table.crm-table td[style*="text-align: right"] {
   align-items: flex-start;
   border-bottom: 2px solid #0066b3;
   padding-bottom: 20px;
-  margin-bottom: 28px;
+  margin-bottom: 22px;
+}
+.report-doc-type {
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #0066b3;
+  margin-bottom: 4px;
 }
 .report-title {
   font-size: 28px;
@@ -3689,6 +3698,43 @@ table.crm-table td[style*="text-align: right"] {
   font-size: 14.5px;
   color: #6b6b70;
   margin-top: 4px;
+}
+.report-meta {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #1c1c1e;
+}
+.report-meta em {
+  font-style: normal;
+  color: #9b9ba0;
+  margin-right: 4px;
+}
+
+/* Management-Zusammenfassung */
+.report-summary {
+  background: #f4f8fc;
+  border: 1px solid rgba(0, 102, 179, 0.16);
+  border-left: 3px solid #0066b3;
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-bottom: 22px;
+}
+.report-summary-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #0066b3;
+  margin-bottom: 6px;
+}
+.report-summary p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #1c1c1e;
 }
 .report-brand {
   display: flex;
@@ -3731,6 +3777,119 @@ table.crm-table td[style*="text-align: right"] {
   font-size: 11px;
   color: #6b6b70;
   margin-top: 4px;
+}
+.report-kpi-sub.pos { color: #1a8f43; font-weight: 600; }
+.report-kpi-sub.neg { color: #c23934; font-weight: 600; }
+
+/* Mini-Fortschrittsbalken (Zielerreichung) */
+.report-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: #e6e6ea;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.report-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #0066b3, #00a3e0);
+}
+
+/* Zwei-Spalten-Block (Verlauf + Top-Produkte) */
+.report-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.report-table-compact {
+  font-size: 12px;
+}
+.report-table-compact th,
+.report-table-compact td {
+  padding: 6px 8px;
+}
+.report-highlight {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #1c1c1e;
+}
+.report-highlight em {
+  font-style: normal;
+  color: #6b6b70;
+}
+
+/* Print-sicherer Balken-Verlauf (reine DIVs, keine Canvas/JS-Charts) */
+.report-chart {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  align-items: end;
+  height: 150px;
+  padding-top: 4px;
+}
+.report-chart-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+}
+.report-chart-value {
+  font-size: 10px;
+  color: #6b6b70;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.report-chart-track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.report-chart-bar {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  background: #c6ddf0;
+  min-height: 3px;
+}
+.report-chart-bar.current {
+  background: linear-gradient(180deg, #0080d0, #0066b3);
+}
+.report-chart-label {
+  font-size: 10.5px;
+  color: #6b6b70;
+  margin-top: 6px;
+  white-space: nowrap;
+}
+.report-chart-label.current {
+  color: #0066b3;
+  font-weight: 700;
+}
+
+/* Stornierte Zeilen in den Detailtabellen */
+.report-row-cancelled td {
+  color: #9b9ba0;
+  text-decoration: line-through;
+}
+.report-row-cancelled td:last-child {
+  text-decoration: none;
+}
+
+/* Unterschriften-Block fürs formale Einreichen */
+.report-signatures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  margin: 44px 0 28px;
+}
+.report-signature-line {
+  border-bottom: 1px solid #1c1c1e;
+  height: 34px;
+}
+.report-signature-label {
+  font-size: 11px;
+  color: #6b6b70;
+  margin-top: 6px;
 }
 .report-section {
   margin-bottom: 28px;
@@ -3826,6 +3985,7 @@ table.crm-table td[style*="text-align: right"] {
     margin: 16mm 14mm;
     size: A4;
   }
+  html,
   body {
     background: white !important;
   }
@@ -3854,6 +4014,18 @@ table.crm-table td[style*="text-align: right"] {
   }
   .report-section {
     page-break-inside: avoid;
+  }
+  .report-signatures,
+  .report-grand-total,
+  .report-summary,
+  .report-kpis {
+    page-break-inside: avoid;
+  }
+  /* Getönte Flächen und Balken auch im Ausdruck farbig ausgeben */
+  .report-page,
+  .report-page * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }
 
