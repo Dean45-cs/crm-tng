@@ -7109,3 +7109,294 @@ table.crm-table tbody tr:hover td:first-child {
     rgba(255, 255, 255, 0)
   );
 }
+
+/* =================================================================
+   Netto-Rechner
+   ================================================================= */
+.netto-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(300px, 420px);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .netto-layout { grid-template-columns: 1fr; }
+}
+.netto-fill-btn {
+  margin-top: 10px;
+}
+.netto-rate-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.netto-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.netto-preset {
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.netto-preset:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.netto-preset.active {
+  background: var(--tng-blue-50);
+  border-color: rgba(0, 102, 179, 0.4);
+  color: var(--tng-blue, #0066b3);
+}
+:root[data-theme='dark'] .netto-preset.active { color: #6cbef0; }
+
+/* Ergebnis-Karte */
+.netto-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.netto-result-brutto,
+.netto-result-netto {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.netto-result-brutto span,
+.netto-result-netto span {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.netto-result-brutto strong {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.netto-result-arrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  padding-left: 2px;
+}
+.netto-result-netto {
+  padding-top: 6px;
+  border-top: 1px solid var(--separator);
+}
+.netto-result-netto strong {
+  font-size: 30px;
+  font-weight: 780;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--tng-blue, #0066b3);
+}
+:root[data-theme='dark'] .netto-result-netto strong { color: #6cbef0; }
+
+/* Verteilungs-Balken Netto vs. Abzüge */
+.netto-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.netto-bar-net {
+  height: 100%;
+  border-radius: 5px 0 0 5px;
+  background: linear-gradient(90deg, #0066b3, #00a3e0);
+  transition: width 0.25s var(--ease-out, ease);
+}
+.netto-bar-legend {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.netto-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: 0;
+}
+.netto-dot.net { background: var(--tng-blue, #0066b3); }
+.netto-dot.deduct { background: var(--surface-3); border: 1px solid var(--border-strong); }
+
+.netto-disclaimer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.netto-disclaimer svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--text-tertiary);
+}
+
+/* =================================================================
+   Netto-Rechner
+   ================================================================= */
+.netto-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(300px, 420px);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .netto-layout { grid-template-columns: 1fr; }
+}
+.netto-fill-btn {
+  margin-top: 10px;
+}
+.netto-rate-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.netto-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.netto-preset {
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.netto-preset:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.netto-preset.active {
+  background: var(--tng-blue-50);
+  border-color: rgba(0, 102, 179, 0.4);
+  color: var(--tng-blue, #0066b3);
+}
+:root[data-theme='dark'] .netto-preset.active { color: #6cbef0; }
+
+/* Ergebnis-Karte */
+.netto-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.netto-result-brutto,
+.netto-result-netto {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.netto-result-brutto span,
+.netto-result-netto span {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.netto-result-brutto strong {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.netto-result-arrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  padding-left: 2px;
+}
+.netto-result-netto {
+  padding-top: 6px;
+  border-top: 1px solid var(--separator);
+}
+.netto-result-netto strong {
+  font-size: 30px;
+  font-weight: 780;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--tng-blue, #0066b3);
+}
+:root[data-theme='dark'] .netto-result-netto strong { color: #6cbef0; }
+
+/* Verteilungs-Balken Netto vs. Abzüge */
+.netto-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.netto-bar-net {
+  height: 100%;
+  border-radius: 5px 0 0 5px;
+  background: linear-gradient(90deg, #0066b3, #00a3e0);
+  transition: width 0.25s ease;
+}
+.netto-bar-legend {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.netto-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+.netto-dot.net { background: var(--tng-blue, #0066b3); }
+.netto-dot.deduct { background: var(--surface-3); border: 1px solid var(--border-strong); }
+
+.netto-disclaimer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.netto-disclaimer svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--text-tertiary);
+}

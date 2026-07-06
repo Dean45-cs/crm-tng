@@ -17,7 +17,8 @@ export type Route =
   | { name: 'incentives' }
   | { name: 'incentivemanager' }
   | { name: 'leads' }
-  | { name: 'auditlog' };
+  | { name: 'auditlog' }
+  | { name: 'netto' };
 
 export type RouteName = Route['name'];
 

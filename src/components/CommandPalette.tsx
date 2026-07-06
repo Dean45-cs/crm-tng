@@ -17,6 +17,7 @@ import {
   Settings as SettingsIcon,
   Plus,
   CornerDownLeft,
+  Calculator,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useRouter, type Route } from '../router';
@@ -93,6 +94,7 @@ function PaletteDialog({ close: closePalette }: { close: () => void }) {
       { id: 'nav-notes', group: 'Navigation', icon: <StickyNote size={15} />, label: 'Notizen', run: go({ name: 'notes' }) },
       { id: 'nav-customers', group: 'Navigation', icon: <Users size={15} />, label: 'Kunden', run: go({ name: 'customers' }) },
       { id: 'nav-leaderboard', group: 'Navigation', icon: <Trophy size={15} />, label: 'Leaderboard', run: go({ name: 'leaderboard' }) },
+      { id: 'nav-netto', group: 'Navigation', icon: <Calculator size={15} />, label: 'Netto-Rechner', run: go({ name: 'netto' }) },
       { id: 'nav-settings', group: 'Navigation', icon: <SettingsIcon size={15} />, label: 'Einstellungen', run: go({ name: 'settings' }) },
     ];
 

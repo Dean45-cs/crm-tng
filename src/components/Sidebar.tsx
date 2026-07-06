@@ -14,6 +14,7 @@ import {
   LogOut,
   Download,
   ShieldCheck,
+  Calculator,
 } from 'lucide-react';
 import { useRouter, type Route, type RouteName } from '../router';
 import { useAuth } from '../store/useAuth';
@@ -34,6 +35,7 @@ function buildSections(showChef: boolean): { title: string; items: NavItemDef[] 
         { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
         { id: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={16} /> },
         { id: 'incentives', label: 'Incentives', icon: <Gift size={16} /> },
+        { id: 'netto', label: 'Netto-Rechner', icon: <Calculator size={16} /> },
       ],
     },
     {

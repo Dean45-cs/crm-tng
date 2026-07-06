@@ -37,6 +37,7 @@ const Incentives = lazy(() => import('./pages/Incentives').then((m) => ({ defaul
 const IncentiveManager = lazy(() => import('./pages/IncentiveManager').then((m) => ({ default: m.IncentiveManager })));
 const Leads = lazy(() => import('./pages/Leads').then((m) => ({ default: m.Leads })));
 const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m.AuditLog })));
+const NettoRechner = lazy(() => import('./pages/NettoRechner').then((m) => ({ default: m.NettoRechner })));
 
 const TITLES: Record<RouteName, string> = {
   dashboard: 'Dashboard',
@@ -56,6 +57,7 @@ const TITLES: Record<RouteName, string> = {
   incentivemanager: 'Incentive-Verwaltung',
   leads: 'Leads',
   auditlog: 'Audit-Log',
+  netto: 'Netto-Rechner',
 };
 
 function PageFallback() {
@@ -94,6 +96,7 @@ function prefetchAllPages() {
       import('./pages/IncentiveManager'),
       import('./pages/Leads'),
       import('./pages/AuditLog'),
+      import('./pages/NettoRechner'),
     ]);
   });
 }
@@ -161,6 +164,7 @@ function Shell() {
               {route.name === 'incentivemanager' && <IncentiveManager />}
               {route.name === 'leads' && <Leads />}
               {route.name === 'auditlog' && <AuditLog />}
+              {route.name === 'netto' && <NettoRechner />}
             </Suspense>
           </div>
         </div>
