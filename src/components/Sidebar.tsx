@@ -18,7 +18,7 @@ import {
 import { useRouter, type Route, type RouteName } from '../router';
 import { useAuth } from '../store/useAuth';
 import { usePwaInstall } from '../lib/pwaInstall';
-import { TngTile } from './TngLogo';
+import { TngMark } from './TngLogo';
 
 interface NavItemDef {
   id: RouteName;
@@ -101,11 +101,12 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <TngTile size={40} />
-
-        <div>
+        {/* Ruhiges, typografisches Lockup: echte Wortmarke statt Icon-Kachel */}
+        <div className="sidebar-brand">
+          <span className="sidebar-brand-mark" aria-hidden>
+            <TngMark height={15} color="currentColor" />
+          </span>
           <div className="sidebar-title">Stadtnetz CRM</div>
-          <div className="sidebar-subtitle">TNG Stadtnetz GmbH</div>
         </div>
       </div>
 

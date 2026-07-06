@@ -205,22 +205,31 @@ code {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 8px 24px;
+  padding: 12px 10px 26px;
 }
 
-.sidebar-header svg {
-  /* Feiner neutraler Schatten (wie ein macOS-Dock-Icon) statt Farb-Halo */
-  border-radius: 22%;
-  box-shadow:
-    0 1px 1.5px rgba(9, 30, 54, 0.16),
-    0 5px 14px rgba(9, 30, 54, 0.18);
-  flex-shrink: 0;
+/* Typografisches Brand-Lockup: Wortmarke über dem Produktnamen —
+   bewusst ohne Icon-Kachel, ohne Schatten, ohne Glow. */
+.sidebar-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+.sidebar-brand-mark {
+  display: block;
+  color: var(--tng-blue);
+  line-height: 0;
+}
+:root[data-theme='dark'] .sidebar-brand-mark {
+  color: #4db2e8;
 }
 .sidebar-title {
-  font-size: 14.5px;
-  font-weight: 650;
+  font-size: 15.5px;
+  font-weight: 680;
   line-height: 1.2;
-  letter-spacing: -0.15px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 .sidebar-subtitle {
   font-size: 10px;
@@ -4777,10 +4786,11 @@ table.crm-table td[style*="text-align: right"] {
   }
 }
 
-/* ---- Sidebar active item: dezenter statischer Schein ---- */
+/* ---- Sidebar active item: neutraler Mikro-Schatten, kein Farb-Halo ---- */
 .sidebar-item.active {
   box-shadow:
-    0 3px 12px rgba(0, 102, 179, 0.3),
+    0 1px 2px rgba(9, 30, 54, 0.18),
+    0 2px 6px rgba(9, 30, 54, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 

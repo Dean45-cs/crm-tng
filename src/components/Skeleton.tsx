@@ -85,10 +85,9 @@ export function SkeletonShell({ brand }: { brand?: React.ReactNode }) {
     <div className="app" aria-hidden aria-busy="true">
       <aside className="sidebar">
         <div className="sidebar-header">
-          {brand ?? <Skeleton width={40} height={40} radius={12} />}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-            <Skeleton height={13} width="80%" />
-            <Skeleton height={10} width="60%" />
+          <div className="sidebar-brand">
+            {brand ?? <Skeleton width={64} height={15} radius={5} />}
+            <Skeleton height={14} width={116} radius={6} />
           </div>
         </div>
         {[3, 4, 1].map((count, s) => (

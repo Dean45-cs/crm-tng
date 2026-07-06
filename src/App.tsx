@@ -10,7 +10,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
 import { SupabaseSetup } from './components/SupabaseSetup';
 import { SkeletonPage, SkeletonShell } from './components/Skeleton';
-import { TngMark, TngTile } from './components/TngLogo';
+import { TngMark } from './components/TngLogo';
 import { Router, useRouter, type RouteName } from './router';
 import { useAuth } from './store/useAuth';
 import { useOnboarding, useOnboardingHotkey } from './store/useOnboarding';
@@ -141,9 +141,6 @@ function Shell() {
                 year: 'numeric',
               })}
             </span>
-            <div className="titlebar-brand" title="TNG Stadtnetz GmbH">
-              <TngMark height={18} color="#0066b3" />
-            </div>
           </div>
         </header>
         <div className="content">
@@ -174,7 +171,15 @@ function Shell() {
 
 /** Start-Ansicht: App-Gerüst als Skeleton statt Spinner — wirkt sofort da. */
 function LoadingScreen() {
-  return <SkeletonShell brand={<TngTile size={40} />} />;
+  return (
+    <SkeletonShell
+      brand={
+        <span className="sidebar-brand-mark">
+          <TngMark height={15} color="currentColor" />
+        </span>
+      }
+    />
+  );
 }
 
 /** Fallback für die Druck-/Berichtsansichten (eigenes Layout ohne Sidebar). */
