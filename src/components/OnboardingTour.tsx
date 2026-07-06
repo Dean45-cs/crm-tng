@@ -19,8 +19,18 @@ import {
   Share2,
   Zap,
   CalendarClock,
+  Search,
+  Gift,
+  UsersRound,
+  Award,
+  ShieldCheck,
+  Boxes,
+  Smartphone,
+  Rocket,
+  Gauge,
 } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
+import { useOnboarding } from '../store/useOnboarding';
 import { useRouter, type Route } from '../router';
 import { TngTile } from './TngLogo';
 
@@ -57,6 +67,26 @@ function ShortcutRow({ label, keys }: { label: string; keys: string[] }) {
   );
 }
 
+function BenefitRow({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="onboarding-benefit-row">
+      <span className="onboarding-benefit-icon">{icon}</span>
+      <div className="onboarding-benefit-text">
+        <strong>{title}</strong>
+        <span>{children}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Schritt-Definition ──────────────────────────────────────────────────────
 
 interface StepDef {
@@ -69,7 +99,8 @@ interface StepDef {
 }
 
 export function OnboardingTour() {
-  const { getCurrentUser, completeOnboarding } = useAuth();
+  const { getCurrentUser, completeOnboarding, isManager } = useAuth();
+  const closeTour = useOnboarding((s) => s.close);
   const { navigate } = useRouter();
   const user = getCurrentUser();
   const firstName = user?.displayName?.trim().split(/\s+/)[0] ?? '';
@@ -84,17 +115,51 @@ export function OnboardingTour() {
       content: (
         <>
           <p className="onboarding-body">
-            Das Stadtnetz CRM bündelt deine Verträge, Tarifwechsel und Notizen an einem Ort und
-            hält deine Provision im Blick. In <strong>8 kurzen Schritten</strong> zeige ich dir, wie
-            alles zusammenspielt.
+            Das Stadtnetz CRM bündelt Verträge, Tarifwechsel, Leads und Notizen an einem Ort und
+            hält deine Provision immer im Blick. Diese kurze Tour zeigt dir alle Funktionen.
           </p>
           <div className="onboarding-feature-grid">
             <FeatureChip icon={<LayoutDashboard size={13} />} label="Dashboard & Ziel" />
+            <FeatureChip icon={<Target size={13} />} label="Leads" />
             <FeatureChip icon={<FileSignature size={13} />} label="Verträge" />
             <FeatureChip icon={<Users size={13} />} label="Kunden 360°" />
-            <FeatureChip icon={<CalendarClock size={13} />} label="Wiedervorlage" />
             <FeatureChip icon={<Trophy size={13} />} label="Leaderboard" />
-            <FeatureChip icon={<FileText size={13} />} label="Monats-PDF" />
+            <FeatureChip icon={<Gift size={13} />} label="Incentives" />
+          </div>
+          <Tip>
+            Du kannst diese Tour jederzeit wieder öffnen: Drücke einfach{' '}
+            <kbd className="onboarding-inline-kbd">.</kbd> und{' '}
+            <kbd className="onboarding-inline-kbd">o</kbd> gleichzeitig.
+          </Tip>
+        </>
+      ),
+    },
+    {
+      title: 'Warum dieses CRM?',
+      icon: <Rocket size={18} />,
+      content: (
+        <>
+          <div className="onboarding-benefit-list">
+            <BenefitRow icon={<Boxes size={14} />} title="Alles an einem Ort">
+              Verträge, Tarifwechsel, Leads, Kunden & Notizen — kein Excel-Chaos, keine
+              Doppelerfassung.
+            </BenefitRow>
+            <BenefitRow icon={<Gauge size={14} />} title="Echtzeit im ganzen Team">
+              Jede Änderung ist sofort für alle sichtbar. Berichte und Team-Zahlen entstehen
+              automatisch — ohne manuelles Zusammenkopieren.
+            </BenefitRow>
+            <BenefitRow icon={<Trophy size={14} />} title="Motivation eingebaut">
+              Monatsziele, Leaderboard und Incentive-Aktionen machen Erfolge sichtbar und spornen
+              an.
+            </BenefitRow>
+            <BenefitRow icon={<ShieldCheck size={14} />} title="DSGVO & Nachvollziehbarkeit">
+              Rollen & Zugriffskontrolle, dokumentierte Einwilligung und ein lückenloses
+              Audit-Log.
+            </BenefitRow>
+            <BenefitRow icon={<Smartphone size={14} />} title="Überall einsatzbereit">
+              Läuft am PC, Tablet und Handy, ist als App installierbar und übersteht auch
+              Funklöcher — inklusive Jira- und SharePoint-Anbindung.
+            </BenefitRow>
           </div>
         </>
       ),
@@ -160,6 +225,49 @@ export function OnboardingTour() {
       ),
     },
     {
+      title: 'Blitzsuche & Springen',
+      icon: <Search size={18} />,
+      target: '.header-search-wrap',
+      goTo: { name: 'dashboard' },
+      content: (
+        <>
+          <p className="onboarding-body">
+            Oben in der Leiste findest du die <strong>Kundensuche</strong> — tippe Name oder
+            Kundennummer und spring direkt ins Profil.
+          </p>
+          <p className="onboarding-body onboarding-body-tight">
+            Noch schneller ist die <strong>Befehlspalette</strong>: Mit{' '}
+            <kbd className="onboarding-inline-kbd">⌘</kbd>
+            <kbd className="onboarding-inline-kbd">K</kbd> durchsuchst du Kunden, Verträge,
+            Tarifwechsel und Notizen gleichzeitig — und legst von dort auch Neues an.
+          </p>
+          <Tip>Einmal ausprobiert, willst du nie wieder klicken: ⌘K ist der schnellste Weg.</Tip>
+        </>
+      ),
+    },
+    {
+      title: 'Leads: vom Interessenten zum Vertrag',
+      icon: <Target size={18} />,
+      target: '.sidebar-item-leads',
+      goTo: { name: 'leads' },
+      content: (
+        <>
+          <p className="onboarding-body">
+            In <strong>Leads</strong> sammelst du Interessenten, bevor ein Vertrag zustande kommt —
+            mit Status, Notizen und Wiedervorlage. So geht kein potenzieller Abschluss verloren.
+          </p>
+          <p className="onboarding-body onboarding-body-tight">
+            Gewonnene Leads legst du mit <strong>einem Klick</strong> als Kunde an — das
+            Vertragsformular ist dann schon vorausgefüllt.
+          </p>
+          <Tip>
+            Das Dashboard-Widget „Auslaufende Verträge" zeigt dir zusätzlich, welche Kunden bald
+            eine Verlängerung brauchen — die nächste Verkaufschance.
+          </Tip>
+        </>
+      ),
+    },
+    {
       title: 'Verträge & Provision',
       icon: <FileSignature size={18} />,
       target: '.sidebar-item-contracts',
@@ -202,23 +310,56 @@ export function OnboardingTour() {
       ),
     },
     {
-      title: 'Team-Leaderboard',
+      title: 'Leaderboard & Incentives',
       icon: <Trophy size={18} />,
       target: '.sidebar-item-leaderboard',
       goTo: { name: 'leaderboard' },
       content: (
         <>
           <p className="onboarding-body">
-            Das Leaderboard zeigt die monatliche Provisions-Rangliste deines Teams — mit Podium für
-            die Top 3. Ein freundlicher Ansporn, kein Druckmittel.
+            Das <strong>Leaderboard</strong> zeigt die monatliche Provisions-Rangliste deines Teams
+            — mit Podium für die Top 3. Ein freundlicher Ansporn, kein Druckmittel.
+          </p>
+          <p className="onboarding-body onboarding-body-tight">
+            Unter <strong>Incentives</strong> laufen zusätzlich ausgelobte Aktionen (z. B. „Meiste
+            Glasfaser-Abschlüsse im März") — dein Fortschritt wird automatisch mitgezählt.
           </p>
           <Tip>
-            Mit dem Schalter oben auf der Seite entscheidest du selbst, ob du sichtbar bist. Versteckt
-            siehst du dich weiterhin, andere aber nicht.
+            Ob du im Ranking sichtbar bist, entscheidest du selbst — der Schalter dafür ist oben
+            auf der Leaderboard-Seite und in den Einstellungen.
           </Tip>
         </>
       ),
     },
+    ...(isManager()
+      ? [
+          {
+            title: 'Dein Chef-Bereich',
+            icon: <BarChart3 size={18} />,
+            target: '.sidebar-item-teamdashboard',
+            goTo: { name: 'teamdashboard' } as Route,
+            content: (
+              <>
+                <p className="onboarding-body">
+                  Als Führungskraft hast du einen eigenen Bereich: Das{' '}
+                  <strong>Team-Dashboard</strong> zeigt Umsatz, Abschlüsse und Zielerreichung pro
+                  Mitarbeiter:in — in Echtzeit, ohne dass jemand Zahlen zuliefern muss.
+                </p>
+                <div className="onboarding-feature-grid onboarding-feature-grid-2">
+                  <FeatureChip icon={<BarChart3 size={13} />} label="Team-Dashboard" />
+                  <FeatureChip icon={<UsersRound size={13} />} label="Konten & Rollen" />
+                  <FeatureChip icon={<Award size={13} />} label="Incentives ausloben" />
+                  <FeatureChip icon={<ShieldCheck size={13} />} label="Audit-Log" />
+                </div>
+                <Tip>
+                  In der Team-Verwaltung legst du Konten an, vergibst Ziele und sperrst Zugänge —
+                  jede Änderung landet nachvollziehbar im Audit-Log.
+                </Tip>
+              </>
+            ),
+          } satisfies StepDef,
+        ]
+      : []),
     {
       title: 'Einstellungen & Berichte',
       icon: <SettingsIcon size={18} />,
@@ -227,8 +368,8 @@ export function OnboardingTour() {
       content: (
         <>
           <p className="onboarding-body">
-            Zum Schluss die <strong>Einstellungen</strong>: Hier passt du deine Provisionssätze pro
-            Produkt und dein Monatsziel an. Diese Werte gelten nur für dich.
+            In den <strong>Einstellungen</strong> passt du Provisionssätze pro Produkt, dein
+            Monatsziel und das Erscheinungsbild (hell/dunkel) an. Diese Werte gelten nur für dich.
           </p>
           <div className="onboarding-feature-grid onboarding-feature-grid-2">
             <FeatureChip icon={<Target size={13} />} label="Monatsziel" />
@@ -237,6 +378,28 @@ export function OnboardingTour() {
             <FeatureChip icon={<Share2 size={13} />} label="SharePoint-Export" />
           </div>
           <Tip>Den PDF-Monatsbericht öffnest du über den Button oben rechts im Dashboard.</Tip>
+        </>
+      ),
+    },
+    {
+      title: 'Startklar! 🎉',
+      icon: <Check size={18} />,
+      content: (
+        <>
+          <p className="onboarding-body">
+            Das war's — du kennst jetzt alle Bereiche. Die wichtigsten Kürzel für den Alltag noch
+            einmal auf einen Blick:
+          </p>
+          <div className="onboarding-shortcut-list">
+            <ShortcutRow label="Blitzsuche öffnen" keys={['⌘', 'K']} />
+            <ShortcutRow label="Neuer Vertrag" keys={['⌘', 'N']} />
+            <ShortcutRow label="Neuer Tarifwechsel" keys={['⌘', 'T']} />
+            <ShortcutRow label="Diese Tour erneut öffnen" keys={['.', 'o']} />
+          </div>
+          <Tip>
+            Für die Tour drückst du <strong>Punkt und o gleichzeitig</strong> — oder startest sie
+            in den Einstellungen. Viel Erfolg!
+          </Tip>
         </>
       ),
     },
@@ -295,17 +458,41 @@ export function OnboardingTour() {
     };
   }, [step.target, index]);
 
-  const finish = () => completeOnboarding();
+  const finish = () => {
+    // Nur beim allerersten Durchlauf das Flag schreiben — bei einer manuell
+    // erneut geöffneten Tour reicht das Schließen.
+    if (user && !user.onboardingCompleted) completeOnboarding();
+    closeTour();
+  };
   const next = () => (isLast ? finish() : setIndex((i) => i + 1));
   const prev = () => setIndex((i) => Math.max(0, i - 1));
 
-  const TIP_W = 430;
+  // Tastatursteuerung: Pfeile blättern, Escape beendet die Tour. Während man
+  // in einem Eingabefeld tippt (die App bleibt unter dem Overlay bedienbar),
+  // bleiben die Tasten dem Feld überlassen.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) {
+        return;
+      }
+      if (e.key === 'Escape') finish();
+      else if (e.key === 'ArrowRight') next();
+      else if (e.key === 'ArrowLeft') prev();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }); // bewusst ohne Deps: greift immer auf den aktuellen Schritt zu
+
+  const TIP_W = Math.min(430, (typeof window !== 'undefined' ? window.innerWidth : 430) - 24);
   const TIP_H = 330;
 
-  // Tooltip relativ zum Spotlight platzieren
+  // Tooltip relativ zum Spotlight platzieren; ohne Spotlight zentriert
+  // (Positionierung + Animation übernimmt dann die CSS-Klasse `centered`).
   const tooltipStyle: React.CSSProperties = (() => {
     if (!spot) {
-      return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: TIP_W };
+      return { width: TIP_W };
     }
     const pad = 18;
     const vw = window.innerWidth;
@@ -347,7 +534,7 @@ export function OnboardingTour() {
         <X size={14} /> Überspringen
       </button>
 
-      <div className="onboarding-tooltip" style={tooltipStyle}>
+      <div className={`onboarding-tooltip ${spot ? '' : 'centered'}`} style={tooltipStyle}>
         <div className="onboarding-tip-head">
           <div className="onboarding-tip-icon">{step.icon}</div>
           <div className="onboarding-progress-wrap">
@@ -405,24 +592,22 @@ export function OnboardingTour() {
 }
 
 function SpotlightSvg({ rect }: { rect: DOMRect | null }) {
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
   const pad = 10;
   const r = rect
     ? { x: rect.left - pad, y: rect.top - pad, w: rect.width + pad * 2, h: rect.height + pad * 2 }
     : null;
 
   return (
-    <svg className="onboarding-spotlight" width={vw} height={vh}>
+    <svg className="onboarding-spotlight" width="100%" height="100%">
       <defs>
         <mask id="spot-mask">
-          <rect width={vw} height={vh} fill="white" />
+          <rect width="100%" height="100%" fill="white" />
           {r && (
             <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={14} ry={14} fill="black" />
           )}
         </mask>
       </defs>
-      <rect width={vw} height={vh} fill="rgba(10, 28, 50, 0.55)" mask="url(#spot-mask)" />
+      <rect width="100%" height="100%" fill="rgba(10, 28, 50, 0.55)" mask="url(#spot-mask)" />
       {r && (
         <rect
           x={r.x}

@@ -23,6 +23,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
+import { SkeletonTable } from '../components/Skeleton';
 import { fetchAuditLog } from '../lib/supabaseApi';
 import { getSupabase } from '../lib/supabase';
 import type { AuditLogEntry, AuditAction, AuditEntity } from '../types';
@@ -264,7 +265,9 @@ export function AuditLog() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {loading && entries.length === 0 ? (
+        <SkeletonTable rows={8} cols={4} />
+      ) : filtered.length === 0 ? (
         <div className="widget empty">
           <ShieldCheck size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>{entries.length === 0 ? 'Noch keine Einträge' : 'Keine Treffer'}</h3>

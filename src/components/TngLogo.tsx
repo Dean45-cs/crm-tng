@@ -42,8 +42,25 @@ function LogoPaths({ fill }: { fill: string }) {
 }
 
 /**
- * Branded Tile: TNG-blauer Gradient, gerundete Ecken,
- * Logo als weiße Aussparung. Selbsterklärend, auf jedem Hintergrund.
+ * Nur die Doppelschleife (das „∞" der Marke) als eigenständige Glyphe.
+ * LOOP_OUTER ist der Schleifen-Subpath aus dem Original (via führendem
+ * "M0 3000 m…" absolut positioniert), LOOP_HOLE_* sind die Innenformen,
+ * die in der Maske als Löcher wirken.
+ */
+const LOOP_OUTER =
+  'M0 3000 m4194 520 c127 -32 227 -91 331 -195 50 -49 100 -107 110 -127 18 -36 19 -39 2 -55 -9 -10 -17 -12 -17 -6 0 7 -26 45 -59 85 -176 222 -463 317 -652 217 -109 -58 -159 -149 -159 -288 0 -309 309 -615 620 -613 118 0 212 44 270 124 45 62 36 67 -17 10 -68 -72 -126 -96 -233 -95 -145 0 -282 63 -400 183 -121 124 -174 241 -174 385 1 105 15 144 75 210 132 143 400 112 597 -70 62 -58 132 -145 132 -166 0 -4 -23 -32 -50 -62 -53 -59 -118 -97 -163 -97 -23 0 -27 4 -27 30 0 86 -106 190 -193 190 -34 0 -74 -35 -82 -70 -8 -38 21 -104 65 -147 51 -50 96 -68 170 -68 109 0 178 47 278 190 132 188 282 282 468 293 97 5 170 -13 233 -58 97 -70 119 -219 53 -352 -57 -117 -192 -232 -325 -278 -83 -29 -216 -37 -282 -16 -27 8 -50 14 -50 13 -61 -109 -98 -145 -192 -189 -298 -140 -750 131 -848 507 -21 82 -19 199 4 274 63 204 275 303 515 241z';
+const LOOP_HOLE_1 =
+  'M5030 3343 c-50 -8 -146 -47 -199 -80 -57 -36 -143 -119 -163 -156 -6 -12 13 5 43 37 139 152 343 217 477 150 68 -34 97 -80 97 -155 0 -190 -247 -390 -464 -377 -122 7 -187 61 -202 166 l-8 57 4 -63 c7 -125 90 -192 236 -192 142 0 269 59 377 173 213 227 96 487 -198 440z';
+const LOOP_HOLE_2 =
+  'M4891 3125 c-73 -42 -102 -92 -76 -131 45 -69 235 18 235 106 0 55 -83 68 -159 25z';
+
+/** Bounding-Box der Schleifen-Glyphe in der 600er-Box (im Browser vermessen). */
+const GLYPH = { x: 366, y: 246.2, w: 174.9, h: 107.8 };
+
+/**
+ * Branded Tile im App-Icon-Stil: TNG-Gradient, gerundete Ecken und die
+ * Doppelschleife groß im Zentrum. Bei kleinen Größen (Sidebar) bleibt die
+ * Glyphe kräftig und lesbar — die volle Wortmarke übernimmt <TngMark />.
  */
 export function TngTile({
   size = 40,
@@ -57,10 +74,16 @@ export function TngTile({
   const base = useId();
   const gradId = `${base}-grad`;
   const shineId = `${base}-shine`;
-  const innerId = `${base}-inner`;
+  const bevelId = `${base}-bevel`;
   const clipId = `${base}-clip`;
+  const glyphId = `${base}-glyph`;
   // Radius im 600er-Koordinatensystem
   const r600 = (r / size) * 600;
+
+  // Glyphe auf 62 % Kachelbreite skalieren und mittig setzen.
+  const s = (600 * 0.62) / GLYPH.w;
+  const tx = (600 - GLYPH.w * s) / 2 - GLYPH.x * s;
+  const ty = (600 - GLYPH.h * s) / 2 - GLYPH.y * s;
 
   return (
     <svg
@@ -73,42 +96,59 @@ export function TngTile({
     >
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#0c4f8c" />
-          <stop offset="48%" stopColor="#0066b3" />
-          <stop offset="100%" stopColor="#2491d6" />
+          <stop offset="0%" stopColor="#0a4d87" />
+          <stop offset="50%" stopColor="#0066b3" />
+          <stop offset="100%" stopColor="#13a3e2" />
         </linearGradient>
-        <radialGradient id={shineId} cx="22%" cy="18%" r="78%">
-          <stop offset="0%" stopColor="rgba(255,255,255,0.28)" />
-          <stop offset="55%" stopColor="rgba(255,255,255,0)" />
+        <radialGradient id={shineId} cx="26%" cy="16%" r="90%">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
+          <stop offset="58%" stopColor="rgba(255,255,255,0)" />
         </radialGradient>
-        <linearGradient id={innerId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgba(255,255,255,0.20)" />
+        <linearGradient id={bevelId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.45)" />
+          <stop offset="35%" stopColor="rgba(255,255,255,0.08)" />
           <stop offset="100%" stopColor="rgba(255,255,255,0)" />
         </linearGradient>
         <clipPath id={clipId}>
           <rect width="600" height="600" rx={r600} ry={r600} />
         </clipPath>
+        <mask id={glyphId} maskUnits="userSpaceOnUse" x="0" y="0" width="600" height="600">
+          <g transform={`translate(${tx} ${ty}) scale(${s})`}>
+            <g transform="translate(0,600) scale(0.1,-0.1)">
+              <path d={LOOP_OUTER} fill="white" />
+              <path d={LOOP_HOLE_1} fill="black" />
+              <path d={LOOP_HOLE_2} fill="black" />
+            </g>
+          </g>
+        </mask>
       </defs>
       <g clipPath={`url(#${clipId})`}>
-        {/* Weißer Untergrund – wird durch die Logo-Aussparungen sichtbar */}
-        <rect width="600" height="600" fill="#ffffff" />
-        {/* Tile-Gradient mit even-odd-Aussparung des Logos */}
-        <LogoPaths fill={`url(#${gradId})`} />
+        <rect width="600" height="600" fill={`url(#${gradId})`} />
         {/* Glanzlicht oben links */}
         <rect width="600" height="600" fill={`url(#${shineId})`} pointerEvents="none" />
-        {/* Innerer oberer Schein für Tiefe */}
-        <rect width="600" height="14" fill={`url(#${innerId})`} pointerEvents="none" />
-        {/* Sehr feiner innerer Rand */}
-        <rect
-          x="0.5" y="0.5"
-          width="599" height="599"
-          rx={r600} ry={r600}
-          fill="none"
-          stroke="rgba(0,0,0,0.08)"
-          strokeWidth="1"
-          pointerEvents="none"
-        />
+        {/* Die Schleife als weiße Glyphe */}
+        <rect width="600" height="600" fill="#ffffff" mask={`url(#${glyphId})`} />
       </g>
+      {/* Innerer Bevel oben (Apple-Icon-artig) */}
+      <rect
+        x="4" y="4"
+        width="592" height="592"
+        rx={Math.max(0, r600 - 4)} ry={Math.max(0, r600 - 4)}
+        fill="none"
+        stroke={`url(#${bevelId})`}
+        strokeWidth="7"
+        pointerEvents="none"
+      />
+      {/* Äußerer Hairline-Rand */}
+      <rect
+        x="1.5" y="1.5"
+        width="597" height="597"
+        rx={r600} ry={r600}
+        fill="none"
+        stroke="rgba(9, 30, 54, 0.18)"
+        strokeWidth="3"
+        pointerEvents="none"
+      />
     </svg>
   );
 }

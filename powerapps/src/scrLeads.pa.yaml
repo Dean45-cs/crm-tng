@@ -1,0 +1,83 @@
+# Referenz-Screen: Leads (4-Stufen-Pipeline, hier Spalte "Neu" exemplarisch).
+# Die anderen drei Spalten (In Bearbeitung / Gewonnen / Verloren) sind Kopien
+# mit angepasstem Status-Filter. Siehe 05-canvas-screens.md.
+Screens:
+  scrLeads:
+    Properties:
+      Fill: =Theme.Background
+    Children:
+      - lblTitle:
+          Control: Label
+          Properties:
+            Text: ="Leads"
+            Color: =Theme.Primary
+            Font: =FontMain
+            Size: =28
+            FontWeight: =FontWeight.Semibold
+            X: =Space.xl
+            Y: =Space.xl
+      - lblColNeu:
+          Control: Label
+          Properties:
+            Text: ="Neu"
+            Color: =Theme.TextMuted
+            Font: =FontMain
+            FontWeight: =FontWeight.Semibold
+            X: =Space.xl
+            Y: =64
+      - galNeu:
+          Control: Gallery@0.0.53
+          Variant: Vertical
+          Properties:
+            X: =Space.xl
+            Y: =92
+            Width: =300
+            Height: =Parent.Height - 110
+            TemplatePadding: =Space.sm
+            Items: |
+              =SortByColumns(
+                Filter(tng_Leads, tng_status = 'Lead Status'.Neu),
+                "tng_priority", SortOrder.Descending,
+                "tng_followupdate", SortOrder.Ascending)
+          Children:
+            - rowBg:
+                Control: Rectangle@0.0.24
+                Properties:
+                  Fill: =Theme.Surface
+                  RadiusTopLeft: =Radius.card
+                  RadiusBottomRight: =Radius.card
+                  # linker Akzentrand rot bei fälliger Wiedervorlage
+                  BorderColor: =If(IstFaellig(ThisItem.tng_followupdate), Theme.Danger, Theme.Border)
+                  BorderThickness: =If(IstFaellig(ThisItem.tng_followupdate), 2, 1)
+            - lblName:
+                Control: Label
+                Properties:
+                  Text: =ThisItem.tng_name
+                  Color: =Theme.Text
+                  Font: =FontMain
+                  FontWeight: =FontWeight.Semibold
+            - lblTopic:
+                Control: Label
+                Properties:
+                  Text: =Coalesce(ThisItem.tng_topic, "")
+                  Color: =Theme.TextMuted
+            - badgePriority:
+                Control: Label
+                Properties:
+                  Text: =Text(ThisItem.tng_priority)
+                  Align: =Align.Center
+                  Color: =Theme.Surface
+                  Fill: |
+                    =Switch(Text(ThisItem.tng_priority),
+                       "Dringend", Theme.Danger, "Hoch", Theme.Warning, Theme.TextMuted)
+                  RadiusTopLeft: =Radius.pill
+                  RadiusTopRight: =Radius.pill
+                  RadiusBottomLeft: =Radius.pill
+                  RadiusBottomRight: =Radius.pill
+            - btnWin:
+                Control: Button@0.0.45
+                Properties:
+                  Text: ="Gewonnen"
+                  Fill: =Theme.Success
+                  Color: =Theme.Surface
+                  OnSelect: =Patch(tng_Leads, ThisItem, { tng_status: 'Lead Status'.Gewonnen })

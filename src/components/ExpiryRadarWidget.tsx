@@ -25,7 +25,8 @@ function initials(name: string): string {
  * Alle Nutzer sehen alle Verträge (geteilte Leads) – kein userKey-Filter.
  */
 export function ExpiryRadarWidget() {
-  const { contracts, settings } = useStore();
+  const contracts = useStore((s) => s.contracts);
+  const settings = useStore((s) => s.settings);
   const { users } = useAuth();
   const { navigate } = useRouter();
 
