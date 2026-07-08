@@ -9,9 +9,10 @@ import {
   ChevronDown,
   ChevronsUpDown,
   FileSignature,
+  ClipboardCopy,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import type { ContractStatus } from '../types';
+import type { Contract, ContractStatus } from '../types';
 import {
   calcContractCommission,
   exportCsv,
@@ -19,11 +20,14 @@ import {
   formatDate,
   expiryBucket,
   expiryLabel,
+  buildContractJiraDoc,
+  copyToClipboard,
 } from '../lib/utils';
 import { JiraLink } from '../components/JiraLink';
 import { StatusBadge } from '../components/StatusBadge';
 import { SkeletonTable } from '../components/Skeleton';
 import { useQuickAdd } from '../components/QuickAdd';
+import { toast } from '../store/useToast';
 
 type SortKey = 'date' | 'customer' | 'commission';
 type SortDir = 'asc' | 'desc';
@@ -92,6 +96,12 @@ export function Contracts() {
 
   const remove = (id: string) => {
     if (confirm('Vertrag wirklich löschen?')) deleteContract(id);
+  };
+
+  const copyDoc = async (c: Contract) => {
+    const ok = await copyToClipboard(buildContractJiraDoc(c, settings));
+    if (ok) toast.success('Dokumentation in die Zwischenablage kopiert.');
+    else toast.error('Kopieren fehlgeschlagen – bitte manuell markieren.');
   };
 
   const exportData = () => {
@@ -286,6 +296,14 @@ export function Contracts() {
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <div className="row end">
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => copyDoc(c)}
+                        title="Jira-Doku kopieren"
+                        aria-label="Jira-Doku kopieren"
+                      >
+                        <ClipboardCopy size={13} />
+                      </button>
                       <button className="btn btn-ghost btn-sm" onClick={() => editContract(c)}>
                         <Pencil size={13} />
                       </button>

@@ -192,7 +192,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     const { data, error } = await sb.auth.signUp({
       email,
       password,
-      options: { data: { display_name: trimmed } },
+      options: { data: { display_name: trimmed, key } },
     });
     if (error) {
       if (error.message.toLowerCase().includes('already')) {
@@ -266,7 +266,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     const { data, error } = await temp.auth.signUp({
       email,
       password,
-      options: { data: { display_name: trimmed } },
+      options: { data: { display_name: trimmed, key } },
     });
     if (error) {
       if (error.message.toLowerCase().includes('already')) {
@@ -275,21 +275,21 @@ export const useAuth = create<AuthState>()((set, get) => ({
       return { ok: false, error: error.message };
     }
     const uid = data.user?.id;
-    if (!uid) return { ok: false, error: 'Konto konnte nicht angelegt werden.' };
-
-    // Falls keine Session zurückkam: nachholen, damit der Profil-Insert als der
-    // neue Nutzer läuft (RLS-Insert verlangt auth.uid() = id).
-    if (!data.session) {
-      const { error: se } = await temp.auth.signInWithPassword({ email, password });
-      if (se) return { ok: false, error: 'Konto angelegt, aber Profil-Initialisierung schlug fehl.' };
+    if (!uid) {
+      await temp.auth.signOut();
+      return { ok: false, error: 'Konto konnte nicht angelegt werden.' };
     }
 
-    const { error: pe } = await temp.from('users').upsert(
-      { id: uid, key, display_name: trimmed },
-      { onConflict: 'id' },
-    );
+    // Das Profil in public.users legt der DB-Trigger handle_new_user serverseitig
+    // an (Migration 015) — unabhängig davon, ob eine Session zurückkam. Als
+    // Fallback für Projekte, in denen der Trigger (noch) fehlt, versuchen wir es
+    // zusätzlich als der neue Nutzer selbst, sofern signUp eine Session lieferte
+    // (nur bei ausgeschalteter E-Mail-Bestätigung möglich). Ein Fehler hier ist
+    // unkritisch: bei vorhandenem Trigger existiert die Zeile bereits.
+    if (data.session) {
+      await temp.from('users').insert({ id: uid, key, display_name: trimmed });
+    }
     await temp.auth.signOut();
-    if (pe) return { ok: false, error: pe.message };
 
     // Rolle setzt der angemeldete Chef über die Hauptsession (Trigger erlaubt es).
     if (role === 'manager') {
@@ -301,6 +301,19 @@ export const useAuth = create<AuthState>()((set, get) => ({
     }
 
     await get().refreshUsers();
+
+    // Verifizieren, dass das Profil wirklich existiert. Fehlt es, ist der
+    // DB-Trigger aus Migration 015 nicht eingespielt und die E-Mail-Bestätigung
+    // aktiv — dann konnte auch der Fallback nicht greifen.
+    if (!get().users[uid]) {
+      return {
+        ok: false,
+        error:
+          'Konto in der Anmeldung angelegt, aber das Profil konnte nicht erstellt werden. ' +
+          'Bitte Migration 015 in Supabase einspielen (SQL Editor) oder die E-Mail-Bestätigung deaktivieren.',
+      };
+    }
+
     logAudit({
       action: 'create',
       entityType: 'user',

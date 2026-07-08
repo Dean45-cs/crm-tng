@@ -43,7 +43,13 @@ import { useRouter } from '../router';
 type Scope = 'mine' | 'all';
 
 export function Dashboard() {
-  const { contracts: allContracts, tariffChanges: allTariffChanges, settings, loaded } = useStore();
+  // Gezielte Selektoren statt Komplett-Abo: das Dashboard (inkl. Chart)
+  // rendert so nur neu, wenn sich Verträge/Tarifwechsel/Settings ändern —
+  // nicht bei jedem Realtime-Update von Notizen, Leads oder Aktivitäten.
+  const allContracts = useStore((s) => s.contracts);
+  const allTariffChanges = useStore((s) => s.tariffChanges);
+  const settings = useStore((s) => s.settings);
+  const loaded = useStore((s) => s.loaded);
   const currentUser = useAuth((s) => s.getCurrentUser());
   const greetName = currentUser?.displayName ?? 'Kolleg:in';
   const { navigate } = useRouter();

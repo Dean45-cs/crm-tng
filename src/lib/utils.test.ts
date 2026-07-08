@@ -9,6 +9,8 @@ import {
   parseLocalDate,
   contractEndDate,
   daysUntil,
+  buildContractJiraDoc,
+  formatCurrency,
 } from './utils';
 import { testSettings, makeContract, makeTariff } from '../test/fixtures';
 
@@ -97,6 +99,45 @@ describe('contractEndDate', () => {
 
   it('liefert null für unbefristete Verträge', () => {
     expect(contractEndDate(makeContract({ laufzeitMonate: null }))).toBeNull();
+  });
+});
+
+describe('buildContractJiraDoc', () => {
+  it('baut die Kern-Dokumentation aus Kunde, Produkten und Provision', () => {
+    const doc = buildContractJiraDoc(
+      makeContract({ products: ['Fibrefamily', 'Waipu TV'], contractDate: '2024-06-15' }),
+      testSettings,
+    );
+    expect(doc).toContain('Kunde: Test Kunde (KdNr. 1000)');
+    expect(doc).toContain('Datum: 15.06.2024');
+    expect(doc).toContain(`- Fibrefamily (${formatCurrency(50)})`);
+    expect(doc).toContain(`- Waipu TV (${formatCurrency(10)})`);
+    expect(doc).toContain(`Provision gesamt: ${formatCurrency(60)}`);
+    expect(doc).toContain('Laufzeit: Unbefristet');
+    expect(doc).toContain('Status: Aktiv');
+  });
+
+  it('ergänzt Laufzeitende, Wiedervorlage, Jira-Ticket und Notiz, wenn vorhanden', () => {
+    const doc = buildContractJiraDoc(
+      makeContract({
+        contractDate: '2024-06-15',
+        laufzeitMonate: 12,
+        followUpDate: '2024-07-01',
+        jiraTicket: 'TNG-1234',
+        notes: 'Sonderkonditionen vereinbart',
+      }),
+      testSettings,
+    );
+    expect(doc).toContain('Laufzeit: 12 Monate (Ende: 15.06.2025)');
+    expect(doc).toContain('Wiedervorlage: 01.07.2024');
+    expect(doc).toContain('Jira: TNG-1234');
+    expect(doc).toContain('Notiz: Sonderkonditionen vereinbart');
+  });
+
+  it('zeigt 0 € Gesamtprovision bei stornierten Verträgen', () => {
+    const doc = buildContractJiraDoc(makeContract({ status: 'storniert' }), testSettings);
+    expect(doc).toContain('Status: Storniert');
+    expect(doc).toContain(`Provision gesamt: ${formatCurrency(0)}`);
   });
 });
 

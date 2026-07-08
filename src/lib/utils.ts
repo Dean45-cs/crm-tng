@@ -1,5 +1,6 @@
 import type {
   Contract,
+  ContractStatus,
   TariffChange,
   Note,
   Settings,
@@ -131,6 +132,32 @@ export const isoWeekNumber = (ref = new Date()): number => {
 /** z.B. "KW 21" */
 export const weekLabel = (ref = new Date()): string => `KW ${isoWeekNumber(ref)}`;
 
+/** Kopiert Text in die Zwischenablage — mit Fallback für unsichere Kontexte/ältere Browser. */
+export const copyToClipboard = async (text: string): Promise<boolean> => {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fällt durch auf den execCommand-Fallback
+    }
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+};
+
 export const exportCsv = (filename: string, rows: Record<string, unknown>[]) => {
   if (rows.length === 0) return;
   const headers = Object.keys(rows[0]);
@@ -222,6 +249,46 @@ export const contractEndDate = (contract: Contract): Date | null => {
   const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
   d.setDate(Math.min(day, lastDay));
   return d;
+};
+
+const CONTRACT_STATUS_LABEL: Record<ContractStatus, string> = {
+  offen: 'Offen',
+  aktiv: 'Aktiv',
+  storniert: 'Storniert',
+};
+
+/** Baut eine Klartext-Dokumentation eines Vertragsabschlusses zum Einfügen in ein Jira-Ticket. */
+export const buildContractJiraDoc = (
+  contract: Omit<Contract, 'id' | 'createdAt'>,
+  settings: Settings,
+): string => {
+  const full = contract as Contract;
+  const lines: string[] = [
+    'Vertragsabschluss',
+    `Kunde: ${contract.customerName} (KdNr. ${contract.customerNumber})`,
+    `Datum: ${formatDate(contract.contractDate)}`,
+    'Produkte:',
+    ...contract.products.map(
+      (p) => `- ${p} (${formatCurrency(getProductCommission(settings, p))})`,
+    ),
+    `Provision gesamt: ${formatCurrency(calcContractCommission(full, settings))}`,
+  ];
+
+  if (contract.laufzeitMonate) {
+    const end = contractEndDate(full);
+    lines.push(
+      `Laufzeit: ${contract.laufzeitMonate} Monate${end ? ` (Ende: ${formatDate(end.toISOString().slice(0, 10))})` : ''}`,
+    );
+  } else {
+    lines.push('Laufzeit: Unbefristet');
+  }
+
+  lines.push(`Status: ${CONTRACT_STATUS_LABEL[contract.status]}`);
+  if (contract.followUpDate) lines.push(`Wiedervorlage: ${formatDate(contract.followUpDate)}`);
+  if (contract.jiraTicket) lines.push(`Jira: ${contract.jiraTicket}`);
+  if (contract.notes) lines.push(`Notiz: ${contract.notes}`);
+
+  return lines.join('\n');
 };
 
 /** Tage bis zu einem Datum (negativ = bereits vergangen). */

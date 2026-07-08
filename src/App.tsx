@@ -6,13 +6,17 @@ import { QuickAddProvider } from './components/QuickAdd';
 import { ToastHost } from './components/ToastHost';
 import { CommandPalette } from './components/CommandPalette';
 import { CustomerSearchBar } from './components/CustomerSearchBar';
+import { StatusBar } from './components/StatusBar';
 import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
 import { SupabaseSetup } from './components/SupabaseSetup';
-import { TngMark, TngTile } from './components/TngLogo';
+import { SkeletonPage, SkeletonShell } from './components/Skeleton';
+import { TngMark } from './components/TngLogo';
 import { Router, useRouter, type RouteName } from './router';
 import { useAuth } from './store/useAuth';
+import { useOnboarding, useOnboardingHotkey } from './store/useOnboarding';
 import { useStore } from './store/useStore';
+import { useStatus } from './store/useStatus';
 import { isConfigured, onConfigChange } from './lib/supabase';
 
 // Seiten werden bei Bedarf nachgeladen (Code-Splitting). Das hält das
@@ -35,6 +39,7 @@ const Incentives = lazy(() => import('./pages/Incentives').then((m) => ({ defaul
 const IncentiveManager = lazy(() => import('./pages/IncentiveManager').then((m) => ({ default: m.IncentiveManager })));
 const Leads = lazy(() => import('./pages/Leads').then((m) => ({ default: m.Leads })));
 const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m.AuditLog })));
+const NettoRechner = lazy(() => import('./pages/NettoRechner').then((m) => ({ default: m.NettoRechner })));
 
 const TITLES: Record<RouteName, string> = {
   dashboard: 'Dashboard',
@@ -54,14 +59,48 @@ const TITLES: Record<RouteName, string> = {
   incentivemanager: 'Incentive-Verwaltung',
   leads: 'Leads',
   auditlog: 'Audit-Log',
+  netto: 'Netto-Rechner',
 };
 
 function PageFallback() {
-  return (
-    <div className="page-fallback">
-      <div className="boot-spinner" />
-    </div>
-  );
+  return <SkeletonPage />;
+}
+
+/**
+ * Lädt alle Seiten-Chunks einmalig im Browser-Leerlauf vor. Seitenwechsel
+ * treffen danach nie mehr aufs Netz — kein Skeleton-Aufblitzen beim ersten
+ * Öffnen einer Seite.
+ */
+let pagesPrefetched = false;
+function prefetchAllPages() {
+  if (pagesPrefetched) return;
+  pagesPrefetched = true;
+  const idle: (cb: () => void) => void =
+    'requestIdleCallback' in window
+      ? (cb) => window.requestIdleCallback(cb, { timeout: 4000 })
+      : (cb) => window.setTimeout(cb, 1500);
+  idle(() => {
+    void Promise.allSettled([
+      import('./pages/Dashboard'),
+      import('./pages/Contracts'),
+      import('./pages/TariffChanges'),
+      import('./pages/Notes'),
+      import('./pages/Settings'),
+      import('./pages/Customers'),
+      import('./pages/CustomerDetail'),
+      import('./pages/Leaderboard'),
+      import('./pages/MonthlyReport'),
+      import('./pages/TeamDashboard'),
+      import('./pages/TeamManagement'),
+      import('./pages/TeamReport'),
+      import('./pages/AgentDetail'),
+      import('./pages/Incentives'),
+      import('./pages/IncentiveManager'),
+      import('./pages/Leads'),
+      import('./pages/AuditLog'),
+      import('./pages/NettoRechner'),
+    ]);
+  });
 }
 
 function Shell() {
@@ -69,14 +108,14 @@ function Shell() {
 
   if (route.name === 'report') {
     return (
-      <Suspense fallback={<LoadingScreen />}>
+      <Suspense fallback={<ReportFallback />}>
         <MonthlyReport />
       </Suspense>
     );
   }
   if (route.name === 'teamreport') {
     return (
-      <Suspense fallback={<LoadingScreen />}>
+      <Suspense fallback={<ReportFallback />}>
         <TeamReport />
       </Suspense>
     );
@@ -99,6 +138,7 @@ function Shell() {
           </div>
           <div className="row" style={{ gap: 14, alignItems: 'center' }}>
             <CustomerSearchBar />
+            <StatusBar />
             <span className="muted titlebar-date">
               {new Date().toLocaleDateString('de-DE', {
                 weekday: 'long',
@@ -107,9 +147,6 @@ function Shell() {
                 year: 'numeric',
               })}
             </span>
-            <div className="titlebar-brand" title="TNG Stadtnetz GmbH">
-              <TngMark height={18} color="#0066b3" />
-            </div>
           </div>
         </header>
         <div className="content">
@@ -130,6 +167,7 @@ function Shell() {
               {route.name === 'incentivemanager' && <IncentiveManager />}
               {route.name === 'leads' && <Leads />}
               {route.name === 'auditlog' && <AuditLog />}
+              {route.name === 'netto' && <NettoRechner />}
             </Suspense>
           </div>
         </div>
@@ -138,14 +176,24 @@ function Shell() {
   );
 }
 
-function LoadingScreen({ label = 'Verbinde mit Server …' }: { label?: string }) {
+/** Start-Ansicht: App-Gerüst als Skeleton statt Spinner — wirkt sofort da. */
+function LoadingScreen() {
   return (
-    <div className="boot-screen">
-      <div className="boot-brand">
-        <TngTile size={80} radius={20} />
-      </div>
-      <div className="boot-spinner" />
-      <div className="boot-label">{label}</div>
+    <SkeletonShell
+      brand={
+        <span className="sidebar-brand-mark">
+          <TngMark height={15} color="currentColor" />
+        </span>
+      }
+    />
+  );
+}
+
+/** Fallback für die Druck-/Berichtsansichten (eigenes Layout ohne Sidebar). */
+function ReportFallback() {
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px' }}>
+      <SkeletonPage />
     </div>
   );
 }
@@ -198,7 +246,17 @@ export default function App() {
   const subscribeRealtime = useStore((s) => s.subscribeRealtime);
   const resetStore = useStore((s) => s.reset);
 
+  const loadStatus = useStatus((s) => s.load);
+  const subscribeStatus = useStatus((s) => s.subscribeRealtime);
+  const resetStatus = useStatus((s) => s.reset);
+
   const [configured, setConfigured] = useState(isConfigured());
+
+  // Tour-Steuerung: „." + „o" gleichzeitig öffnet die Einführungstour erneut
+  // (aktiv, sobald jemand angemeldet ist und den Datenschutzhinweis bestätigt hat).
+  const tourRequested = useOnboarding((s) => s.open);
+  const signedInUser = currentUserKey ? users[currentUserKey] : null;
+  useOnboardingHotkey(Boolean(configured && signedInUser?.consentGivenAt));
 
   useEffect(() => {
     if (!configured) return;
@@ -209,21 +267,42 @@ export default function App() {
   useEffect(() => {
     if (!configured || !currentUserKey) {
       resetStore();
+      resetStatus();
       return;
     }
     loadAll();
+    loadStatus();
     const unsub = subscribeRealtime();
-    return () => unsub();
-  }, [configured, currentUserKey, loadAll, subscribeRealtime, resetStore]);
+    const unsubStatus = subscribeStatus();
+    return () => {
+      unsub();
+      unsubStatus();
+    };
+  }, [
+    configured,
+    currentUserKey,
+    loadAll,
+    subscribeRealtime,
+    resetStore,
+    loadStatus,
+    subscribeStatus,
+    resetStatus,
+  ]);
 
   useEffect(() => onConfigChange(() => setConfigured(isConfigured())), []);
+
+  // Alle Seiten-Chunks im Leerlauf vorladen, sobald das Backend konfiguriert
+  // ist — jeder spätere Seitenwechsel ist dann sofort da.
+  useEffect(() => {
+    if (configured) prefetchAllPages();
+  }, [configured]);
 
   if (!configured) {
     return <SupabaseSetup />;
   }
 
   if (initializing) {
-    return <LoadingScreen label="Verbinde mit Server …" />;
+    return <LoadingScreen />;
   }
 
   if (!currentUserKey) {
@@ -232,7 +311,9 @@ export default function App() {
 
   const user = users[currentUserKey];
   const needsConsent = user && !user.consentGivenAt;
-  const needsOnboarding = user && user.consentGivenAt && !user.onboardingCompleted;
+  // Tour beim ersten Login automatisch, danach jederzeit per „." + „o"
+  // oder über die Einstellungen erneut.
+  const showTour = user && user.consentGivenAt && (!user.onboardingCompleted || tourRequested);
 
   return (
     <Router>
@@ -240,7 +321,7 @@ export default function App() {
         <OfflineBanner />
         <Shell />
         {needsConsent && <PrivacyConsent />}
-        {needsOnboarding && <OnboardingTour />}
+        {showTour && <OnboardingTour />}
         <CommandPalette />
         <ToastHost />
       </QuickAddProvider>

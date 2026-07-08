@@ -1,0 +1,7 @@
+name,changetype,context,amount
+Sidegrade/VVL · Restlaufzeit > 3 Monate,Sidegrade/VVL,Restlaufzeit > 3 Monate,0
+Sidegrade/VVL · Restlaufzeit < 3 Monate,Sidegrade/VVL,Restlaufzeit < 3 Monate,5
+Sidegrade/VVL · Außerhalb MVLZ,Sidegrade/VVL,Außerhalb MVLZ,5
+Upgrade · Restlaufzeit > 3 Monate,Upgrade,Restlaufzeit > 3 Monate,5
+Upgrade · Restlaufzeit < 3 Monate,Upgrade,Restlaufzeit < 3 Monate,7.5
+Upgrade · Außerhalb MVLZ,Upgrade,Außerhalb MVLZ,7.5

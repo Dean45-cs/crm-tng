@@ -204,6 +204,43 @@ export interface LeadActivity {
 }
 
 // ============================================================================
+// STATUS BOARD — Team-Presence & Zeitverteilung
+// ============================================================================
+
+/** Der aktuelle Status einer Person (eine Zeile je Nutzer:in). */
+export interface UserStatus {
+  /** User-Key (UUID) */
+  userId: string;
+  /** Status-ID (siehe STATUS_DEFS), null = kein Status gesetzt */
+  status: string | null;
+  /** Ticketschicht-Untertyp (Leads, TL, …) */
+  sub?: string;
+  /** Freitext bei Status mit Beschreibung (Sonderaufgabe, Klärung, …) */
+  description?: string;
+  /** Kurz abwesend — Status bleibt gesetzt, wird aber gedimmt angezeigt */
+  isAfk: boolean;
+  /** Beginn des aktuellen Status (ISO) */
+  startedAt?: string;
+  updatedAt: string;
+}
+
+/** Ein abgeschlossener Status-Abschnitt in der Historie. */
+export interface StatusLogEntry {
+  id: string;
+  /** User-Key (UUID) — kann null sein, falls Nutzer:in gelöscht wurde */
+  userId?: string;
+  status: string;
+  sub?: string;
+  description?: string;
+  isAfk: boolean;
+  startedAt: string;
+  endedAt: string;
+  /** Dauer des Abschnitts in Sekunden */
+  durationSeconds: number;
+  createdAt: string;
+}
+
+// ============================================================================
 // AUDIT LOG — DSGVO-Nachvollziehbarkeit (Art. 30)
 // ============================================================================
 
@@ -230,7 +267,8 @@ export type AuditEntity =
   | 'user'
   | 'incentive'
   | 'auth'
-  | 'settings';
+  | 'settings'
+  | 'status';
 
 /** Unveränderlicher Audit-Eintrag — wer hat wann was getan? */
 export interface AuditLogEntry {

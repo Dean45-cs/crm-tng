@@ -14,11 +14,12 @@ import {
   LogOut,
   Download,
   ShieldCheck,
+  Calculator,
 } from 'lucide-react';
 import { useRouter, type Route, type RouteName } from '../router';
 import { useAuth } from '../store/useAuth';
 import { usePwaInstall } from '../lib/pwaInstall';
-import { TngTile } from './TngLogo';
+import { TngMark } from './TngLogo';
 
 interface NavItemDef {
   id: RouteName;
@@ -34,6 +35,7 @@ function buildSections(showChef: boolean): { title: string; items: NavItemDef[] 
         { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
         { id: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={16} /> },
         { id: 'incentives', label: 'Incentives', icon: <Gift size={16} /> },
+        { id: 'netto', label: 'Netto-Rechner', icon: <Calculator size={16} /> },
       ],
     },
     {
@@ -101,11 +103,12 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <TngTile size={40} />
-
-        <div>
+        {/* Ruhiges, typografisches Lockup: echte Wortmarke statt Icon-Kachel */}
+        <div className="sidebar-brand">
+          <span className="sidebar-brand-mark" aria-hidden>
+            <TngMark height={15} color="currentColor" />
+          </span>
           <div className="sidebar-title">Stadtnetz CRM</div>
-          <div className="sidebar-subtitle">TNG Stadtnetz GmbH</div>
         </div>
       </div>
 
@@ -159,7 +162,7 @@ export function Sidebar() {
       )}
 
       <div className="sidebar-footer">
-        CRM v1.3 · 2026
+        CRM v1.4 · 2026
       </div>
     </aside>
   );

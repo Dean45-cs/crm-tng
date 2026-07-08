@@ -21,7 +21,10 @@ function shortMetric(metric: IncentiveMetric, value: number): string {
  * Fortschritt. Rendert nichts, wenn keine aktiven Incentives existieren.
  */
 export function IncentiveWidget() {
-  const { contracts, tariffChanges, settings, incentives } = useStore();
+  const contracts = useStore((s) => s.contracts);
+  const tariffChanges = useStore((s) => s.tariffChanges);
+  const settings = useStore((s) => s.settings);
+  const incentives = useStore((s) => s.incentives);
   const { users, getCurrentUser } = useAuth();
   const { navigate } = useRouter();
 

@@ -21,8 +21,10 @@ import {
   Eraser,
   Crown,
   CheckCircle2,
+  Activity,
 } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
+import { SkeletonTable } from '../components/Skeleton';
 import { fetchAuditLog } from '../lib/supabaseApi';
 import { getSupabase } from '../lib/supabase';
 import type { AuditLogEntry, AuditAction, AuditEntity } from '../types';
@@ -52,6 +54,7 @@ const ENTITY_LABEL: Record<AuditEntity, string> = {
   incentive: 'Incentive',
   auth: 'Anmeldung',
   settings: 'Einstellungen',
+  status: 'Status-Board',
 };
 
 const ACTION_ICON: Record<AuditAction, React.ReactNode> = {
@@ -79,6 +82,7 @@ const ENTITY_ICON: Record<AuditEntity, React.ReactNode> = {
   incentive: <Shield size={13} />,
   auth: <LogIn size={13} />,
   settings: <Shield size={13} />,
+  status: <Activity size={13} />,
 };
 
 function formatRelative(iso: string): string {
@@ -264,7 +268,9 @@ export function AuditLog() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {loading && entries.length === 0 ? (
+        <SkeletonTable rows={8} cols={4} />
+      ) : filtered.length === 0 ? (
         <div className="widget empty">
           <ShieldCheck size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>{entries.length === 0 ? 'Noch keine Einträge' : 'Keine Treffer'}</h3>
