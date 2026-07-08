@@ -25,6 +25,8 @@ import type {
   AuditEntity,
   CustomerAccessRequest,
   AccessRequestStatus,
+  UserStatus,
+  StatusLogEntry,
 } from '../types';
 import type { AuthUser } from '../store/useAuth';
 
@@ -936,5 +938,140 @@ export async function updateAccessRequestStatus(
       decided_by: decidedBy ?? null,
     })
     .eq('id', id);
+  if (error) throw error;
+}
+
+// ============================================================================
+// STATUS BOARD
+// ============================================================================
+
+interface UserStatusRow {
+  user_id: string;
+  status: string | null;
+  sub: string | null;
+  description: string | null;
+  is_afk: boolean;
+  started_at: string | null;
+  updated_at: string;
+}
+
+const mapUserStatus = (r: UserStatusRow): UserStatus => ({
+  userId: r.user_id,
+  status: r.status,
+  sub: r.sub ?? undefined,
+  description: r.description ?? undefined,
+  isAfk: r.is_afk === true,
+  startedAt: r.started_at ?? undefined,
+  updatedAt: r.updated_at,
+});
+
+interface StatusLogRow {
+  id: string;
+  user_id: string | null;
+  status: string;
+  sub: string | null;
+  description: string | null;
+  is_afk: boolean;
+  started_at: string;
+  ended_at: string;
+  duration_seconds: number;
+  created_at: string;
+}
+
+const mapStatusLog = (r: StatusLogRow): StatusLogEntry => ({
+  id: r.id,
+  userId: r.user_id ?? undefined,
+  status: r.status,
+  sub: r.sub ?? undefined,
+  description: r.description ?? undefined,
+  isAfk: r.is_afk === true,
+  startedAt: r.started_at,
+  endedAt: r.ended_at,
+  durationSeconds: Number(r.duration_seconds),
+  createdAt: r.created_at,
+});
+
+/** Aktueller Status aller Kolleg:innen, indexiert nach User-ID. */
+export async function fetchUserStatuses(): Promise<Record<string, UserStatus>> {
+  const { data, error } = await getSupabase().from('user_status').select('*');
+  if (error) throw error;
+  const map: Record<string, UserStatus> = {};
+  for (const row of (data ?? []) as UserStatusRow[]) {
+    map[row.user_id] = mapUserStatus(row);
+  }
+  return map;
+}
+
+/** Schreibt den vollständigen aktuellen Status einer Person (Upsert). */
+export async function upsertUserStatus(s: {
+  userId: string;
+  status: string | null;
+  sub?: string | null;
+  description?: string | null;
+  isAfk: boolean;
+  startedAt?: string | null;
+}): Promise<void> {
+  const payload = {
+    user_id: s.userId,
+    status: s.status,
+    sub: s.sub ?? null,
+    description: s.description ?? null,
+    is_afk: s.isAfk,
+    started_at: s.startedAt ?? null,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await getSupabase()
+    .from('user_status')
+    .upsert(payload, { onConflict: 'user_id' });
+  if (error) throw error;
+}
+
+/** Archiviert einen abgeschlossenen Status-Abschnitt in der Historie. */
+export async function insertStatusLog(e: {
+  userId: string;
+  status: string;
+  sub?: string | null;
+  description?: string | null;
+  isAfk: boolean;
+  startedAt: string;
+  endedAt: string;
+  durationSeconds: number;
+}): Promise<void> {
+  const payload = {
+    user_id: e.userId,
+    status: e.status,
+    sub: e.sub ?? null,
+    description: e.description ?? null,
+    is_afk: e.isAfk,
+    started_at: e.startedAt,
+    ended_at: e.endedAt,
+    duration_seconds: Math.max(0, Math.round(e.durationSeconds)),
+  };
+  const { error } = await getSupabase().from('status_log').insert(payload);
+  if (error) throw error;
+}
+
+/**
+ * Historie ab `sinceIso` (ISO), absteigend nach Start. RLS liefert Agent:innen
+ * nur die eigenen Abschnitte, Chef:innen alle.
+ */
+export async function fetchStatusLog(sinceIso?: string, limit = 5000): Promise<StatusLogEntry[]> {
+  let q = getSupabase()
+    .from('status_log')
+    .select('*')
+    .order('started_at', { ascending: false })
+    .limit(limit);
+  if (sinceIso) q = q.gte('started_at', sinceIso);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data as StatusLogRow[]).map(mapStatusLog);
+}
+
+/** Chef-Aktion: löscht die komplette Status-Historie (Datensparsamkeit). */
+export async function clearStatusLog(): Promise<void> {
+  const { error } = await getSupabase()
+    .from('status_log')
+    .delete()
+    .not('id', 'is', null);
   if (error) throw error;
 }

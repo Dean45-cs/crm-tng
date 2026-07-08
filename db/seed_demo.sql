@@ -114,7 +114,20 @@ values
 
   -- Jonas (neu im Team)
   ('K-12001','Nordlicht Café',         '["Fibrelight"]'::jsonb,               date_trunc('month',current_date)::date + 16, 'aktiv',     'TNG-3030', null,             12, 'Erster eigener Abschluss.', 'd0000000-0000-4000-8000-000000000004'),
-  ('K-11045','Andreas Klein',          '["Waipu TV"]'::jsonb,                 date_trunc('month',current_date)::date + 21, 'aktiv',     'TNG-3031', null,             null,null,'d0000000-0000-4000-8000-000000000004');
+  ('K-11045','Andreas Klein',          '["Waipu TV"]'::jsonb,                 date_trunc('month',current_date)::date + 21, 'aktiv',     'TNG-3031', null,             null,null,'d0000000-0000-4000-8000-000000000004'),
+
+  -- Zusätzliche Kunden & Historie (2 Monate zurück, für Berichte/Trends)
+  ('K-14210','Hotel Am Hafen',         '["Premium 1000","Waipu TV"]'::jsonb,  date_trunc('month',current_date - interval '2 months')::date + 3,  'aktiv',     'TNG-2810', null, 24, 'Großkunde, mehrere Anschlüsse.', 'd0000000-0000-4000-8000-000000000001'),
+  ('K-14355','Physiotherapie Meier',   '["Pro 1000"]'::jsonb,                 date_trunc('month',current_date - interval '2 months')::date + 14, 'aktiv',     'TNG-2811', null, 12, null, 'd0000000-0000-4000-8000-000000000001'),
+  ('K-14488','Rechtsanwälte Voigt & Partner','["Fibrepro","Mobilfunk LTE Komplett 5G"]'::jsonb, date_trunc('month',current_date - interval '2 months')::date + 25, 'aktiv', 'TNG-2812', null, 24, null, 'd0000000-0000-4000-8000-000000000002'),
+  ('K-14602','Kindertagesstätte Sonnenschein','["Fibrefamily"]'::jsonb,       date_trunc('month',current_date - interval '2 months')::date + 9,  'aktiv',     'TNG-2813', null, 24, null, 'd0000000-0000-4000-8000-000000000003'),
+  ('K-14719','Michael Brandt',         '["Basic 1000"]'::jsonb,               date_trunc('month',current_date - interval '2 months')::date + 19, 'storniert', 'TNG-2814', null, 24, 'Umzug ins Ausland.', 'd0000000-0000-4000-8000-000000000004'),
+  ('K-14820','Bio-Markt Grünwald',     '["Fibrepro","Waipu TV"]'::jsonb,      date_trunc('month',current_date - interval '1 month')::date + 5,  'aktiv',     'TNG-2960', current_date + 1, 24, null, 'd0000000-0000-4000-8000-000000000002'),
+  ('K-14933','Familie Roth',           '["Smart300"]'::jsonb,                 date_trunc('month',current_date - interval '1 month')::date + 27, 'offen',     'TNG-2961', current_date - 1, 12, 'Warten auf Bonitätsprüfung.', 'd0000000-0000-4000-8000-000000000003'),
+  ('K-15044','Fahrschule Nordwind',    '["Surf1.000"]'::jsonb,                date_trunc('month',current_date)::date + 1,  'aktiv',     'TNG-3040', null, 12, null, 'd0000000-0000-4000-8000-000000000004'),
+  ('K-15177','Bäckerei Kraus',         '["Mobilfunk LTE Komplett 5G"]'::jsonb,date_trunc('month',current_date)::date + 20, 'aktiv',     'TNG-3041', null, null,'Zusatzprodukt zur Filiale.', 'd0000000-0000-4000-8000-000000000001'),
+  ('K-15288','Steuerkanzlei Voß',      '["Pro 1000"]'::jsonb,                 date_trunc('month',current_date)::date + 23, 'aktiv',     'TNG-3042', null, 24, 'Aus Lead e...0004 gewonnen.', 'd0000000-0000-4000-8000-000000000001'),
+  ('K-15399','Autohaus Sonne',         '["Business 1000"]'::jsonb,            date_trunc('month',current_date)::date + 24, 'aktiv',     'TNG-3043', null, 24, 'Aus Lead e...0006 gewonnen.', 'd0000000-0000-4000-8000-000000000001');
 
 -- ----------------------------------------------------------------------------
 -- (4) Tarifwechsel
@@ -125,7 +138,10 @@ values
   ('K-10892','Bäckerei Kraus',   'upgrade',  'mvlz_lt3',     'Fibrefamily','Fibrepro', date_trunc('month',current_date)::date + 6,  'TNG-3101', null, 'd0000000-0000-4000-8000-000000000001'),
   ('K-11320','Yilmaz Elektro',   'sidegrade','outside_mvlz', 'Flott300','Surf1.000',   date_trunc('month',current_date - interval '1 month')::date + 22, 'TNG-2950', null, 'd0000000-0000-4000-8000-000000000001'),
   ('K-12001','Nordlicht Café',   'upgrade',  'mvlz_gt3',     'Fibrelight','Fibrefamily',date_trunc('month',current_date)::date + 12, 'TNG-3102', null, 'd0000000-0000-4000-8000-000000000002'),
-  ('K-13422','Markus Lang',      'sidegrade','mvlz_lt3',     'Smart300','Surf100',      date_trunc('month',current_date)::date + 18, 'TNG-3103', null, 'd0000000-0000-4000-8000-000000000003');
+  ('K-13422','Markus Lang',      'sidegrade','mvlz_lt3',     'Smart300','Surf100',      date_trunc('month',current_date)::date + 18, 'TNG-3103', null, 'd0000000-0000-4000-8000-000000000003'),
+  ('K-14820','Bio-Markt Grünwald','upgrade', 'mvlz_gt3',     'Fibrefamily','Fibrepro',   date_trunc('month',current_date - interval '1 month')::date + 6, 'TNG-2970', null, 'd0000000-0000-4000-8000-000000000002'),
+  ('K-14210','Hotel Am Hafen',   'upgrade',  'outside_mvlz', 'Premium 1000','Business 1000', date_trunc('month',current_date - interval '2 months')::date + 10, 'TNG-2820', 'Erweiterung um weitere Zimmer.', 'd0000000-0000-4000-8000-000000000001'),
+  ('K-14602','Kindertagesstätte Sonnenschein','sidegrade','mvlz_lt3','Fibrelight','Fibrefamily', date_trunc('month',current_date - interval '2 months')::date + 15, 'TNG-2821', null, 'd0000000-0000-4000-8000-000000000003');
 
 -- ----------------------------------------------------------------------------
 -- (5) Leads (4-Stufen-Pipeline) + Aktivitäten
@@ -141,7 +157,13 @@ values
   ('e0000000-0000-4000-8000-000000000006','Autohaus Sonne',     'K-20015','0381 778899','Business 1000',      'gewonnen',     'normal',   null,             'Abschluss erfolgt.', 'd0000000-0000-4000-8000-000000000001'),
   ('e0000000-0000-4000-8000-000000000007','Pension Anker',      'K-20016','0381 990011','Fibrefamily',        'gewonnen',     'normal',   null,             null, 'd0000000-0000-4000-8000-000000000002'),
   ('e0000000-0000-4000-8000-000000000008','Praxis Dr. Nolte',   'K-20017','0381 112233','Premium 1000',       'gewonnen',     'hoch',     null,             null, 'd0000000-0000-4000-8000-000000000001'),
-  ('e0000000-0000-4000-8000-000000000009','Kiosk am Markt',     null,     '0381 445566','Glasfaser',          'verloren',     'normal',   null,             'Hat sich für Wettbewerber entschieden.', 'd0000000-0000-4000-8000-000000000003');
+  ('e0000000-0000-4000-8000-000000000009','Kiosk am Markt',     null,     '0381 445566','Glasfaser',          'verloren',     'normal',   null,             'Hat sich für Wettbewerber entschieden.', 'd0000000-0000-4000-8000-000000000003'),
+  ('e0000000-0000-4000-8000-000000000010','Fitnessstudio PowerZone','K-20020','0381 665544','Business Glasfaser', 'neu',        'hoch',     current_date + 1, 'Mehrere Standorte, großes Potenzial.', 'd0000000-0000-4000-8000-000000000002'),
+  ('e0000000-0000-4000-8000-000000000011','Familie Neumann',    null,     '0176 2233445','Privatanschluss',   'neu',          'normal',   current_date + 5, null, 'd0000000-0000-4000-8000-000000000003'),
+  ('e0000000-0000-4000-8000-000000000012','Werbeagentur Blickfang','K-20021','0381 887766','Fibrepro Upgrade', 'inBearbeitung','normal',  current_date + 2, 'Wartet auf internes Budget-OK.', 'd0000000-0000-4000-8000-000000000004'),
+  ('e0000000-0000-4000-8000-000000000013','Metzgerei Hoffmann',  'K-20022','0381 334455','Fibrefamily',       'inBearbeitung','dringend', current_date,     'Konkurrenzangebot liegt vor – dringend nachfassen.', 'd0000000-0000-4000-8000-000000000002'),
+  ('e0000000-0000-4000-8000-000000000014','Yoga Studio Balance', 'K-20023','0381 223311','Surf1.000',         'gewonnen',     'normal',   null,             null, 'd0000000-0000-4000-8000-000000000003'),
+  ('e0000000-0000-4000-8000-000000000015','Getränkemarkt Nord',  'K-20024','0381 998877','Basic 1000',        'verloren',     'normal',   null,             'Preis war entscheidend, zu Wettbewerber gewechselt.', 'd0000000-0000-4000-8000-000000000004');
 
 insert into public.lead_activities (lead_id, type, content, created_by)
 values
@@ -149,7 +171,12 @@ values
   ('e0000000-0000-4000-8000-000000000001','note',   'Unterlagen zum Bauträger-Tarif zugeschickt.',          'd0000000-0000-4000-8000-000000000001'),
   ('e0000000-0000-4000-8000-000000000004','note',   'Angebot Pro 1000 inkl. VVL versendet.',                'd0000000-0000-4000-8000-000000000001'),
   ('e0000000-0000-4000-8000-000000000004','contact','Rückruf für nächste Woche vereinbart.',                'd0000000-0000-4000-8000-000000000001'),
-  ('e0000000-0000-4000-8000-000000000006','contact','Vertrag unterschrieben übergeben.',                    'd0000000-0000-4000-8000-000000000001');
+  ('e0000000-0000-4000-8000-000000000006','contact','Vertrag unterschrieben übergeben.',                    'd0000000-0000-4000-8000-000000000001'),
+  ('e0000000-0000-4000-8000-000000000010','contact','Erstgespräch mit Studioleitung geführt.',              'd0000000-0000-4000-8000-000000000002'),
+  ('e0000000-0000-4000-8000-000000000012','note',   'Angebot für Fibrepro-Upgrade verschickt.',             'd0000000-0000-4000-8000-000000000004'),
+  ('e0000000-0000-4000-8000-000000000013','contact','Kunde nachtelefoniert, Konkurrenzangebot besprochen.', 'd0000000-0000-4000-8000-000000000002'),
+  ('e0000000-0000-4000-8000-000000000013','note',   'Rabatt-Freigabe bei Chefin angefragt.',                'd0000000-0000-4000-8000-000000000002'),
+  ('e0000000-0000-4000-8000-000000000014','contact','Vertrag unterschrieben übergeben.',                    'd0000000-0000-4000-8000-000000000003');
 
 -- ----------------------------------------------------------------------------
 -- (6) Notizen
@@ -160,7 +187,11 @@ values
   ('K-10234','Müller Haustechnik GmbH','Rückruf Geschäftsführer','Möchte Upgrade auf Premium 1000 für die Filiale besprechen.','TNG-3001','d0000000-0000-4000-8000-000000000001'),
   ('K-12876','TechStart UG','Vertragsverlängerung','Vertrag läuft in ~1 Monat aus – VVL-Angebot vorbereiten.','TNG-2780','d0000000-0000-4000-8000-000000000001'),
   ('K-12001','Nordlicht Café','Standort-Check','Glasfaser liegt an, Hausanschluss muss noch geprüft werden.',null,'d0000000-0000-4000-8000-000000000002'),
-  (null,null,'Team-Idee','Sammelaktion für Bestandskunden-VVL im nächsten Monat starten.',null,'d0000000-0000-4000-8000-000000000003');
+  (null,null,'Team-Idee','Sammelaktion für Bestandskunden-VVL im nächsten Monat starten.',null,'d0000000-0000-4000-8000-000000000003'),
+  ('K-14210','Hotel Am Hafen','Zusatzanschluss geplant','Möchte im Herbst zwei weitere Zimmer ans Netz bringen lassen.',null,'d0000000-0000-4000-8000-000000000001'),
+  ('K-14488','Rechtsanwälte Voigt & Partner','Rahmenvertrag prüfen','Kanzlei fragt nach Rahmenvertrag für weitere Standorte.','TNG-2812','d0000000-0000-4000-8000-000000000002'),
+  ('K-14933','Familie Roth','Bonitätsprüfung offen','Auskunftei-Antwort steht noch aus, Kunde ungeduldig.',null,'d0000000-0000-4000-8000-000000000003'),
+  (null,null,'Schulung','Neue Mitarbeiter-Schulung zu Fibrepro-Upselling nächste Woche.',null,'d0000000-0000-4000-8000-000000000001');
 
 -- ----------------------------------------------------------------------------
 -- (7) Incentives (laufende Team-Aktionen)
@@ -169,7 +200,8 @@ insert into public.incentives
   (title, mechanic, metric, period, target, reward, active, created_by)
 values
   ('Monats-Sprint','goal',        'commission','monthly', 800, 'Tankgutschein 50 €',  true, 'd0000000-0000-4000-8000-000000000001'),
-  ('Wochen-Champion','competition','deals',     'weekly',  0,   'Mittagessen aufs Haus', true, 'd0000000-0000-4000-8000-000000000001');
+  ('Wochen-Champion','competition','deals',     'weekly',  0,   'Mittagessen aufs Haus', true, 'd0000000-0000-4000-8000-000000000001'),
+  ('Upselling-Woche','goal',      'contracts', 'weekly',  3,   'Kinogutschein',       true, 'd0000000-0000-4000-8000-000000000001');
 
 -- ----------------------------------------------------------------------------
 -- (8) Kunden-Zuordnung (Owner / geteilt) — für die Kundenliste
@@ -178,7 +210,10 @@ insert into public.customer_ownerships (customer_number, owner, shared_with)
 values
   ('K-10234','d0000000-0000-4000-8000-000000000001','{}'::uuid[]),
   ('K-12001','d0000000-0000-4000-8000-000000000002', array['d0000000-0000-4000-8000-000000000004']::uuid[]),
-  ('K-12244','d0000000-0000-4000-8000-000000000003','{}'::uuid[])
+  ('K-12244','d0000000-0000-4000-8000-000000000003','{}'::uuid[]),
+  ('K-14210','d0000000-0000-4000-8000-000000000001','{}'::uuid[]),
+  ('K-14488','d0000000-0000-4000-8000-000000000002','{}'::uuid[]),
+  ('K-14820','d0000000-0000-4000-8000-000000000002', array['d0000000-0000-4000-8000-000000000004']::uuid[])
 on conflict (customer_number) do nothing;
 
 -- ============================================================================

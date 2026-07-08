@@ -45,6 +45,7 @@ import {
 } from '../lib/utils';
 import { attainmentPct, teamKpis } from '../lib/teamStats';
 import { SkeletonTable } from '../components/Skeleton';
+import { StatusInsights } from '../components/StatusInsights';
 
 function initialsOf(name: string): string {
   return name
@@ -393,6 +394,8 @@ export function TeamDashboard() {
         />
       </div>
 
+      <StatusInsights />
+
       {topPerformer && (
         <div className="team-top-banner">
           <Crown size={18} />
@@ -403,15 +406,15 @@ export function TeamDashboard() {
         </div>
       )}
 
-      <div className="grid-2" style={{ marginBottom: 14 }}>
+      <div className="grid-2" style={{ marginBottom: 10 }}>
         <div className="widget">
-          <div className="row between" style={{ marginBottom: 14 }}>
+          <div className="row between" style={{ marginBottom: 10 }}>
             <h3 className="widget-title" style={{ margin: 0 }}>
               Team-Provision pro Monat
             </h3>
             <span className="muted">Letzte 6 Monate</span>
           </div>
-          <div style={{ width: '100%', height: 250 }}>
+          <div style={{ width: '100%', height: 200 }}>
             <ResponsiveContainer>
               <BarChart data={trend6} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
@@ -431,7 +434,7 @@ export function TeamDashboard() {
         </div>
 
         <div className="widget">
-          <div className="row between" style={{ marginBottom: 14 }}>
+          <div className="row between" style={{ marginBottom: 10 }}>
             <h3 className="widget-title" style={{ margin: 0 }}>
               Vertragsstatus
             </h3>
@@ -442,7 +445,7 @@ export function TeamDashboard() {
               <span>Noch keine Verträge erfasst.</span>
             </div>
           ) : (
-            <div style={{ width: '100%', height: 250 }}>
+            <div style={{ width: '100%', height: 200 }}>
               <ResponsiveContainer>
                 <PieChart>
                   <Pie
@@ -469,8 +472,8 @@ export function TeamDashboard() {
         </div>
       </div>
 
-      <div className="widget" style={{ marginBottom: 14 }}>
-        <div className="row between" style={{ marginBottom: 14 }}>
+      <div className="widget" style={{ marginBottom: 10 }}>
+        <div className="row between" style={{ marginBottom: 10 }}>
           <h3 className="widget-title" style={{ margin: 0 }}>
             Provision je Mitarbeiter:in
           </h3>
@@ -481,7 +484,7 @@ export function TeamDashboard() {
             <span>Noch keine Mitarbeitenden.</span>
           </div>
         ) : (
-          <div style={{ width: '100%', height: Math.max(160, perAgent.length * 44 + 40) }}>
+          <div style={{ width: '100%', height: Math.max(140, perAgent.length * 32 + 30) }}>
             <ResponsiveContainer>
               <BarChart
                 data={perAgent}
@@ -624,7 +627,7 @@ export function TeamDashboard() {
 
       <div
         className="muted"
-        style={{ marginTop: 14, fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center' }}
+        style={{ marginTop: 10, fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center' }}
       >
         <BarChart3 size={13} /> Klicke auf eine Zeile für die Mitarbeiter-Detailansicht.
       </div>

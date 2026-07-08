@@ -1,0 +1,24 @@
+name,category,commission,active
+Fibrelight,Privat,7.5,true
+Fibrefamily,Privat,10,true
+Fibrepro,Privat,15,true
+Flott50,Privat,7.5,true
+Flott300,Privat,10,true
+Flott500,Privat,15,true
+Surf100,Privat,7.5,true
+Surf1.000,Privat,10,true
+Smart300,Privat,7.5,true
+Smart1.000,Privat,10,true
+Family1.000,Privat,15,true
+Max.1.000,Privat,20,true
+Winback Privat,Privat,12.5,true
+Lite 1000,Business,30,true
+Basic 1000,Business,40,true
+Pro 1000,Business,50,true
+Premium 1000,Business,70,true
+Winback Business,Business,12.5,true
+Waipu TV,Zusatz,10,true
+Mobilfunk LTE Smart 4G,Zusatz,5,true
+Mobilfunk LTE Komplett 4G,Zusatz,7.5,true
+Mobilfunk LTE Smart 5G,Zusatz,5,true
+Mobilfunk LTE Komplett 5G,Zusatz,7.5,true

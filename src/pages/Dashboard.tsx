@@ -43,7 +43,13 @@ import { useRouter } from '../router';
 type Scope = 'mine' | 'all';
 
 export function Dashboard() {
-  const { contracts: allContracts, tariffChanges: allTariffChanges, settings, loaded } = useStore();
+  // Gezielte Selektoren statt Komplett-Abo: das Dashboard (inkl. Chart)
+  // rendert so nur neu, wenn sich Verträge/Tarifwechsel/Settings ändern —
+  // nicht bei jedem Realtime-Update von Notizen, Leads oder Aktivitäten.
+  const allContracts = useStore((s) => s.contracts);
+  const allTariffChanges = useStore((s) => s.tariffChanges);
+  const settings = useStore((s) => s.settings);
+  const loaded = useStore((s) => s.loaded);
   const currentUser = useAuth((s) => s.getCurrentUser());
   const greetName = currentUser?.displayName ?? 'Kolleg:in';
   const { navigate } = useRouter();
@@ -306,15 +312,15 @@ export function Dashboard() {
       <IncentiveWidget />
       <ExpiryRadarWidget />
 
-      <div className="grid-2" style={{ marginBottom: 14 }}>
+      <div className="grid-2" style={{ marginBottom: 10 }}>
         <div className="widget">
-          <div className="row between" style={{ marginBottom: 14 }}>
+          <div className="row between" style={{ marginBottom: 10 }}>
             <h3 className="widget-title" style={{ margin: 0 }}>
               Provision pro Monat
             </h3>
             <span className="muted">Letzte 6 Monate</span>
           </div>
-          <div style={{ width: '100%', height: 240 }}>
+          <div style={{ width: '100%', height: 200 }}>
             <ResponsiveContainer>
               <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
@@ -341,7 +347,7 @@ export function Dashboard() {
         <FollowUpInbox />
       </div>
 
-      <div className="grid-2" style={{ marginBottom: 16 }}>
+      <div className="grid-2" style={{ marginBottom: 10 }}>
         <div className="widget">
           <h3 className="widget-title">Zuletzt erfasst</h3>
           {recent.length === 0 ? (
@@ -395,7 +401,7 @@ function TargetWidget({
   daysLeft: number;
   remaining: number;
 }) {
-  const radius = 56;
+  const radius = 44;
   const circ = 2 * Math.PI * radius;
   const dashOffset = circ - (progress / 100) * circ;
   const dailyNeeded = daysLeft > 0 ? remaining / daysLeft : 0;
@@ -403,22 +409,22 @@ function TargetWidget({
   return (
     <div className="widget target-widget">
       <div className="target-ring">
-        <svg width="132" height="132" viewBox="0 0 132 132">
+        <svg width="104" height="104" viewBox="0 0 104 104">
           <circle
             className="target-ring-track"
-            cx="66"
-            cy="66"
+            cx="52"
+            cy="52"
             r={radius}
             fill="none"
-            strokeWidth="11"
+            strokeWidth="9"
           />
           <circle
             className="target-ring-fill"
-            cx="66"
-            cy="66"
+            cx="52"
+            cy="52"
             r={radius}
             fill="none"
-            strokeWidth="11"
+            strokeWidth="9"
             strokeDasharray={circ}
             strokeDashoffset={dashOffset}
           />
@@ -514,7 +520,7 @@ function TopProductsWidget({
         Top-Produkte
       </h3>
       {items.length === 0 ? (
-        <div className="empty-inline" style={{ minHeight: 200 }}>
+        <div className="empty-inline" style={{ minHeight: 110 }}>
           <span>Keine Produkte verkauft.</span>
         </div>
       ) : (

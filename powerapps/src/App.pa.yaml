@@ -1,0 +1,61 @@
+# =============================================================================
+# TNG CRM — Power Apps Canvas source (App)
+# Referenz-/Startquelle. Power-Apps-YAML ist versionsabhängig: nach dem ersten
+# Import einmal `pac canvas unpack` fahren, um exakt auf eure pac-Version zu
+# normalisieren (siehe 06-import-and-build.md).
+# =============================================================================
+App:
+  Properties:
+    StartScreen: =scrDashboard
+    OnStart: |
+      =Set(varDark, false);
+      Set(varIsManager, !IsBlank(LookUp(tng_UserProfiles, tng_user.'Primary Email' = User().Email)));
+      Set(varNav, "dashboard");
+      ClearCollect(colNav,
+        { key:"dashboard", label:"Dashboard",    icon:Icon.Home },
+        { key:"contracts", label:"Verträge",     icon:Icon.DetailList },
+        { key:"tariffs",   label:"Tarifwechsel", icon:Icon.Sync },
+        { key:"leads",     label:"Leads",        icon:Icon.People },
+        { key:"notes",     label:"Notizen",      icon:Icon.Post },
+        { key:"customers", label:"Kunden",       icon:Icon.Contact }
+      )
+    # Benannte Formeln (Theme + Logik). Vollständig in 03 + 04.
+    Formulas: |
+      =
+      Theme = If(varDark,
+        { Primary: ColorValue("#E2E8F0"), Secondary: ColorValue("#94A3B8"),
+          Accent: ColorValue("#38BDF8"),  Background: ColorValue("#0B1220"),
+          Surface: ColorValue("#111A2E"), Text: ColorValue("#F1F5F9"),
+          TextMuted: ColorValue("#94A3B8"), Border: ColorValue("#1E293B"),
+          Success: ColorValue("#4ADE80"), Warning: ColorValue("#FBBF24"), Danger: ColorValue("#F87171") },
+        { Primary: ColorValue("#0F172A"), Secondary: ColorValue("#334155"),
+          Accent: ColorValue("#0369A1"),  Background: ColorValue("#F8FAFC"),
+          Surface: ColorValue("#FFFFFF"), Text: ColorValue("#020617"),
+          TextMuted: ColorValue("#475569"), Border: ColorValue("#E2E8F0"),
+          Success: ColorValue("#15803D"), Warning: ColorValue("#B45309"), Danger: ColorValue("#B91C1C") });
+      Space  = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
+      Radius = { card: 12, control: 8, pill: 999 };
+      FontMain = Font.'Open Sans';
+      Heute = DateValue(Text(Today(), "yyyy-mm-dd"));
+      MonStart = Date(Year(Heute), Month(Heute), 1);
+      MonEnd = DateAdd(MonStart, 1, Months);
+      WoStart(d: Date): Date = DateAdd(d, -(Weekday(d, StartOfWeek.Monday) - 1), Days);
+      IsSameMonth(d: Date, ref: Date): Boolean = Year(d) = Year(ref) && Month(d) = Month(ref);
+      IstJira(v: Text): Boolean = IsBlank(Trim(v)) || IsMatch(Trim(v), "^[A-Z]{2,}-\d+$");
+      NormJira(v: Text): Text = Upper(Trim(v));
+      TariffProvision(changeType: Text, context: Text): Number =
+        LookUp(tng_TariffRates, tng_changetype = changeType && tng_context = context, tng_amount);
+      ContractEnd(start: Date, laufzeit: Number): Date =
+        If(laufzeit = 0 || IsBlank(laufzeit), Blank(), DateAdd(start, laufzeit, Months));
+      TageBis(d: Date): Number = DateDiff(Heute, d, Days);
+      ExpiryBucket(start: Date, laufzeit: Number): Text =
+        With({ e: ContractEnd(start, laufzeit) },
+          If(IsBlank(e), "",
+            With({ days: TageBis(e) },
+              If(days < 0 || days > 90, "",
+                 If(days <= 30, "soon", If(days <= 60, "medium", "later"))))));
+      FollowUpBucket(d: Date): Text =
+        If(IsBlank(d), "",
+          With({ diff: DateDiff(Heute, d, Days) },
+            Switch(true, diff < 0, "overdue", diff = 0, "today", diff <= 7, "thisWeek", "later")));
+      IstFaellig(d: Date): Boolean = FollowUpBucket(d) in ["overdue", "today"];

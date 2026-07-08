@@ -33,6 +33,7 @@ import {
   followUpBucket,
 } from '../lib/utils';
 import { LeadForm, type LeadPrefill } from '../components/LeadForm';
+import { SkeletonCardGrid } from '../components/Skeleton';
 import type { Lead, LeadStatus, LeadPriority, Contract } from '../types';
 
 const STATUS_ORDER: LeadStatus[] = ['neu', 'inBearbeitung', 'gewonnen', 'verloren'];
@@ -149,7 +150,7 @@ function ActivityPanel({ leadId, currentUserKey, userMap }: ActivityPanelProps) 
 }
 
 export function Leads() {
-  const { leads, contracts, settings, leadActivities, updateLead, deleteLead, addLeadActivity } = useStore();
+  const { leads, contracts, settings, leadActivities, loaded, updateLead, deleteLead, addLeadActivity } = useStore();
   const { getCurrentUser, users } = useAuth();
   const { openNewContract } = useQuickAdd();
   const currentUser = getCurrentUser();
@@ -229,6 +230,20 @@ export function Leads() {
     return c ? c.createdAt : null;
   };
 
+  if (!loaded) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h2>Leads</h2>
+            <p>Vertriebs-Pipeline und auslaufende Verträge — für das ganze Team.</p>
+          </div>
+        </div>
+        <SkeletonCardGrid count={6} />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -243,7 +258,7 @@ export function Leads() {
 
       {/* Auslaufende Verträge */}
       {expiring.length > 0 && (
-        <div className="widget" style={{ marginBottom: 18 }}>
+        <div className="widget" style={{ marginBottom: 12 }}>
           <h3
             className="widget-title"
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
