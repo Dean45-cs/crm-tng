@@ -51,6 +51,10 @@ bereits — Migrationen sind dann nicht nötig.
   lesbar; Bearbeiten bleibt an Rechte gebunden (Besitzer:in / geteilt / Chef:in).
   Neue Tabelle `customer_access_requests`: wer keine Rechte hat, fragt sie mit
   Begründung an, Besitzer:in oder Chef:in nimmt an oder lehnt ab.
+- `014_status_board.sql` — Status-Board für Team-Presence: neue Tabellen
+  `user_status` (aktueller Status je Nutzer:in, für alle sichtbar) und
+  `status_log` (lückenlose Historie mit Start/Ende/Dauer als Basis für die
+  Chef-KPIs und den PowerBI-Export).
 
 > **Erster Zugang (frische Installation):** Beim allerersten Start bietet der
 > Login-Screen automatisch „Erstes Konto einrichten" an — dieses Konto wird der
