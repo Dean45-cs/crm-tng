@@ -6,6 +6,7 @@ import { QuickAddProvider } from './components/QuickAdd';
 import { ToastHost } from './components/ToastHost';
 import { CommandPalette } from './components/CommandPalette';
 import { CustomerSearchBar } from './components/CustomerSearchBar';
+import { StatusBar } from './components/StatusBar';
 import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
 import { SupabaseSetup } from './components/SupabaseSetup';
@@ -15,6 +16,7 @@ import { Router, useRouter, type RouteName } from './router';
 import { useAuth } from './store/useAuth';
 import { useOnboarding, useOnboardingHotkey } from './store/useOnboarding';
 import { useStore } from './store/useStore';
+import { useStatus } from './store/useStatus';
 import { isConfigured, onConfigChange } from './lib/supabase';
 
 // Seiten werden bei Bedarf nachgeladen (Code-Splitting). Das hält das
@@ -136,6 +138,7 @@ function Shell() {
           </div>
           <div className="row" style={{ gap: 14, alignItems: 'center' }}>
             <CustomerSearchBar />
+            <StatusBar />
             <span className="muted titlebar-date">
               {new Date().toLocaleDateString('de-DE', {
                 weekday: 'long',
@@ -243,6 +246,10 @@ export default function App() {
   const subscribeRealtime = useStore((s) => s.subscribeRealtime);
   const resetStore = useStore((s) => s.reset);
 
+  const loadStatus = useStatus((s) => s.load);
+  const subscribeStatus = useStatus((s) => s.subscribeRealtime);
+  const resetStatus = useStatus((s) => s.reset);
+
   const [configured, setConfigured] = useState(isConfigured());
 
   // Tour-Steuerung: „." + „o" gleichzeitig öffnet die Einführungstour erneut
@@ -260,12 +267,27 @@ export default function App() {
   useEffect(() => {
     if (!configured || !currentUserKey) {
       resetStore();
+      resetStatus();
       return;
     }
     loadAll();
+    loadStatus();
     const unsub = subscribeRealtime();
-    return () => unsub();
-  }, [configured, currentUserKey, loadAll, subscribeRealtime, resetStore]);
+    const unsubStatus = subscribeStatus();
+    return () => {
+      unsub();
+      unsubStatus();
+    };
+  }, [
+    configured,
+    currentUserKey,
+    loadAll,
+    subscribeRealtime,
+    resetStore,
+    loadStatus,
+    subscribeStatus,
+    resetStatus,
+  ]);
 
   useEffect(() => onConfigChange(() => setConfigured(isConfigured())), []);
 

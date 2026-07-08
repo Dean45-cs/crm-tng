@@ -224,6 +224,38 @@ create index if not exists idx_audit_log_actor on public.audit_log(actor_id);
 create index if not exists idx_audit_log_entity on public.audit_log(entity_type, entity_id);
 create index if not exists idx_audit_log_action on public.audit_log(action);
 
+-- ------------------------------------------------------------
+-- STATUS BOARD
+-- ------------------------------------------------------------
+-- user_status: der aktuelle Status je Nutzer:in (genau eine Zeile) für die
+-- Live-Team-Ansicht. status_log: lückenlose Historie abgeschlossener Abschnitte
+-- (Start/Ende/Dauer) als Grundlage für Chef-KPIs und den PowerBI-Export.
+-- ------------------------------------------------------------
+create table if not exists public.user_status (
+  user_id uuid primary key references public.users(id) on delete cascade,
+  status text,
+  sub text,
+  description text,
+  is_afk boolean not null default false,
+  started_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.status_log (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.users(id) on delete set null,
+  status text not null,
+  sub text,
+  description text,
+  is_afk boolean not null default false,
+  started_at timestamptz not null,
+  ended_at timestamptz not null,
+  duration_seconds integer not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_status_log_user on public.status_log(user_id);
+create index if not exists idx_status_log_started on public.status_log(started_at desc);
+
 -- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
@@ -237,6 +269,8 @@ alter table public.user_settings enable row level security;
 alter table public.shared_settings enable row level security;
 alter table public.incentives enable row level security;
 alter table public.leads enable row level security;
+alter table public.user_status enable row level security;
+alter table public.status_log enable row level security;
 alter table public.lead_activities enable row level security;
 alter table public.audit_log enable row level security;
 alter table public.customer_access_requests enable row level security;
@@ -470,6 +504,26 @@ create policy "access_req decide owner or manager" on public.customer_access_req
     and (owner_id = auth.uid() or public.auth_is_manager())
   );
 
+-- USER_STATUS: alle aktiven Nutzer:innen sehen den Live-Status aller Kolleg:innen;
+-- schreiben darf jede:r nur die eigene Zeile.
+create policy "user_status read all" on public.user_status
+  for select using (public.auth_is_active());
+create policy "user_status insert own" on public.user_status
+  for insert with check (public.auth_is_active() and user_id = auth.uid());
+create policy "user_status update own" on public.user_status
+  for update using (public.auth_is_active() and user_id = auth.uid());
+create policy "user_status delete own" on public.user_status
+  for delete using (public.auth_is_active() and user_id = auth.uid());
+
+-- STATUS_LOG: eigene Historie + Chef:innen lesen; anlegen nur für sich selbst;
+-- Chef:innen dürfen die Historie aufräumen.
+create policy "status_log read own or manager" on public.status_log
+  for select using (public.auth_is_active() and (user_id = auth.uid() or public.auth_is_manager()));
+create policy "status_log insert own" on public.status_log
+  for insert with check (public.auth_is_active() and user_id = auth.uid());
+create policy "status_log delete manager" on public.status_log
+  for delete using (public.auth_is_manager());
+
 -- ============================================================================
 -- REALTIME
 -- ============================================================================
@@ -484,3 +538,5 @@ alter publication supabase_realtime add table public.leads;
 alter publication supabase_realtime add table public.lead_activities;
 alter publication supabase_realtime add table public.audit_log;
 alter publication supabase_realtime add table public.customer_access_requests;
+alter publication supabase_realtime add table public.user_status;
+alter publication supabase_realtime add table public.status_log;

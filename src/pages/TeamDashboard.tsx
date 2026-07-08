@@ -45,6 +45,7 @@ import {
 } from '../lib/utils';
 import { attainmentPct, teamKpis } from '../lib/teamStats';
 import { SkeletonTable } from '../components/Skeleton';
+import { StatusInsights } from '../components/StatusInsights';
 
 function initialsOf(name: string): string {
   return name
@@ -392,6 +393,8 @@ export function TeamDashboard() {
           sub="heute + überfällig"
         />
       </div>
+
+      <StatusInsights />
 
       {topPerformer && (
         <div className="team-top-banner">
