@@ -1,4 +1,5 @@
 import type { StatusLogEntry, UserStatus } from '../types';
+import { weekStart } from './utils';
 
 // ============================================================================
 // Status-Katalog
@@ -74,6 +75,27 @@ export function formatDuration(seconds: number): string {
 export function formatClock(iso?: string): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
+// ============================================================================
+// Auswertungsfenster
+// ============================================================================
+
+export type StatusWindow = 'today' | 'week' | 'month' | 'all';
+
+export const STATUS_WINDOW_LABEL: Record<StatusWindow, string> = {
+  today: 'Heute',
+  week: 'Diese Woche',
+  month: 'Dieser Monat',
+  all: 'Gesamt',
+};
+
+/** Fensterbeginn (lokale Zeit) für die Zeit-Auswertung. */
+export function statusWindowStart(win: StatusWindow, ref: Date = new Date()): Date {
+  if (win === 'today') return new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
+  if (win === 'week') return weekStart(ref);
+  if (win === 'month') return new Date(ref.getFullYear(), ref.getMonth(), 1);
+  return new Date(0);
 }
 
 // ============================================================================

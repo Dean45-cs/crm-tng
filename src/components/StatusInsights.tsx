@@ -16,17 +16,15 @@ import {
   computeStatusInsights,
   formatDuration,
   buildPowerBiRows,
+  statusWindowStart,
+  STATUS_WINDOW_LABEL,
 } from '../lib/statusBoard';
-import { exportCsv, weekStart } from '../lib/utils';
+import { exportCsv } from '../lib/utils';
 import { logAudit } from '../lib/audit';
 
 type Window = 'today' | 'week' | 'month';
 
-const WINDOW_LABEL: Record<Window, string> = {
-  today: 'Heute',
-  week: 'Diese Woche',
-  month: 'Dieser Monat',
-};
+const WINDOWS: Window[] = ['today', 'week', 'month'];
 
 const TOOLTIP_STYLE = {
   background: 'var(--bg-card)',
@@ -35,13 +33,6 @@ const TOOLTIP_STYLE = {
   fontSize: 12,
   boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
 };
-
-function windowStart(w: Window): Date {
-  const now = new Date();
-  if (w === 'today') return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  if (w === 'week') return weekStart(now);
-  return new Date(now.getFullYear(), now.getMonth(), 1);
-}
 
 /**
  * Chef-KPIs zum Status-Board: aktuelle Presence, Zeitverteilung je Status im
@@ -57,7 +48,7 @@ export function StatusInsights() {
   const [confirmClear, setConfirmClear] = useState(false);
 
   const insights = useMemo(
-    () => computeStatusInsights(logs, Object.values(statuses), windowStart(win)),
+    () => computeStatusInsights(logs, Object.values(statuses), statusWindowStart(win)),
     [logs, statuses, win],
   );
 
@@ -98,13 +89,13 @@ export function StatusInsights() {
           </p>
         </div>
         <div className="statusinsights-windows">
-          {(Object.keys(WINDOW_LABEL) as Window[]).map((w) => (
+          {WINDOWS.map((w) => (
             <button
               key={w}
               className={`statusinsights-window${win === w ? ' active' : ''}`}
               onClick={() => setWin(w)}
             >
-              {WINDOW_LABEL[w]}
+              {STATUS_WINDOW_LABEL[w]}
             </button>
           ))}
         </div>
@@ -135,7 +126,7 @@ export function StatusInsights() {
         <MiniTile
           icon={<Timer size={15} />}
           accent="purple"
-          label={`Erfasste Zeit · ${WINDOW_LABEL[win]}`}
+          label={`Erfasste Zeit · ${STATUS_WINDOW_LABEL[win]}`}
           value={formatDuration(insights.totalSeconds)}
           sub={`${insights.perStatus.length} Status-Arten`}
         />
@@ -143,7 +134,7 @@ export function StatusInsights() {
 
       {chartData.length === 0 ? (
         <div className="empty-inline">
-          <span>Für {WINDOW_LABEL[win].toLowerCase()} wurde noch keine Status-Zeit erfasst.</span>
+          <span>Für {STATUS_WINDOW_LABEL[win].toLowerCase()} wurde noch keine Status-Zeit erfasst.</span>
         </div>
       ) : (
         <>

@@ -212,7 +212,25 @@ export const useStatus = create<StatusState>()((set, get) => ({
     const cur = prev[uid];
     if (!cur?.status) return;
     const isAfk = !cur.isAfk;
-    const next: UserStatus = { ...cur, isAfk, updatedAt: new Date().toISOString() };
+    const now = new Date().toISOString();
+
+    // AFK-Wechsel schließt den laufenden Abschnitt und startet einen neuen —
+    // so ist im Verlauf lückenlos nachvollziehbar, wann jemand abwesend war.
+    if (cur.startedAt) {
+      const durationSeconds = (Date.now() - new Date(cur.startedAt).getTime()) / 1000;
+      insertStatusLog({
+        userId: uid,
+        status: cur.status,
+        sub: cur.sub,
+        description: cur.description,
+        isAfk: cur.isAfk,
+        startedAt: cur.startedAt,
+        endedAt: now,
+        durationSeconds,
+      }).catch((e) => console.warn('[useStatus] log failed', e));
+    }
+
+    const next: UserStatus = { ...cur, isAfk, startedAt: now, updatedAt: now };
     set({ statuses: { ...prev, [uid]: next } });
     try {
       await upsertUserStatus({
@@ -221,7 +239,7 @@ export const useStatus = create<StatusState>()((set, get) => ({
         sub: cur.sub,
         description: cur.description,
         isAfk,
-        startedAt: cur.startedAt,
+        startedAt: now,
       });
     } catch (e) {
       fail('AFK-Status konnte nicht gespeichert werden.', e);

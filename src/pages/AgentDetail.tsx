@@ -40,6 +40,7 @@ import {
 import { agentStats, attainmentPct } from '../lib/teamStats';
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
+import { AgentStatusHistory } from '../components/AgentStatusHistory';
 import { useQuickAdd } from '../components/QuickAdd';
 
 interface Props {
@@ -257,6 +258,8 @@ export function AgentDetail({ agentKey }: Props) {
           </ResponsiveContainer>
         </div>
       </div>
+
+      <AgentStatusHistory agentKey={agentKey} agentName={agent.displayName} />
 
       <Section icon={<FileSignature size={15} />} title="Verträge" count={contractsList.length}>
         {contractsList.length === 0 ? (
