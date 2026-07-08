@@ -55,6 +55,13 @@ bereits — Migrationen sind dann nicht nötig.
   `user_status` (aktueller Status je Nutzer:in, für alle sichtbar) und
   `status_log` (lückenlose Historie mit Start/Ende/Dauer als Basis für die
   Chef-KPIs und den PowerBI-Export).
+- `015_auto_create_user_profile.sql` — **wichtig:** Trigger `handle_new_user`
+  auf `auth.users`, der das `public.users`-Profil serverseitig anlegt, sobald ein
+  Auth-Konto entsteht. Behebt „new row violates row-level security policy for
+  table users" beim Anlegen neuer Konten (das Profil hing bisher an einer Session
+  des neuen Nutzers und schlug u.a. bei aktiver E-Mail-Bestätigung fehl). Trägt
+  außerdem bereits verwaiste Auth-User (Konten ohne Profil) einmalig nach, damit
+  sie wieder in der Team-Verwaltung auftauchen.
 
 > **Erster Zugang (frische Installation):** Beim allerersten Start bietet der
 > Login-Screen automatisch „Erstes Konto einrichten" an — dieses Konto wird der

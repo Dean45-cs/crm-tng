@@ -304,6 +304,44 @@ $$;
 
 grant execute on function public.users_exist() to anon, authenticated;
 
+-- Profil automatisch anlegen: Sobald ein Auth-Konto entsteht (signUp), legt
+-- dieser SECURITY-DEFINER-Trigger das zugehörige public.users-Profil an. Damit
+-- ist die Profil-Erstellung unabhängig von Session/RLS/E-Mail-Bestätigung und
+-- der Client muss das Profil nicht mehr selbst einfügen. Anzeige-Name und
+-- normalisierter key kommen aus den signUp-Metadaten (mit Fallbacks).
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_display text;
+  v_key text;
+begin
+  v_display := coalesce(
+    nullif(trim(new.raw_user_meta_data->>'display_name'), ''),
+    split_part(new.email, '@', 1)
+  );
+  v_key := coalesce(
+    nullif(trim(new.raw_user_meta_data->>'key'), ''),
+    lower(v_display)
+  );
+  begin
+    insert into public.users (id, key, display_name)
+    values (new.id, v_key, v_display)
+    on conflict (id) do nothing;
+  exception
+    when unique_violation then
+      insert into public.users (id, key, display_name)
+      values (new.id, v_key || '-' || left(new.id::text, 8), v_display)
+      on conflict (id) do nothing;
+  end;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
 -- Privilege-Escalation verhindern: role/is_active/key/id nur durch Manager:innen
 -- (oder serverseitig per service_role / SQL-Editor, wo auth.uid() NULL ist).
 -- Ausnahme: Solange noch KEIN Manager existiert, darf der erste Account sich

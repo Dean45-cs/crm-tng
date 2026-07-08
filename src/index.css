@@ -418,6 +418,10 @@ code {
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 .btn-primary:hover {
+  /* Gradient beim Hover erhalten — sonst überschreibt .btn:hover (höhere
+     Spezifität als .btn-primary) den Hintergrund mit --bg-card-hover und der
+     blaue Button wird im Light-Mode weiß (weißer Text auf hellem Grund). */
+  background: var(--tng-gradient);
   filter: brightness(1.06);
   box-shadow:
     0 6px 16px rgba(0, 102, 179, 0.38),
@@ -5057,6 +5061,8 @@ table.crm-table td[style*="text-align: right"] {
   pointer-events: none;
 }
 .btn-primary:hover {
+  /* Blauer Gradient bleibt beim Hover erhalten (siehe Hinweis oben). */
+  background: var(--tng-gradient);
   transform: translateY(-2px);
   filter: none;
   box-shadow:
