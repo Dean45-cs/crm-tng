@@ -78,8 +78,8 @@ export function StatusInsights() {
   };
 
   return (
-    <div className="widget" style={{ marginBottom: 14 }}>
-      <div className="row between" style={{ marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+    <div className="widget" style={{ marginBottom: 10 }}>
+      <div className="row between" style={{ marginBottom: 10, flexWrap: 'wrap', gap: 10 }}>
         <div>
           <h3 className="widget-title" style={{ margin: 0 }}>
             Team-Status &amp; Auslastung
@@ -101,7 +101,7 @@ export function StatusInsights() {
         </div>
       </div>
 
-      <div className="team-kpis" style={{ marginBottom: 16 }}>
+      <div className="team-kpis" style={{ marginBottom: 10 }}>
         <MiniTile
           icon={<Activity size={15} />}
           accent="green"
@@ -138,7 +138,7 @@ export function StatusInsights() {
         </div>
       ) : (
         <>
-          <div style={{ width: '100%', height: Math.max(150, chartData.length * 40 + 30) }}>
+          <div style={{ width: '100%', height: Math.max(130, chartData.length * 30 + 30) }}>
             <ResponsiveContainer>
               <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" horizontal={false} />

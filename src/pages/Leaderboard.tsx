@@ -99,7 +99,7 @@ export function Leaderboard() {
         </div>
       </div>
 
-      <div className="widget" style={{ marginBottom: 16 }}>
+      <div className="widget" style={{ marginBottom: 10 }}>
         <div className="row between" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="row" style={{ gap: 10 }}>
             <div className={`leaderboard-toggle ${myOptIn ? 'on' : 'off'}`}>
@@ -142,7 +142,7 @@ export function Leaderboard() {
           {visibleRows.length >= 3 && <TopThree rows={visibleRows.slice(0, 3)} />}
 
           <div className="widget">
-            <div className="row between" style={{ marginBottom: 14 }}>
+            <div className="row between" style={{ marginBottom: 10 }}>
               <h3 className="widget-title" style={{ margin: 0 }}>
                 Gesamt-Ranking
               </h3>

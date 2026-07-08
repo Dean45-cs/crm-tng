@@ -138,8 +138,8 @@ export function AgentStatusHistory({ agentKey, agentName }: { agentKey: string; 
   const totalLogs = useMemo(() => logs.filter((l) => l.userId === agentKey).length, [logs, agentKey]);
 
   return (
-    <div className="widget" style={{ marginBottom: 22 }}>
-      <div className="row between" style={{ marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+    <div className="widget" style={{ marginBottom: 10 }}>
+      <div className="row between" style={{ marginBottom: 10, flexWrap: 'wrap', gap: 10 }}>
         <h3 className="widget-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
           <History size={15} /> Status-Verlauf
         </h3>

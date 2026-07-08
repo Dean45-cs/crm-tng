@@ -51,7 +51,7 @@ export function FollowUpInbox() {
 
   return (
     <div className="widget followup-inbox">
-      <div className="row between" style={{ marginBottom: 14 }}>
+      <div className="row between" style={{ marginBottom: 10 }}>
         <h3 className="widget-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
           <Bell size={15} />
           Wiedervorlage

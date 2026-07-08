@@ -78,7 +78,7 @@ export function Incentives() {
       <div className="page-header">
         <div className="incentive-page-title">
           <span className="incentive-page-icon">
-            <Trophy size={22} />
+            <Trophy size={18} />
           </span>
           <div>
             <h2 style={{ margin: 0 }}>Incentives</h2>
@@ -309,7 +309,7 @@ function IncentivePodium({
             key={r.key}
             className={`arcade-podium-col place-${place} ${mine ? 'is-me' : ''}`}
           >
-            {place === 1 && <Crown size={22} className="arcade-crown" />}
+            {place === 1 && <Crown size={18} className="arcade-crown" />}
             <div className="arcade-podium-avatar">{initialsOf(r.displayName)}</div>
             <div className="arcade-podium-name">
               {r.displayName}

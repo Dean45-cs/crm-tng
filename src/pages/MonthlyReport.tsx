@@ -348,7 +348,7 @@ export function MonthlyReport() {
           {monthContracts.length === 0 ? (
             <div className="report-empty">Keine Neuverträge in diesem Monat.</div>
           ) : (
-            <table className="report-table">
+            <table className="report-table report-table-compact">
               <thead>
                 <tr>
                   <th style={{ width: 90 }}>Datum</th>
@@ -401,7 +401,7 @@ export function MonthlyReport() {
           {monthTariffs.length === 0 ? (
             <div className="report-empty">Keine Tarifwechsel in diesem Monat.</div>
           ) : (
-            <table className="report-table">
+            <table className="report-table report-table-compact">
               <thead>
                 <tr>
                   <th style={{ width: 90 }}>Datum</th>

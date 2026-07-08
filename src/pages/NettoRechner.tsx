@@ -92,7 +92,7 @@ export function NettoRechner() {
             {formatCurrency(monthCommission)})
           </button>
 
-          <div className="field" style={{ marginTop: 18 }}>
+          <div className="field" style={{ marginTop: 12 }}>
             <label>Persönlicher Abzugssatz (%)</label>
             <div className="netto-rate-row">
               <input
