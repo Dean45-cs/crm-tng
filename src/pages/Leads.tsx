@@ -243,7 +243,7 @@ export function Leads() {
 
       {/* Auslaufende Verträge */}
       {expiring.length > 0 && (
-        <div className="widget" style={{ marginBottom: 18 }}>
+        <div className="widget" style={{ marginBottom: 12 }}>
           <h3
             className="widget-title"
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}

@@ -68,7 +68,7 @@ export function SkeletonDashboard() {
           ))}
         </div>
       </div>
-      <div className="grid-2" style={{ marginBottom: 14 }}>
+      <div className="grid-2" style={{ marginBottom: 10 }}>
         <div className="widget skeleton-block" style={{ minHeight: 280 }} />
         <div className="widget skeleton-block" style={{ minHeight: 280 }} />
       </div>

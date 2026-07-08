@@ -100,7 +100,7 @@ export function Customers() {
         </button>
       </div>
 
-      <div className="widget" style={{ padding: 14, marginBottom: 16 }}>
+      <div className="widget" style={{ padding: 10, marginBottom: 10 }}>
         <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="search-bar">
             <Search size={14} />

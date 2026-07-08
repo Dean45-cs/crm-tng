@@ -34,7 +34,7 @@ export function IncentiveWidget() {
   if (active.length === 0) return null;
 
   return (
-    <div className="widget" style={{ marginBottom: 14 }}>
+    <div className="widget" style={{ marginBottom: 10 }}>
       <div className="row between" style={{ marginBottom: 12 }}>
         <h3
           className="widget-title"

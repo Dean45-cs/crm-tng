@@ -69,7 +69,7 @@ export function CustomerShareDialog({ customerNumber, customerName, onClose }: P
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal share-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="row between" style={{ alignItems: 'flex-start', marginBottom: 14 }}>
+        <div className="row between" style={{ alignItems: 'flex-start', marginBottom: 10 }}>
           <div>
             <h3>Kunde teilen</h3>
             <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>

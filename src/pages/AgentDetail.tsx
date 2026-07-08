@@ -131,7 +131,7 @@ export function AgentDetail({ agentKey }: Props) {
         <button
           className="btn btn-ghost"
           onClick={() => navigate({ name: 'teamdashboard' })}
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 10 }}
         >
           <ArrowLeft size={14} /> Zurück
         </button>
@@ -151,7 +151,7 @@ export function AgentDetail({ agentKey }: Props) {
       <button
         className="btn btn-ghost"
         onClick={() => navigate({ name: 'teamdashboard' })}
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 10 }}
       >
         <ArrowLeft size={14} /> Team-Dashboard
       </button>
@@ -223,8 +223,8 @@ export function AgentDetail({ agentKey }: Props) {
         </div>
       </div>
 
-      <div className="widget" style={{ marginBottom: 22 }}>
-        <div className="row between" style={{ marginBottom: 14 }}>
+      <div className="widget" style={{ marginBottom: 10 }}>
+        <div className="row between" style={{ marginBottom: 10 }}>
           <h3
             className="widget-title"
             style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}
@@ -233,7 +233,7 @@ export function AgentDetail({ agentKey }: Props) {
           </h3>
           <span className="muted">Letzte 6 Monate</span>
         </div>
-        <div style={{ width: '100%', height: 240 }}>
+        <div style={{ width: '100%', height: 200 }}>
           <ResponsiveContainer>
             <BarChart data={chart6} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
@@ -429,7 +429,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section style={{ marginBottom: 22 }}>
+    <section style={{ marginBottom: 14 }}>
       <div className="customer-section-header">
         <div className="customer-section-title">
           {icon}
