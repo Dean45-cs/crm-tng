@@ -56,7 +56,7 @@ export function Notes() {
         </button>
       </div>
 
-      <div className="widget" style={{ padding: 14, marginBottom: 14 }}>
+      <div className="widget" style={{ padding: 10, marginBottom: 10 }}>
         <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="search-bar">
             <Search size={14} />

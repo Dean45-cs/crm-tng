@@ -306,15 +306,15 @@ export function Dashboard() {
       <IncentiveWidget />
       <ExpiryRadarWidget />
 
-      <div className="grid-2" style={{ marginBottom: 14 }}>
+      <div className="grid-2" style={{ marginBottom: 10 }}>
         <div className="widget">
-          <div className="row between" style={{ marginBottom: 14 }}>
+          <div className="row between" style={{ marginBottom: 10 }}>
             <h3 className="widget-title" style={{ margin: 0 }}>
               Provision pro Monat
             </h3>
             <span className="muted">Letzte 6 Monate</span>
           </div>
-          <div style={{ width: '100%', height: 240 }}>
+          <div style={{ width: '100%', height: 200 }}>
             <ResponsiveContainer>
               <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
@@ -341,7 +341,7 @@ export function Dashboard() {
         <FollowUpInbox />
       </div>
 
-      <div className="grid-2" style={{ marginBottom: 16 }}>
+      <div className="grid-2" style={{ marginBottom: 10 }}>
         <div className="widget">
           <h3 className="widget-title">Zuletzt erfasst</h3>
           {recent.length === 0 ? (
@@ -403,7 +403,7 @@ function TargetWidget({
   return (
     <div className="widget target-widget">
       <div className="target-ring">
-        <svg width="132" height="132" viewBox="0 0 132 132">
+        <svg width="104" height="104" viewBox="0 0 132 132">
           <circle
             className="target-ring-track"
             cx="66"

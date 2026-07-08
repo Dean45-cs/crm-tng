@@ -148,9 +148,9 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="widget" style={{ marginBottom: 16 }}>
+      <div className="widget" style={{ marginBottom: 10 }}>
         <h3 className="widget-title">Erscheinungsbild</h3>
-        <p className="muted" style={{ marginBottom: 14 }}>
+        <p className="muted" style={{ marginBottom: 10 }}>
           Farbschema der App. „System" übernimmt automatisch die Einstellung deines Geräts.
         </p>
         <div className="theme-seg" role="group" aria-label="Farbschema">
@@ -162,7 +162,7 @@ export function Settings() {
               aria-pressed={theme === value}
               onClick={() => chooseTheme(value)}
             >
-              <Icon size={20} strokeWidth={1.8} />
+              <Icon size={18} strokeWidth={1.8} />
               <span className="theme-seg-label">{label}</span>
               <span className="theme-seg-hint">{hint}</span>
             </button>
@@ -170,7 +170,7 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="widget" style={{ marginBottom: 16 }}>
+      <div className="widget" style={{ marginBottom: 10 }}>
         <h3 className="widget-title">Allgemein</h3>
         <div className="form-grid">
           <div className="field">
@@ -199,7 +199,7 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="widget" style={{ marginBottom: 16 }}>
+      <div className="widget" style={{ marginBottom: 10 }}>
         <h3 className="widget-title">
           <Trophy size={14} style={{ marginRight: 6, verticalAlign: '-2px' }} />
           Leaderboard
@@ -228,14 +228,14 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="widget" style={{ marginBottom: 16 }}>
+      <div className="widget" style={{ marginBottom: 10 }}>
         <h3 className="widget-title">Provision pro Produkt</h3>
-        <p className="muted" style={{ marginBottom: 14 }}>
+        <p className="muted" style={{ marginBottom: 10 }}>
           Werte aus dem TNG-Provisionskatalog (Version 1.2 ab 01.03.2026). Du kannst sie anpassen.
         </p>
 
         {CATS.map((cat) => (
-          <div key={cat} style={{ marginBottom: 18 }}>
+          <div key={cat} style={{ marginBottom: 10 }}>
             <div className="row" style={{ marginBottom: 8, gap: 8 }}>
               <span className={`cat-chip cat-${cat}`}>{cat}</span>
             </div>
@@ -277,9 +277,9 @@ export function Settings() {
         ))}
       </div>
 
-      <div className="widget" style={{ marginBottom: 16 }}>
+      <div className="widget" style={{ marginBottom: 10 }}>
         <h3 className="widget-title">Provision Tarifwechsel</h3>
-        <p className="muted" style={{ marginBottom: 14 }}>
+        <p className="muted" style={{ marginBottom: 10 }}>
           Provisionsmatrix nach Wechselart und MVLZ-Situation.
         </p>
         <div className="table-wrap">
@@ -322,12 +322,12 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="widget" style={{ marginBottom: 16 }}>
+      <div className="widget" style={{ marginBottom: 10 }}>
         <h3 className="widget-title">
           <Sheet size={14} style={{ marginRight: 6, verticalAlign: '-2px' }} />
           SharePoint Excel-Export
         </h3>
-        <p className="muted" style={{ marginBottom: 14 }}>
+        <p className="muted" style={{ marginBottom: 10 }}>
           Trägt Tarifwechsel per Knopfdruck automatisch in die SharePoint-Excel-Tabelle ein.
           Einmalig Azure-App-ID eintragen – danach reicht ein Klick.
         </p>
@@ -412,7 +412,7 @@ export function Settings() {
 
       <div className="widget">
         <h3 className="widget-title">Daten</h3>
-        <p className="muted" style={{ marginBottom: 14 }}>
+        <p className="muted" style={{ marginBottom: 10 }}>
           {contracts.length} Verträge · {tariffChanges.length} Tarifwechsel · {notes.length} Notizen.
           Alle Daten werden zentral in der Cloud gespeichert und im Team synchronisiert.
         </p>

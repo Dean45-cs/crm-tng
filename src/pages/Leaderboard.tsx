@@ -94,14 +94,14 @@ export function Leaderboard() {
       <div className="page-header">
         <div>
           <h2>
-            <Trophy size={20} style={{ verticalAlign: '-3px', marginRight: 8, color: '#f5a623' }} />
+            <Trophy size={18} style={{ verticalAlign: '-3px', marginRight: 8, color: '#f5a623' }} />
             Leaderboard
           </h2>
           <p>Wer hat in diesem Monat die meiste Provision erzielt?</p>
         </div>
       </div>
 
-      <div className="widget" style={{ marginBottom: 16 }}>
+      <div className="widget" style={{ marginBottom: 10 }}>
         <div className="row between" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="row" style={{ gap: 10 }}>
             <div className={`leaderboard-toggle ${myOptIn ? 'on' : 'off'}`}>
@@ -142,7 +142,7 @@ export function Leaderboard() {
           {visibleRows.length >= 3 && <Podium rows={visibleRows.slice(0, 3)} />}
 
           <div className="widget">
-            <div className="row between" style={{ marginBottom: 14 }}>
+            <div className="row between" style={{ marginBottom: 10 }}>
               <h3 className="widget-title" style={{ margin: 0 }}>
                 Gesamt-Ranking
               </h3>

@@ -89,7 +89,7 @@ export function CustomerDetail({ kdnr }: Props) {
         <button
           className="btn btn-ghost"
           onClick={() => navigate({ name: 'customers' })}
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 10 }}
         >
           <ArrowLeft size={14} /> Zurück
         </button>
@@ -107,7 +107,7 @@ export function CustomerDetail({ kdnr }: Props) {
       <button
         className="btn btn-ghost"
         onClick={() => navigate({ name: 'customers' })}
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 10 }}
       >
         <ArrowLeft size={14} /> Kunden
       </button>
@@ -433,7 +433,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section style={{ marginBottom: 22 }}>
+    <section style={{ marginBottom: 14 }}>
       <div className="customer-section-header">
         <div className="customer-section-title">
           {icon}

@@ -65,7 +65,7 @@ export function ActivityTimeline({ contracts, tariffChanges, notes }: Props) {
   if (events.length === 0) return null;
 
   return (
-    <section style={{ marginBottom: 22 }}>
+    <section style={{ marginBottom: 14 }}>
       <div className="customer-section-header">
         <div className="customer-section-title">
           <History size={15} />
