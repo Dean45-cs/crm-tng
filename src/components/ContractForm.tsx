@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Plus, X, AlertTriangle, Coins } from 'lucide-react';
+import { Plus, X, AlertTriangle, Coins, ClipboardCopy } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Modal } from './Modal';
 import { ProductPicker } from './ProductPicker';
@@ -9,8 +9,11 @@ import {
   getProductCommission,
   today,
   contractEndDate,
+  buildContractJiraDoc,
+  copyToClipboard,
 } from '../lib/utils';
 import { isJiraTicket, normalizeJiraTicket, findDuplicateCustomer } from '../lib/validation';
+import { toast } from '../store/useToast';
 import type { Contract, ContractStatus, ProductType } from '../types';
 import type { QuickAddPrefill } from './QuickAdd';
 
@@ -119,19 +122,26 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
     [draft.products, settings],
   );
 
-  const save = () => {
-    const trimmed: Draft = {
-      ...draft,
-      customerNumber: draft.customerNumber.trim(),
-      customerName: draft.customerName.trim(),
-      jiraTicket: normalizeJiraTicket(draft.jiraTicket),
-      notes: draft.notes?.trim() || '',
-    };
+  const trimDraft = (): Draft => ({
+    ...draft,
+    customerNumber: draft.customerNumber.trim(),
+    customerName: draft.customerName.trim(),
+    jiraTicket: normalizeJiraTicket(draft.jiraTicket),
+    notes: draft.notes?.trim() || '',
+  });
+
+  const validateCore = (trimmed: Draft): Record<string, string> => {
     const errs: Record<string, string> = {};
     if (!trimmed.customerNumber) errs.customerNumber = 'Bitte Kundennummer eingeben.';
     if (!trimmed.customerName) errs.customerName = 'Bitte Kundenname eingeben.';
     if (trimmed.products.length === 0) errs.products = 'Mindestens ein Produkt wählen.';
     if (!trimmed.contractDate) errs.contractDate = 'Bitte ein Datum angeben.';
+    return errs;
+  };
+
+  const save = () => {
+    const trimmed = trimDraft();
+    const errs = validateCore(trimmed);
     if (!isJiraTicket(trimmed.jiraTicket)) errs.jiraTicket = 'Ungültiges Format – z.B. TNG-1234.';
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
@@ -140,6 +150,19 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
     if (editing) updateContract(editing.id, trimmed);
     else addContract(trimmed);
     onClose();
+  };
+
+  const copyDoc = async () => {
+    const trimmed = trimDraft();
+    const errs = validateCore(trimmed);
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
+    }
+    const doc = buildContractJiraDoc(trimmed, settings);
+    const ok = await copyToClipboard(doc);
+    if (ok) toast.success('Dokumentation in die Zwischenablage kopiert.');
+    else toast.error('Kopieren fehlgeschlagen – bitte manuell markieren.');
   };
 
   const updateProductAt = (idx: number, p: ProductType) => {
@@ -163,6 +186,15 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
       subtitle="Mehrere Produkte für einen Bundle-Verkauf einfach hinzufügen."
       footer={
         <>
+          <button
+            className="btn btn-ghost"
+            type="button"
+            onClick={copyDoc}
+            title="Vertragsdaten als Text kopieren, zum Einfügen ins Jira-Ticket"
+            style={{ marginRight: 'auto' }}
+          >
+            <ClipboardCopy size={14} /> Jira-Doku kopieren
+          </button>
           <button className="btn" onClick={onClose}>Abbrechen</button>
           <button className="btn btn-primary" onClick={save}>
             Speichern
