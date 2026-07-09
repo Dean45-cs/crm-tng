@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { WifiOff } from 'lucide-react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { Sidebar } from './components/Sidebar';
 import { PrivacyConsent } from './components/PrivacyConsent';
 import { QuickAddProvider } from './components/QuickAdd';
@@ -243,6 +244,7 @@ export default function App() {
         {needsOnboarding && <OnboardingTour />}
         <CommandPalette />
         <ToastHost />
+        <SpeedInsights />
       </QuickAddProvider>
     </Router>
   );
