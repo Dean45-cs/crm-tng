@@ -262,8 +262,7 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
             style={{
               padding: '10px 14px',
               borderRadius: 10,
-              background:
-                'linear-gradient(135deg, rgba(0,102,179,0.08), rgba(0,163,224,0.08))',
+              background: 'var(--tng-gradient-soft)',
               border: '1px solid rgba(0,102,179,0.18)',
               display: 'flex',
               justifyContent: 'space-between',

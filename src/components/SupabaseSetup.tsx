@@ -43,9 +43,6 @@ export function SupabaseSetup() {
 
   return (
     <div className="login-shell">
-      <div className="login-bg-orb login-bg-orb-1" />
-      <div className="login-bg-orb login-bg-orb-2" />
-
       <div className="login-card" style={{ maxWidth: 520 }}>
         <div className="login-brand">
           <TngTile size={64} radius={16} />
