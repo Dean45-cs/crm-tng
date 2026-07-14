@@ -5,7 +5,6 @@ import { Modal } from './Modal';
 import { ProductPicker } from './ProductPicker';
 import {
   formatCurrency,
-  formatDate,
   getProductCommission,
   today,
   contractEndDate,
@@ -383,11 +382,11 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
           {draft.laufzeitMonate && draft.contractDate && (
             <span className="muted" style={{ fontSize: 12 }}>
               Vertragsende:{' '}
-              {formatDate(
-                contractEndDate({ ...draft, id: '', createdAt: '' })
-                  ?.toISOString()
-                  .slice(0, 10),
-              )}
+              {contractEndDate({ ...draft, id: '', createdAt: '' })?.toLocaleDateString('de-DE', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+              }) ?? '–'}
             </span>
           )}
         </div>

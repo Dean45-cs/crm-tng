@@ -226,6 +226,19 @@ function PinStep({
     inputs.current[0]?.focus();
   }, []);
 
+  // Nach einem Fehlversuch (z.B. falsche PIN) die Eingabe leeren und neu
+  // fokussieren — sonst bleiben die vier Punkte gefüllt stehen und der
+  // nächste Tastendruck schickt sofort eine gemischte PIN ab. An [busy]
+  // gebunden statt nur an [error]: bei zweimal derselben Fehlermeldung
+  // ändert sich der error-String nicht, das Ende des Versuchs (busy → false)
+  // aber schon.
+  useEffect(() => {
+    if (busy || !error) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDigits(['', '', '', '']);
+    inputs.current[0]?.focus();
+  }, [busy, error]);
+
   const setDigit = (i: number, v: string) => {
     const clean = v.replace(/\D/g, '').slice(-1);
     setDigits((d) => {

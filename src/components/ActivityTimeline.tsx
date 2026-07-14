@@ -54,7 +54,9 @@ export function ActivityTimeline({ contracts, tariffChanges, notes }: Props) {
       ...notes.map((n) => ({
         id: `n-${n.id}`,
         kind: 'note' as const,
-        date: n.updatedAt.slice(0, 10),
+        // Vollen Zeitstempel behalten — formatDate rechnet ihn in lokale Zeit
+        // um; ein UTC-Slice würde abends erstellte Notizen auf den Vortag legen.
+        date: n.updatedAt,
         title: n.title,
         detail: n.content,
       })),

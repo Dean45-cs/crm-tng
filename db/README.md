@@ -62,6 +62,12 @@ bereits — Migrationen sind dann nicht nötig.
   des neuen Nutzers und schlug u.a. bei aktiver E-Mail-Bestätigung fehl). Trägt
   außerdem bereits verwaiste Auth-User (Konten ohne Profil) einmalig nach, damit
   sie wieder in der Team-Verwaltung auftauchen.
+- `016_ownership_policies_and_sp_settings.sql` — **wichtig:** repariert die
+  Besitz-Übertragung von Kunden (fehlende WITH-CHECK-Klausel ließ RLS jede
+  Übertragung durch die Besitzer:in ablehnen), erlaubt Chefs das Löschen von
+  Ownership-Zeilen (vollständiger DSGVO-Purge) und ergänzt die Spalten
+  `sp_file_path` / `sp_sheet_name`, damit die SharePoint-Export-Konfiguration
+  ein Neuladen überlebt.
 
 > **Erster Zugang (frische Installation):** Beim allerersten Start bietet der
 > Login-Screen automatisch „Erstes Konto einrichten" an — dieses Konto wird der

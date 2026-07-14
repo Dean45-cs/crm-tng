@@ -45,7 +45,7 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 
 export function TariffChanges() {
   const { tariffChanges, settings, deleteTariffChange, markTariffChangeExported, loaded } = useStore();
-  const { getCurrentUser } = useAuth();
+  const { getCurrentUser, users } = useAuth();
   const { openNewTariff, editTariff } = useQuickAdd();
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState<string | null>(null);
@@ -54,6 +54,10 @@ export function TariffChanges() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   const agentName = getCurrentUser()?.displayName ?? '';
+  // In der Excel-Liste muss der Name der Person stehen, die den Wechsel
+  // erfasst hat — nicht der Name dessen, der den Export anstößt.
+  const agentNameFor = (t: TariffChange) =>
+    (t.createdBy ? users[t.createdBy]?.displayName : undefined) ?? agentName;
   const spConfigured = !!(settings.spClientId && settings.spTenantId && settings.spFilePath);
 
   const toggleSort = (key: SortKey) => {
@@ -122,7 +126,7 @@ export function TariffChanges() {
     setExporting(t.id);
     try {
       await exportTariffChange(
-        t, agentName,
+        t, agentNameFor(t),
         settings.spClientId, settings.spTenantId,
         settings.spFilePath, settings.spSheetName,
       );
@@ -143,7 +147,7 @@ export function TariffChanges() {
     for (const t of unexported) {
       try {
         await exportTariffChange(
-          t, agentName,
+          t, agentNameFor(t),
           settings.spClientId, settings.spTenantId,
           settings.spFilePath, settings.spSheetName,
         );
@@ -316,7 +320,7 @@ export function TariffChanges() {
                       {spConfigured && (
                         <button
                           className={`btn btn-ghost btn-sm sharepoint-row-btn${t.exportedAt ? ' exported' : ''}`}
-                          title={t.exportedAt ? `Exportiert am ${formatDate(t.exportedAt.slice(0, 10))}` : 'In SharePoint-Excel eintragen'}
+                          title={t.exportedAt ? `Exportiert am ${formatDate(t.exportedAt)}` : 'In SharePoint-Excel eintragen'}
                           onClick={() => handleExport(t)}
                           disabled={exporting === t.id}
                         >

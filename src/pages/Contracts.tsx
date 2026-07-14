@@ -260,10 +260,12 @@ export function Contracts() {
                   <td>{c.customerName}</td>
                   <td>
                     <div className="product-chips">
-                      {c.products.slice(0, 2).map((p) => {
+                      {c.products.slice(0, 2).map((p, i) => {
                         const cat = settings.products.find((x) => x.name === p)?.category;
+                        // Index in den Key: ein Bundle darf dasselbe Produkt
+                        // mehrfach enthalten (sonst React-Key-Kollision).
                         return (
-                          <span key={p} className={`product-chip cat-${cat}`}>
+                          <span key={`${p}-${i}`} className={`product-chip cat-${cat}`}>
                             {p}
                           </span>
                         );
@@ -318,7 +320,7 @@ export function Contracts() {
             <tfoot>
               <tr className="table-footer-row">
                 <td colSpan={8} style={{ textAlign: 'right' }}>
-                  {filtered.length} Vertrag{filtered.length !== 1 ? 'sätze' : ''} · Provision gesamt
+                  {filtered.length} {filtered.length === 1 ? 'Vertrag' : 'Verträge'} · Provision gesamt
                 </td>
                 <td style={{ textAlign: 'right', color: 'var(--tng-blue-dark)' }}>
                   {formatCurrency(filteredTotal)}

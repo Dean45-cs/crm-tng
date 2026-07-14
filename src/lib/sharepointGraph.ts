@@ -167,12 +167,15 @@ export async function exportTariffChange(
     `/sites/${siteId}/drive/root:${normalizedPath}` +
     `:/workbook/worksheets('${encodeURIComponent(sheetName)}')`;
 
-  // Find next empty row (used range gives current row count)
-  const used = await gFetch<{ rowCount: number }>(
+  // Nächste freie Zeile ermitteln. usedRange liefert die Bounding-Box der
+  // belegten Zellen: rowIndex (0-basiert, erste belegte Zeile) + rowCount.
+  // Nur rowCount + 1 wäre falsch, sobald die Tabelle nicht in Zeile 1 beginnt
+  // (z.B. Titelzeilen) — dann würden bestehende Zeilen überschrieben.
+  const used = await gFetch<{ rowIndex: number; rowCount: number }>(
     token,
-    `${worksheetBase}/usedRange?$select=rowCount`,
+    `${worksheetBase}/usedRange?$select=rowIndex,rowCount`,
   );
-  const nextRow = used.rowCount + 1;
+  const nextRow = used.rowIndex + used.rowCount + 1;
 
   // Write the row into columns B:I
   await gFetch<null>(token, `${worksheetBase}/range(address='B${nextRow}:I${nextRow}')`, {

@@ -69,6 +69,18 @@ export function Settings() {
     setTarget(settings.monthlyTarget);
   }
 
+  // Gleiches Spiel für die SharePoint-Felder: kommen die gespeicherten Werte
+  // erst nach dem Seitenaufbau an, die Eingabefelder nachziehen.
+  const spSnapshot = `${settings.spClientId}|${settings.spTenantId}|${settings.spFilePath}|${settings.spSheetName}`;
+  const [syncedSp, setSyncedSp] = useState(spSnapshot);
+  if (spSnapshot !== syncedSp) {
+    setSyncedSp(spSnapshot);
+    setSpClientId(settings.spClientId);
+    setSpTenantId(settings.spTenantId);
+    setSpFilePath(settings.spFilePath);
+    setSpSheetName(settings.spSheetName || 'Tabelle1');
+  }
+
   const saveSharePoint = () => {
     updateSettings({ spClientId, spTenantId, spFilePath, spSheetName });
   };

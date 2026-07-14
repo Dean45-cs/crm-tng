@@ -5,7 +5,7 @@ import {
   fetchAllUsers,
   fetchUserActive,
   fetchUsersExist,
-  upsertUserProfile,
+  touchUserLogin,
   upsertUserSettings,
   updateUserFlags,
   updateUserRole as apiUpdateUserRole,
@@ -202,7 +202,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         const { data: sd, error: se } = await sb.auth.signInWithPassword({ email, password });
         if (!se && sd.user?.id) {
           const uid = sd.user.id;
-          try { await upsertUserProfile(uid, key, trimmed); } catch { /* profile may already exist */ }
+          try { await touchUserLogin(uid, key, trimmed); } catch { /* profile may already exist */ }
           try {
             const active = await fetchUserActive(uid);
             if (!active) {
@@ -231,7 +231,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     }
 
     try {
-      await upsertUserProfile(uid, key, trimmed);
+      await touchUserLogin(uid, key, trimmed);
     } catch (e) {
       return { ok: false, error: (e as Error).message };
     }
@@ -349,9 +349,12 @@ export const useAuth = create<AuthState>()((set, get) => ({
     const uid = data.user?.id;
     if (!uid) return { ok: false, error: 'Login fehlgeschlagen.' };
 
-    // last_login_at aktualisieren
+    // last_login_at aktualisieren — bewusst NICHT das Profil upserten, sonst
+    // würde der Anzeigename bei jedem Login mit der gerade eingetippten
+    // Schreibweise überschrieben ("max" statt "Max"). Fehlt das Profil
+    // (abgebrochene Erst-Registrierung), legt touchUserLogin es an.
     try {
-      await upsertUserProfile(uid, normalizeUserKey(name), name.trim());
+      await touchUserLogin(uid, normalizeUserKey(name), name.trim());
     } catch {
       /* ignore */
     }
