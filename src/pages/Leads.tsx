@@ -61,7 +61,10 @@ function relativeTime(iso: string): string {
   const days = Math.floor(hours / 24);
   if (days === 1) return 'gestern';
   if (days < 7) return `vor ${days} Tagen`;
-  return formatDate(iso.slice(0, 10));
+  // Vollen Zeitstempel durchreichen: formatDate wandelt ihn in LOKALE Zeit um.
+  // Ein UTC-Slice (iso.slice(0, 10)) würde abends erfasste Einträge auf den
+  // Vortag datieren.
+  return formatDate(iso);
 }
 
 interface ActivityPanelProps {

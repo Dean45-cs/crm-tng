@@ -51,6 +51,12 @@ bereits — Migrationen sind dann nicht nötig.
   lesbar; Bearbeiten bleibt an Rechte gebunden (Besitzer:in / geteilt / Chef:in).
   Neue Tabelle `customer_access_requests`: wer keine Rechte hat, fragt sie mit
   Begründung an, Besitzer:in oder Chef:in nimmt an oder lehnt ab.
+- `014_ownership_policies_and_sp_settings.sql` — **wichtig:** repariert die
+  Besitz-Übertragung von Kunden (fehlende WITH-CHECK-Klausel ließ RLS jede
+  Übertragung durch die Besitzer:in ablehnen), erlaubt Chefs das Löschen von
+  Ownership-Zeilen (vollständiger DSGVO-Purge) und ergänzt die Spalten
+  `sp_file_path` / `sp_sheet_name`, damit die SharePoint-Export-Konfiguration
+  ein Neuladen überlebt.
 
 > **Erster Zugang (frische Installation):** Beim allerersten Start bietet der
 > Login-Screen automatisch „Erstes Konto einrichten" an — dieses Konto wird der

@@ -314,7 +314,15 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
             <button
               className="btn btn-ghost btn-sm"
               type="button"
-              onClick={() => setShowProducts(true)}
+              onClick={() => {
+                setShowProducts(true);
+                // Angezeigte Vorauswahl auch in den Entwurf übernehmen — sonst
+                // zeigt der Picker "Fibrelight", gespeichert würde aber nichts.
+                update({
+                  oldProduct: draft.oldProduct ?? 'Fibrelight',
+                  newProduct: draft.newProduct ?? 'Fibrepro',
+                });
+              }}
               style={{ alignSelf: 'flex-start' }}
             >
               + Tarife angeben (optional)

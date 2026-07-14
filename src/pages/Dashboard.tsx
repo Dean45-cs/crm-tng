@@ -177,9 +177,11 @@ export function Dashboard() {
       customer: c.customerName,
       customerNumber: c.customerNumber,
       product:
-        c.products.length === 1
-          ? c.products[0]
-          : `${c.products[0]} +${c.products.length - 1}`,
+        c.products.length === 0
+          ? '–'
+          : c.products.length === 1
+            ? c.products[0]
+            : `${c.products[0]} +${c.products.length - 1}`,
       jira: c.jiraTicket,
       commission: calcContractCommission(c, settings),
       status: c.status,

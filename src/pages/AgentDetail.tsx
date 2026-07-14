@@ -283,10 +283,10 @@ export function AgentDetail({ agentKey }: Props) {
                     <td>{c.customerName}</td>
                     <td>
                       <div className="product-chips">
-                        {c.products.slice(0, 2).map((p) => {
+                        {c.products.slice(0, 2).map((p, i) => {
                           const cat = settings.products.find((x) => x.name === p)?.category;
                           return (
-                            <span key={p} className={`product-chip cat-${cat}`}>{p}</span>
+                            <span key={`${p}-${i}`} className={`product-chip cat-${cat}`}>{p}</span>
                           );
                         })}
                         {c.products.length > 2 && (

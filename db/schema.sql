@@ -129,6 +129,8 @@ create table if not exists public.user_settings (
   monthly_target numeric default 1500,
   sp_client_id text default '',
   sp_tenant_id text default '',
+  sp_file_path text default '',
+  sp_sheet_name text default 'Tabelle1',
   updated_at timestamptz default now()
 );
 
@@ -395,15 +397,21 @@ create policy "notes delete own" on public.notes
     )
   );
 
--- OWNERSHIPS: aktive Nutzer lesen/anlegen, nur owner ändern/löschen
+-- OWNERSHIPS: aktive Nutzer lesen/anlegen, Besitzer:in/Manager:in ändern/löschen.
+-- WITH CHECK bewusst nur "aktiv": die Besitzer:in darf den Besitz auf eine
+-- andere Person ÜBERTRAGEN (owner wechselt) — ohne eigene WITH-CHECK-Klausel
+-- würde Postgres die USING-Bedingung auch auf die neue Zeile anwenden und
+-- die Übertragung ablehnen.
 create policy "ownership read all" on public.customer_ownerships
   for select using (public.auth_is_active());
 create policy "ownership insert" on public.customer_ownerships
   for insert with check (public.auth_is_active());
 create policy "ownership update owner or manager" on public.customer_ownerships
-  for update using (public.auth_is_active() and (auth.uid() = owner or public.auth_is_manager()));
-create policy "ownership delete owner" on public.customer_ownerships
-  for delete using (public.auth_is_active() and auth.uid() = owner);
+  for update
+  using (public.auth_is_active() and (auth.uid() = owner or public.auth_is_manager()))
+  with check (public.auth_is_active());
+create policy "ownership delete owner or manager" on public.customer_ownerships
+  for delete using (public.auth_is_active() and (auth.uid() = owner or public.auth_is_manager()));
 
 -- SETTINGS: jeder verwaltet seine eigene Zeile, Chefs verwalten alle
 -- (z.B. um Monatsziele im Team-Bereich zu setzen).
