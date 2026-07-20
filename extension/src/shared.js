@@ -1,0 +1,214 @@
+(function initSharedHelpers() {
+  "use strict";
+
+  // globalThis statt window: identisch im Content-Script, aber auch im
+  // Hintergrund-Service-Worker (src/background.js) verfügbar, der kein window
+  // kennt. So teilen sich Content-Scripts und Worker dieselben Helfer.
+  globalThis.SupportCopilot = globalThis.SupportCopilot || {};
+  const app = globalThis.SupportCopilot;
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  // Wird die Extension neu geladen, verliert ein bereits laufendes
+  // Content-Script seinen Chrome-Kontext ("Extension context invalidated").
+  // Alle Storage-Zugriffe laufen deshalb über diese Guard und scheitern still.
+  function extensionAlive() {
+    try {
+      return Boolean(chrome.runtime && chrome.runtime.id);
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Summe der wartenden Anrufer über alle Gruppen. Einzige Quelle der Wahrheit
+  // für die Jira-Seite, das timio-Cockpit und das Symbolleisten-Badge – gibt
+  // null zurück, wenn (noch) keine Wartefeld-Daten vorliegen.
+  function queueTotalWaiting(queueStats) {
+    if (!queueStats || !Array.isArray(queueStats.groups) || !queueStats.groups.length) return null;
+    return queueStats.groups.reduce(
+      (sum, group) => sum + (typeof group.waiting === "number" ? group.waiting : 0),
+      0
+    );
+  }
+
+  // Wartefeld-Daten gelten als veraltet, wenn sie älter als staleAfterMs sind
+  // (z. B. weil kein timio-Portal-Tab mehr offen/sichtbar ist).
+  function queueIsStale(queueStats, staleAfterMs, now) {
+    if (!queueStats || !queueStats.updatedAt) return true;
+    return ((now || Date.now()) - queueStats.updatedAt) > staleAfterMs;
+  }
+
+  // Alter veralteter Wartefeld-Daten in Minuten (0 = frisch oder keine Daten –
+  // dann ist kein Veraltet-Hinweis nötig).
+  function queueStaleMinutes(queueStats, staleAfterMs, now) {
+    if (!queueStats || !queueStats.updatedAt) return 0;
+    const ts = now || Date.now();
+    if (!queueIsStale(queueStats, staleAfterMs, ts)) return 0;
+    return Math.max(1, Math.round((ts - queueStats.updatedAt) / 60000));
+  }
+
+  // Ordnet die im Call gemeldete Gruppe einer Portal-Gruppe zu (Teilstring in
+  // beide Richtungen, da timio die Namen unterschiedlich lang anzeigen kann).
+  function groupsMatch(groupName, callGroup) {
+    if (!groupName || !callGroup) return false;
+    const a = String(groupName).toLocaleLowerCase("de-DE");
+    const b = String(callGroup).toLocaleLowerCase("de-DE");
+    return a.includes(b) || b.includes(a);
+  }
+
+  // "m:ss" bzw. "h:mm:ss" – für Gesprächsdauer-Anzeigen.
+  function formatDuration(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    return hours
+      ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+      : `${minutes}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  // Anzeige-Label + CSS-Klasse für den Call-Status. Beide Cockpits (Jira-Seite
+  // und timio-Seite) nutzen dieselben Klassennamen. Der Modus ändert nur die
+  // Beschriftung: ausgehend "klingelt" es nicht, sondern es wird gewählt.
+  function callStatusMeta(status, mode) {
+    const outbound = mode === "outbound";
+    if (status === "ringing") {
+      return { label: outbound ? "↗ Wählt …" : "☎ Klingelt", cls: "is-ringing" };
+    }
+    if (status === "ended") return { label: "Beendet", cls: "is-ended" };
+    return { label: outbound ? "↗ Im Gespräch" : "● Im Gespräch", cls: "is-connected" };
+  }
+
+  // Timer-Text fürs Cockpit: leer beim Klingeln, feste Enddauer nach dem
+  // Auflegen, sonst live tickende Gesprächsdauer ab connectedAtMs.
+  function callTimerText(call, connectedAtMs) {
+    if (!call || call.status === "ringing") return "";
+    if (call.status === "ended") return call.finalDuration || "";
+    return formatDuration(Date.now() - (connectedAtMs || Date.now()));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Arbeitsrichtung (Inbound/Outbound)
+  //
+  // timio zeigt bei ausgehenden Anrufen denselben Call-Screen wie bei
+  // eingehenden – die Richtung steht nirgends im Seitentext. Sie wird deshalb
+  // nicht geraten, sondern vom Bearbeiter gesetzt und hier nur normalisiert.
+  // ---------------------------------------------------------------------------
+
+  const CALL_MODES = {
+    inbound: { id: "inbound", label: "Eingehend", short: "Ein", icon: "☎", cls: "is-inbound" },
+    outbound: { id: "outbound", label: "Ausgehend", short: "Aus", icon: "↗", cls: "is-outbound" }
+  };
+
+  function callModeMeta(mode) {
+    return CALL_MODES[mode] || CALL_MODES.inbound;
+  }
+
+  function isOutbound(mode) {
+    return callModeMeta(mode).id === "outbound";
+  }
+
+  // ---------------------------------------------------------------------------
+  // Rückrufliste (Wiedervorlage)
+  //
+  // Bewusst getrennt von timios eigener Anrufliste: hier stehen ausschließlich
+  // Rückrufe, die der Bearbeiter selbst aufgenommen hat. Weil Einträge
+  // Rufnummern enthalten, also personenbezogene Daten, sind Deckelung und
+  // automatisches Ausmisten Teil des Datenmodells und nicht optional.
+  // ---------------------------------------------------------------------------
+
+  function outboundConfig() {
+    const config = (globalThis.SupportCopilot && globalThis.SupportCopilot.CONFIG) || {};
+    return config.outbound || {};
+  }
+
+  // Rufnummer in wählbarer Form: timio zeigt "+49 (176) 34573586", gewählt
+  // wird "+4917634573586". Ein führendes + bleibt erhalten, alles andere
+  // außer Ziffern fällt weg.
+  function normalizePhone(value) {
+    const raw = String(value == null ? "" : value).trim();
+    if (!raw) return "";
+    const digits = raw.replace(/\D/g, "");
+    if (!digits) return "";
+    return raw.startsWith("+") ? `+${digits}` : digits;
+  }
+
+  // Wann der nächste Versuch fällig ist, gestaffelt nach bisherigen Versuchen.
+  // Nach dem letzten Staffel-Eintrag bleibt es beim größten Abstand.
+  function nextRetryAt(attempts, now) {
+    const delays = outboundConfig().retryDelaysMs || [7200000, 86400000, 259200000];
+    const index = Math.min(Math.max(0, Number(attempts) || 0), delays.length - 1);
+    return (now || Date.now()) + delays[index];
+  }
+
+  // Wirft erledigte Einträge sowie alles, dessen Fälligkeit lange vorbei ist,
+  // weg und deckelt die Liste. Sortiert nach Fälligkeit, damit die UI und der
+  // Service-Worker dieselbe Reihenfolge sehen.
+  function pruneCallbacks(items, now) {
+    if (!Array.isArray(items)) return [];
+    const config = outboundConfig();
+    const maxItems = config.maxCallbacks || 100;
+    const keepMs = (config.keepDoneDays || 30) * 86400000;
+    const ts = now || Date.now();
+    return items
+      .filter((item) => item && item.id && !item.done)
+      .filter((item) => typeof item.dueAt !== "number" || ts - item.dueAt <= keepMs)
+      .sort((a, b) => (a.dueAt || 0) - (b.dueAt || 0))
+      .slice(0, maxItems);
+  }
+
+  // Fällige Rückrufe – Grundlage für Badge und Erinnerung.
+  function dueCallbacks(items, now) {
+    const ts = now || Date.now();
+    if (!Array.isArray(items)) return [];
+    return items.filter((item) => item && !item.done && typeof item.dueAt === "number" && item.dueAt <= ts);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sprung von der Kundennummer zum Jira-Ticket
+  //
+  // Die Extension kann Jira nicht durchsuchen (sie liest nur die sichtbare
+  // Seite), aber sie kann eine Suche als Link öffnen. Im Outbound-Modus ist
+  // das der kritische Pfad: timio nennt beim Verbinden die Kundennummer, das
+  // passende Ticket muss sofort auffindbar sein.
+  // ---------------------------------------------------------------------------
+
+  function customerSearchUrl(customerNumber, jqlTemplate) {
+    const query = String(customerNumber == null ? "" : customerNumber).trim();
+    if (!query) return "";
+    const config = (globalThis.SupportCopilot && globalThis.SupportCopilot.CONFIG) || {};
+    const jira = config.jira || {};
+    const template = (jqlTemplate || "").trim() || jira.customerSearchJql || 'text ~ "{q}"';
+    // Anführungszeichen im Wert würden den JQL-String sprengen.
+    const safeQuery = query.replace(/"/g, "");
+    const jql = template.replace(/\{q\}/g, safeQuery);
+    const base = (jira.baseUrl || "").replace(/\/+$/, "");
+    return `${base}/issues/?jql=${encodeURIComponent(jql)}`;
+  }
+
+  app.shared = {
+    escapeHtml,
+    extensionAlive,
+    queueTotalWaiting,
+    queueIsStale,
+    queueStaleMinutes,
+    groupsMatch,
+    formatDuration,
+    callStatusMeta,
+    callTimerText,
+    callModeMeta,
+    isOutbound,
+    normalizePhone,
+    nextRetryAt,
+    pruneCallbacks,
+    dueCallbacks,
+    customerSearchUrl
+  };
+})();
