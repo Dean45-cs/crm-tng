@@ -193,6 +193,25 @@
     return `${base}/issues/?jql=${encodeURIComponent(jql)}`;
   }
 
+  // Direkter Sprung zu einem bekannten Ticket-Key (aus der customer_card-RPC,
+  // siehe supabase.js) – im Unterschied zu customerSearchUrl oben keine Suche,
+  // sondern die fertige Browse-URL, weil das Ticket schon feststeht.
+  function jiraTicketUrl(ticket) {
+    const key = String(ticket == null ? "" : ticket).trim();
+    if (!key) return "";
+    const config = (globalThis.SupportCopilot && globalThis.SupportCopilot.CONFIG) || {};
+    const base = ((config.jira && config.jira.baseUrl) || "").replace(/\/+$/, "");
+    return `${base}/browse/${encodeURIComponent(key)}`;
+  }
+
+  // Kurzes deutsches Datum ("21.7.2026") für die Kundenakte – ohne Uhrzeit,
+  // da first_seen_at/last_contact_at hier nur zur groben Einordnung dienen.
+  function formatDateDE(iso) {
+    if (!iso) return "unbekannt";
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? "unbekannt" : d.toLocaleDateString("de-DE");
+  }
+
   app.shared = {
     escapeHtml,
     extensionAlive,
@@ -209,6 +228,8 @@
     nextRetryAt,
     pruneCallbacks,
     dueCallbacks,
-    customerSearchUrl
+    customerSearchUrl,
+    jiraTicketUrl,
+    formatDateDE
   };
 })();

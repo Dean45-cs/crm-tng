@@ -16,15 +16,15 @@ import { SkeletonCardGrid } from '../components/Skeleton';
 import { useRouter } from '../router';
 
 export function Customers() {
-  const { contracts, tariffChanges, notes, settings, customerOwners, loaded } = useStore();
+  const { contracts, tariffChanges, notes, settings, customerOwners, loaded, customers: customerRows } = useStore();
   const { currentUserKey, users } = useAuth();
   const { navigate } = useRouter();
   const [search, setSearch] = useState('');
   const [mode, setMode] = useState<OwnershipMode>('mine');
 
   const allCustomers = useMemo(
-    () => buildCustomerSummaries(contracts, tariffChanges, notes, settings),
-    [contracts, tariffChanges, notes, settings],
+    () => buildCustomerSummaries(contracts, tariffChanges, notes, settings, customerRows),
+    [contracts, tariffChanges, notes, settings, customerRows],
   );
 
   const visibleCustomers = useMemo(

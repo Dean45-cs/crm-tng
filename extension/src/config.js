@@ -45,7 +45,16 @@
       // timio (dort sitzt der Bearbeiter am Ende des Gesprächs), verarbeitet
       // wird es in Jira (dort läuft die lokale KI). Die Jira-Seite räumt den
       // Eintrag nach der Übernahme sofort wieder weg.
-      callOutcome: "supportCopilot.callOutcome"
+      callOutcome: "supportCopilot.callOutcome",
+      // Sitzung des eigenen CRM-Logins der Extension (Name+PIN, siehe
+      // supabase.js). Eigene Sitzung, unabhängig von der CRM-Tab-Session
+      // (Option a aus KONZEPT-INTEGRATION.md).
+      supabaseSession: "supportCopilot.supabaseSession",
+      // Zuletzt nachgeschlagene Kundenakte (customer_card-RPC). Geschrieben
+      // von timio-content.js bei eingehendem Anruf, gelesen von
+      // timio-content.js selbst UND von ui.js fürs Jira-Cockpit — analog zu
+      // ticketContext, nur in die andere Richtung.
+      customerCard: "supportCopilot.customerCard"
     },
 
     // Cache der KI-Ergebnisse pro Ticket, damit ein bereits besuchtes Ticket
@@ -98,11 +107,22 @@
     // Kundennummer, das passende Ticket muss in Sekunden auf dem Schirm sein.
     jira: {
       baseUrl: "https://jira.ennit.de",
-      // {q} wird durch die Kundennummer ersetzt. Bewusst eine Vorlage und in
-      // den Einstellungen überschreibbar: der JQL-Feldname des
-      // Oikonomikos-Felds ist von hier aus nicht ermittelbar, die
-      // Volltextsuche funktioniert dagegen immer.
-      customerSearchJql: 'text ~ "{q}" ORDER BY updated DESC'
+      // {q} wird durch die Kundennummer ersetzt. Exakter Feldabgleich auf dem
+      // Oikonomikos-Feld (trägt die Kundennummer) statt Volltextsuche – nach
+      // wie vor in den Einstellungen überschreibbar, falls sich der Feldname
+      // je ändert oder eine andere Jira-Instanz ein anderes Feld nutzt.
+      customerSearchJql: '"Oikonomikos-ID" = "{q}" ORDER BY updated DESC'
+    },
+
+    // Anbindung an das TNG-CRM-Supabase-Projekt für die Kundenakte
+    // (Migration 017, customer_card-RPC, siehe src/supabase.js). WICHTIG:
+    // url/anonKey mit den echten Werten aus dem Supabase-Dashboard (Project
+    // Settings → API) befüllen — dieselben Werte, die im CRM-Setup-Screen
+    // stehen (siehe db/README.md Schritt 4 im CRM-Repo). Der anon key ist
+    // kein Geheimnis, solange RLS aktiv ist (siehe .env.example im CRM-Repo).
+    supabase: {
+      url: "https://yslxkevljrhznjtzjvji.supabase.co",
+      anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzbHhrZXZsanJoem5qdHpqdmppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2ODE2ODgsImV4cCI6MjA5NDI1NzY4OH0.QU8Blb0hBolVfIs7BwrUQn27yXD4oDy95yh1UeJztX8"
     },
 
     // Ausgehende Gespräche. Anders als eingehend gibt es keine Vorlaufzeit:
@@ -149,7 +169,11 @@
       notifyCallbacks: true,
       // Überschreibt CONFIG.jira.customerSearchJql, falls im eigenen Jira ein
       // passenderes Feld existiert (z. B. "Oikonomikos-ID" ~ "{q}").
-      customerSearchJql: ""
+      customerSearchJql: "",
+      // Überschreiben CONFIG.supabase.url/anonKey bei einem Projektwechsel,
+      // analog zu customerSearchJql oben.
+      supabaseUrl: "",
+      supabaseAnonKey: ""
     },
     // Drei Bereiche: Übersicht (inkl. nächster Schritt), Antwort, Call-Hilfe.
     // Ein früher separates "Nächster Schritt"-Tab wurde in die Übersicht

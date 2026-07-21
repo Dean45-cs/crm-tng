@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Printer,
   ChevronRight,
@@ -17,6 +17,7 @@ import {
   Trophy,
   Clock,
   CalendarClock,
+  Phone,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -44,6 +45,7 @@ import {
   calcTariffCommission,
 } from '../lib/utils';
 import { attainmentPct, teamKpis } from '../lib/teamStats';
+import { fetchCallCountSince } from '../lib/supabaseApi';
 import { SkeletonTable } from '../components/Skeleton';
 import { StatusInsights } from '../components/StatusInsights';
 
@@ -98,6 +100,18 @@ export function TeamDashboard() {
     () => teamKpis(contracts, tariffChanges, leads, settings),
     [contracts, tariffChanges, leads, settings],
   );
+
+  // Anrufe leben nicht im globalen Store (siehe useCalls.ts, Anrufvolumen
+  // kann deutlich höher sein als Verträge/Notizen) — hier reicht eine reine
+  // Zählung seit Monatsbeginn, ohne Zeilen zu übertragen.
+  const [callsThisMonth, setCallsThisMonth] = useState<number | null>(null);
+  useEffect(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    fetchCallCountSince(monthStart)
+      .then(setCallsThisMonth)
+      .catch(() => setCallsThisMonth(null));
+  }, []);
 
   const rows = useMemo<AgentRow[]>(() => {
     const now = new Date();
@@ -352,6 +366,13 @@ export function TeamDashboard() {
           label="Mitarbeitende"
           value={`${team.activeAgents}`}
           sub={`von ${rows.length} im Team`}
+        />
+        <KpiTile
+          icon={<Phone size={15} />}
+          accent="orange"
+          label="Anrufe (Monat)"
+          value={callsThisMonth === null ? '–' : `${callsThisMonth}`}
+          sub="von der Extension automatisch erfasst"
         />
       </div>
 

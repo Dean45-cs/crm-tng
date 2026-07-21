@@ -11,8 +11,9 @@ import {
   daysUntil,
   buildContractJiraDoc,
   formatCurrency,
+  buildCustomerSummaries,
 } from './utils';
-import { testSettings, makeContract, makeTariff } from '../test/fixtures';
+import { testSettings, makeContract, makeTariff, makeCustomer } from '../test/fixtures';
 
 describe('calcContractCommission', () => {
   it('summiert die Provision aller Produkte', () => {
@@ -152,5 +153,32 @@ describe('daysUntil', () => {
     const d = new Date();
     d.setDate(d.getDate() - 3);
     expect(daysUntil(d)).toBe(-3);
+  });
+});
+
+describe('buildCustomerSummaries', () => {
+  it('zeigt einen Kunden ohne jeglichen Vorgang mit Nullständen an', () => {
+    const customer = makeCustomer({ customerNumber: '2000', name: 'Anrufer ohne Vertrag' });
+    const summaries = buildCustomerSummaries([], [], [], testSettings, [customer]);
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      customerNumber: '2000',
+      customerName: 'Anrufer ohne Vertrag',
+      contractCount: 0,
+      tariffChangeCount: 0,
+      noteCount: 0,
+      totalCommission: 0,
+    });
+  });
+
+  it('zahlt einen späteren Vorgang in den vorbelegten Kunden-Eintrag ein', () => {
+    const customer = makeCustomer({ customerNumber: '3000', name: 'Bestandskunde', lastContactAt: '2024-01-01T00:00:00.000Z' });
+    const contract = makeContract({ customerNumber: '3000', customerName: 'Bestandskunde', contractDate: '2024-06-15' });
+    const summaries = buildCustomerSummaries([contract], [], [], testSettings, [customer]);
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].contractCount).toBe(1);
+    expect(summaries[0].lastActivity).toBe('2024-06-15');
   });
 });

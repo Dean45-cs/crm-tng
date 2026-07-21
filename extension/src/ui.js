@@ -5,10 +5,12 @@
   const { CONFIG, jiraReader, rules, aiCache, shared } = app;
   const {
     escapeHtml, extensionAlive, formatDuration, callTimerText,
-    callModeMeta, isOutbound, normalizePhone, nextRetryAt, pruneCallbacks, customerSearchUrl
+    callModeMeta, isOutbound, normalizePhone, nextRetryAt, pruneCallbacks, customerSearchUrl,
+    jiraTicketUrl, formatDateDE
   } = shared;
   const AI = CONFIG.ai;
   const localAi = app.localAi;
+  const supabaseClient = app.supabaseClient;
   const S = (localAi && localAi.STATUS) || {};
 
   // Auto-Aufräumen der Gesprächsnotizen: erst nach einer Tipppause, nie
@@ -38,6 +40,15 @@
     // Call-Cockpit: dauerhaftes Overlay während des Gesprächs. Position und
     // Modus (voll/minimiert) bleiben lokal gespeichert erhalten.
     callOverlay: { mode: "full", pos: null, dismissedForCallId: null },
+    // Eigene Supabase-Session der Extension (Stufe 1, KONZEPT-INTEGRATION.md,
+    // Option a: eigener Login, unabhängig von der CRM-Tab-Session).
+    supabaseSession: null,
+    // Login-Formular in den Einstellungen — bewusst NICHT persistiert, die PIN
+    // geht nur an den Auth-Endpoint und wird danach verworfen.
+    supabaseAuth: { name: "", pin: "", busy: false, error: "" },
+    // Zuletzt nachgeschlagene Kundenakte, geschrieben von timio-content.js bei
+    // eingehendem Anruf (siehe CONFIG.storageKeys.customerCard).
+    customerCard: null,
     ai: {
       replyLanguage: "de",
       caps: null,           // Ergebnis von localAi.capabilities()
@@ -616,6 +627,50 @@
       </div>`;
   }
 
+  // Kundenakte aus dem CRM (Stufe 1, KONZEPT-INTEGRATION.md): Name,
+  // Kontaktdaten, Vorgangszählung und – falls vorhanden – ein direkter
+  // Ticket-Link. Macht die JQL-Suche unten überflüssig, sobald sie greift,
+  // ersetzt sie aber nicht (Lookup kann fehlschlagen: nicht angemeldet,
+  // Kunde unbekannt, offline). Der Lookup selbst läuft in timio-content.js;
+  // hier wird nur das über chrome.storage veröffentlichte Ergebnis angezeigt.
+  function renderKundenakte(call) {
+    const number = (call && call.customerNumber || "").trim();
+    const card = state.customerCard;
+    if (!number || !card || card.customerNumber !== number) return "";
+
+    if (card.status === "loading") {
+      return `<div class="sc-cockpit-akte sc-cockpit-akte-loading">Kundenakte wird geladen …</div>`;
+    }
+    if (card.status === "not-configured") {
+      return "";
+    }
+    if (card.status === "not-logged-in") {
+      return `<div class="sc-cockpit-akte sc-cockpit-akte-hint">Kundenakte: nicht bei Supabase angemeldet (Einstellungen ⚙).</div>`;
+    }
+    if (card.status === "not-found") {
+      return `<div class="sc-cockpit-akte sc-cockpit-akte-hint">Kundennummer ${escapeHtml(number)} im CRM noch nicht bekannt.</div>`;
+    }
+    if (card.status !== "ok" || !card.data) {
+      return `<div class="sc-cockpit-akte sc-cockpit-akte-hint">Kundenakte gerade nicht abrufbar.</div>`;
+    }
+
+    const d = card.data;
+    const jiraButton = d.jiraTicket
+      ? `<a class="sc-cockpit-akte-jira" href="${escapeHtml(jiraTicketUrl(d.jiraTicket))}" target="_blank" rel="noopener">Ticket ${escapeHtml(d.jiraTicket)} öffnen</a>`
+      : "";
+    return `
+      <div class="sc-cockpit-akte">
+        <div class="sc-cockpit-akte-head">${escapeHtml(d.name || "Unbenannt")}${d.phone ? ` · ${escapeHtml(d.phone)}` : ""}</div>
+        <div class="sc-cockpit-akte-counts">
+          <span>${d.contractCount} Vertr.</span>
+          <span>${d.tariffChangeCount} Wechsel</span>
+          <span>${d.noteCount} Notizen</span>
+          <span>Seit ${escapeHtml(formatDateDE(d.firstSeenAt))}</span>
+        </div>
+        ${jiraButton}
+      </div>`;
+  }
+
   function renderCallCockpit() {
     const call = currentActiveCall();
     if (!call || !cockpitVisible()) return "";
@@ -669,6 +724,7 @@
             <strong>${escapeHtml(nameLine)}</strong>
             ${subLine ? `<p>${escapeHtml(subLine)}</p>` : ""}
             ${waitInfo}
+            ${renderKundenakte(call)}
             ${renderCustomerSearchButton(call, "sc-cockpit-search")}
             ${renderOutboundHint(call)}
           </div>
@@ -1611,9 +1667,51 @@
   // Zusammenbau
   // ---------------------------------------------------------------------------
 
+  // Login/Logout der Extension-eigenen Supabase-Session (Stufe 1,
+  // KONZEPT-INTEGRATION.md, Option a). Bewusst außerhalb von state.settings
+  // gehalten und nicht Teil von saveSettings()/persistSettings() — die PIN
+  // geht nur an den Auth-Endpoint und wird danach sofort verworfen, nie
+  // persistiert.
+  function renderSupabaseLoginSection() {
+    const auth = state.supabaseAuth;
+    if (state.supabaseSession) {
+      const label = state.supabaseSession.displayName || state.supabaseSession.email || "unbekannt";
+      return `
+        <section class="sc-section">
+          <div class="sc-section-title-row">
+            <h3>CRM-Anmeldung (Kundenakte)</h3>
+            <span class="sc-local-label">eigene Sitzung</span>
+          </div>
+          <p class="sc-section-intro">Angemeldet als <strong>${escapeHtml(label)}</strong>. Diese Sitzung ist unabhängig vom CRM-Tab und wird nur für die Kundenakte beim Anruf genutzt.</p>
+          <div class="sc-inline-actions">
+            <button class="sc-secondary-button" type="button" data-action="supabase-logout">Abmelden</button>
+          </div>
+        </section>`;
+    }
+    return `
+      <section class="sc-section">
+        <div class="sc-section-title-row">
+          <h3>CRM-Anmeldung (Kundenakte)</h3>
+          <span class="sc-local-label">eigene Sitzung</span>
+        </div>
+        <p class="sc-section-intro">Mit denselben Zugangsdaten wie im CRM anmelden, damit ein eingehender Anruf im timio- und im Jira-Cockpit die Kundenakte zeigt (Name, Verträge, letztes Ticket). Ohne Anmeldung funktioniert die Extension wie bisher.</p>
+        <label class="sc-input-label">Name
+          <input class="sc-text-input" data-role="sb-login-name" value="${escapeHtml(auth.name)}" placeholder="wie im CRM-Login" autocomplete="username">
+        </label>
+        <label class="sc-input-label">PIN
+          <input class="sc-text-input" type="password" inputmode="numeric" data-role="sb-login-pin" value="${escapeHtml(auth.pin)}" placeholder="4-stellig" autocomplete="current-password">
+        </label>
+        ${auth.error ? `<p class="sc-cockpit-mismatch">${escapeHtml(auth.error)}</p>` : ""}
+        <div class="sc-inline-actions">
+          <button class="sc-primary-button" type="button" data-action="supabase-login" ${auth.busy ? "disabled" : ""}>${auth.busy ? "Meldet an …" : "Anmelden"}</button>
+        </div>
+      </section>`;
+  }
+
   function renderSettings() {
     const s = state.settings;
     return `
+      ${renderSupabaseLoginSection()}
       <section class="sc-section">
         <div class="sc-section-title-row">
           <h3>Einstellungen</h3>
@@ -1639,7 +1737,14 @@
         </label>
         <label class="sc-input-label">Jira-Suche nach Kundennummer (JQL)
           <input class="sc-text-input" data-role="set-customer-jql" value="${escapeHtml(s.customerSearchJql || "")}" placeholder='${escapeHtml((CONFIG.jira && CONFIG.jira.customerSearchJql) || "")}'>
-          <small class="sc-input-hint">Für den Sprung von der Kundennummer zum Ticket. <code>{q}</code> wird durch die Kundennummer ersetzt. Leer lassen nutzt die Volltextsuche; kennst du den Feldnamen, ist z. B. <code>"Oikonomikos-ID" ~ "{q}"</code> deutlich treffsicherer.</small>
+          <small class="sc-input-hint">Für den Sprung von der Kundennummer zum Ticket. <code>{q}</code> wird durch die Kundennummer ersetzt. Leer lassen nutzt den voreingestellten Abgleich auf dem Oikonomikos-Feld; hier nur überschreiben, falls sich der Feldname mal ändert.</small>
+        </label>
+        <label class="sc-input-label">Supabase-Projekt-URL (Kundenakte)
+          <input class="sc-text-input" data-role="set-supabase-url" value="${escapeHtml(s.supabaseUrl || "")}" placeholder="${escapeHtml((CONFIG.supabase && CONFIG.supabase.url) || "")}">
+        </label>
+        <label class="sc-input-label">Supabase Anon Key (Kundenakte)
+          <input class="sc-text-input" data-role="set-supabase-anon-key" value="${escapeHtml(s.supabaseAnonKey || "")}" placeholder="${escapeHtml((CONFIG.supabase && CONFIG.supabase.anonKey) || "")}">
+          <small class="sc-input-hint">Nur nötig, falls ein anderes Supabase-Projekt als das voreingestellte genutzt wird – dieselben Werte wie im CRM-Setup-Screen.</small>
         </label>
         <div class="sc-inline-actions">
           <button class="sc-secondary-button" type="button" data-action="close-settings">Zurück</button>
@@ -1671,6 +1776,9 @@
     state.callOverlay = { mode: "full", pos: null, dismissedForCallId: null };
     state.callMode = "inbound";
     state.callbacks = [];
+    state.supabaseSession = null;
+    state.supabaseAuth = { name: "", pin: "", busy: false, error: "" };
+    state.customerCard = null;
     if (state.ticket) hydrateAiFromCache(state.ticket);
     render();
     toast("Alle lokalen Daten wurden gelöscht.");
@@ -2407,6 +2515,45 @@
     draft("email");
   }
 
+  async function handleSupabaseLogin() {
+    const name = state.supabaseAuth.name.trim();
+    const pin = state.supabaseAuth.pin.trim();
+    if (!supabaseClient) {
+      state.supabaseAuth.error = "Supabase-Modul nicht geladen – Extension neu laden.";
+      render();
+      return;
+    }
+    if (!name || !pin) {
+      state.supabaseAuth.error = "Name und PIN eingeben.";
+      render();
+      return;
+    }
+    state.supabaseAuth.busy = true;
+    state.supabaseAuth.error = "";
+    render();
+
+    const res = await supabaseClient.login(name, pin);
+    if (res.ok) {
+      state.supabaseSession = res.session;
+      state.supabaseAuth = { name: "", pin: "", busy: false, error: "" };
+      toast(`Angemeldet als ${res.session.displayName || name}.`);
+    } else {
+      state.supabaseAuth.busy = false;
+      state.supabaseAuth.error =
+        res.reason === "not-configured" ? "Supabase-Projekt noch nicht konfiguriert (siehe unten)." :
+        res.reason === "invalid-credentials" ? "Falscher Name oder PIN." :
+        `Anmeldung fehlgeschlagen${res.error ? `: ${res.error}` : "."}`;
+    }
+    render();
+  }
+
+  function handleSupabaseLogout() {
+    if (supabaseClient) supabaseClient.logout();
+    state.supabaseSession = null;
+    toast("Von Supabase abgemeldet.");
+    render();
+  }
+
   function saveSettings() {
     const container = root();
     const value = (role) => {
@@ -2426,7 +2573,9 @@
       signature: value("set-signature"),
       notifyWaiting: checked("set-notify-waiting"),
       notifyCallbacks: checked("set-notify-callbacks"),
-      customerSearchJql: value("set-customer-jql")
+      customerSearchJql: value("set-customer-jql"),
+      supabaseUrl: value("set-supabase-url"),
+      supabaseAnonKey: value("set-supabase-anon-key")
     };
     persistSettings();
     state.settingsOpen = false;
@@ -2476,6 +2625,8 @@
         render();
         return;
       case "save-settings": saveSettings(); return;
+      case "supabase-login": await handleSupabaseLogin(); return;
+      case "supabase-logout": handleSupabaseLogout(); return;
       case "deescalate": deescalate(); return;
       case "set-language":
         syncInputsFromDom();
@@ -2562,6 +2713,10 @@
     else if (role === "set-company") state.settings.company = event.target.value;
     else if (role === "set-signature") state.settings.signature = event.target.value;
     else if (role === "set-customer-jql") state.settings.customerSearchJql = event.target.value;
+    else if (role === "set-supabase-url") state.settings.supabaseUrl = event.target.value;
+    else if (role === "set-supabase-anon-key") state.settings.supabaseAnonKey = event.target.value;
+    else if (role === "sb-login-name") state.supabaseAuth.name = event.target.value;
+    else if (role === "sb-login-pin") state.supabaseAuth.pin = event.target.value;
   }
 
   // ---------------------------------------------------------------------------
@@ -2635,7 +2790,9 @@
       CONFIG.storageKeys.queueStats,
       CONFIG.storageKeys.callOverlay,
       CONFIG.storageKeys.callMode,
-      CONFIG.storageKeys.callbacks
+      CONFIG.storageKeys.callbacks,
+      CONFIG.storageKeys.supabaseSession,
+      CONFIG.storageKeys.customerCard
     ]);
     if (typeof saved[CONFIG.storageKeys.isOpen] === "boolean") state.isOpen = saved[CONFIG.storageKeys.isOpen];
     if (CONFIG.tabs.some((tab) => tab.id === saved[CONFIG.storageKeys.activeTab])) state.activeTab = saved[CONFIG.storageKeys.activeTab];
@@ -2661,6 +2818,8 @@
         state.callOverlay.pos = overlayPrefs.pos;
       }
     }
+    state.supabaseSession = saved[CONFIG.storageKeys.supabaseSession] || null;
+    state.customerCard = saved[CONFIG.storageKeys.customerCard] || null;
 
     state.ticket = jiraReader.read();
     hydrateAiFromCache(state.ticket);
@@ -2710,6 +2869,19 @@
               customerNumber: outcome.customerNumber
             });
           }
+        }
+        // Kundenakte: von timio-content.js bei eingehendem Anruf geschrieben,
+        // hier nur zum Anzeigen im Jira-Cockpit übernommen.
+        if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.customerCard)) {
+          state.customerCard = changes[CONFIG.storageKeys.customerCard].newValue || null;
+          render();
+        }
+        // Supabase-Session kann auch im anderen Cockpit (timio-Seite hat
+        // keine eigene UI dafür, aber ein zweiter Jira-Tab) an-/abgemeldet
+        // worden sein.
+        if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.supabaseSession)) {
+          state.supabaseSession = changes[CONFIG.storageKeys.supabaseSession].newValue || null;
+          if (state.settingsOpen) render();
         }
       });
     }

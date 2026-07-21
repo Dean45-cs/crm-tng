@@ -15,7 +15,7 @@ Die App läuft online über Supabase als Backend. Einmalige Einrichtung:
 3. **Run** klicken — sollte ohne Fehler durchlaufen
 
 Erzeugt:
-- Tabellen: `users`, `contracts`, `tariff_changes`, `notes`, `customer_ownerships`, `user_settings`, `shared_settings`, `incentives`
+- Tabellen: `users`, `customers`, `calls`, `contracts`, `tariff_changes`, `notes`, `customer_ownerships`, `user_settings`, `shared_settings`, `incentives`
 - Row-Level-Security: alle aktiven User lesen, jeder schreibt seine eigenen Daten;
   gesperrte Nutzer haben keinen Datenzugriff, Rollen sind escalation-sicher
 - Realtime-Publikationen, damit Änderungen live an alle Clients gehen
@@ -68,6 +68,26 @@ bereits — Migrationen sind dann nicht nötig.
   Ownership-Zeilen (vollständiger DSGVO-Purge) und ergänzt die Spalten
   `sp_file_path` / `sp_sheet_name`, damit die SharePoint-Export-Konfiguration
   ein Neuladen überlebt.
+- `017_customers.sql` — **wichtig:** legt die eigenständige Tabelle `customers`
+  an (bisher war ein Kunde nur eine Ableitung aus Verträgen/Tarifwechseln/
+  Notizen) und befüllt sie per Backfill aus `contracts`, `tariff_changes`,
+  `notes` und `leads`. Ein SECURITY-DEFINER-Trigger `touch_customer()` hält die
+  Tabelle danach selbstständig aktuell, ohne bestehenden Insert-Code
+  anzufassen. Neue RPC-Funktion `customer_card()` liefert Name, Kontaktdaten,
+  Vorgangszählung und das zuletzt verwendete Jira-Ticket in einem Aufruf —
+  Grundlage für die „Kundenakte" in der Support-Copilot-Extension.
+- `018_calls.sql` — legt die Tabelle `calls` an (Stufe 2: „Der Anruf wird Teil
+  der Akte"). Die Support-Copilot-Extension schreibt jeden Anruf automatisch
+  über ihre eigene Supabase-Session (Migration 017) hierher — Start bei
+  Klingeln/Verbinden, Abschluss beim Auflegen. `customer_number` ist
+  nullable, nicht jeder Anrufer ist zuzuordnen. Ein eigener Trigger
+  `touch_customer_from_call()` pflegt auch aus Anrufen eine `customers`-Zeile
+  (analog zu `touch_customer()` aus Migration 017) — sonst bliebe ein
+  Anrufer ohne Vertrag/Notiz trotz Anrufhistorie „Kunde nicht gefunden".
+  `outcome`/`note`/`jira_ticket` sind für eine spätere Stufe vorgesehen und
+  bleiben vorerst leer. Die Aufbewahrungsfrist/automatische Anonymisierung
+  der Rufnummer ist bewusst noch nicht Teil dieser Migration — offener
+  Punkt, siehe `KONZEPT-INTEGRATION.md`.
 
 > **Erster Zugang (frische Installation):** Beim allerersten Start bietet der
 > Login-Screen automatisch „Erstes Konto einrichten" an — dieses Konto wird der

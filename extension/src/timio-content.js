@@ -5,8 +5,10 @@
   const CONFIG = app.CONFIG;
   const {
     escapeHtml, extensionAlive, queueTotalWaiting, queueStaleMinutes, groupsMatch,
-    callStatusMeta, callTimerText, callModeMeta, isOutbound, customerSearchUrl
+    callStatusMeta, callTimerText, callModeMeta, isOutbound, customerSearchUrl,
+    jiraTicketUrl, formatDateDE
   } = app.shared;
+  const supabaseClient = app.supabaseClient;
   const CALL_CONFIG = CONFIG.call || {};
   const POLL_MS = CALL_CONFIG.pollMs || 1000;
   const HEARTBEAT_MS = CALL_CONFIG.heartbeatMs || 4000;
@@ -222,6 +224,18 @@
       }
     }
     if (!wasIdle) idleDismissed = false;
+    // Anruf ohne "Beendet"-Screen abgeschlossen (z. B. aufgelegt, bevor
+    // angenommen wurde – dafür gibt es keine Gnadenfrist wie oben bei
+    // CONNECTED). Best-effort abschließen, sonst bliebe die DB-Zeile für
+    // immer "aktiv" und würde die Live-Anrufleiste im CRM verstopfen.
+    if (supabaseClient && dbCallId && callEndedForId !== callId) {
+      const orphanCallId = dbCallId;
+      const approxDurationS = connectedAt ? Math.round((Date.now() - connectedAt) / 1000) : null;
+      supabaseClient.endCall(orphanCallId, {
+        endedAt: new Date().toISOString(),
+        durationS: approxDurationS
+      }).catch(() => {});
+    }
     publicStatus = STATUS.IDLE;
     graceUntil = 0;
     lastDetails = null;
@@ -229,6 +243,13 @@
     callId = null;
     endedAt = null;
     cameFromRinging = false;
+    // Nächster Anruf soll wieder frisch nachschlagen, nicht die Kundenakte
+    // des vorigen Gesprächs kurz weiterzeigen.
+    customerCardState = null;
+    customerCardLookupKey = null;
+    dbCallId = null;
+    callStartedForId = null;
+    callEndedForId = null;
     return { status: STATUS.IDLE };
   }
 
@@ -322,6 +343,113 @@
   let callMode = "inbound"; // Arbeitsrichtung, vom Bearbeiter gesetzt
   let customerSearchJql = ""; // optionale eigene JQL-Vorlage aus den Einstellungen
 
+  // Kundenakte (Stufe 1, KONZEPT-INTEGRATION.md): { callId, customerNumber,
+  // status: "loading"|"ok"|"not-found"|"not-logged-in"|"not-configured"|
+  // "network"|"error", data, error, updatedAt }. Wird hier ausgelöst (der
+  // Anruf mit Kundennummer entsteht in timio) und in chrome.storage.local
+  // veröffentlicht, damit ui.js (Jira-Seite) sie ebenfalls anzeigen kann.
+  let customerCardState = null;
+  let customerCardLookupKey = null; // "<callId>:<customerNumber>" – ein Lookup pro Anruf+Nummer
+
+  // Anruf-Schreibpfad (Stufe 2, KONZEPT-INTEGRATION.md): dbCallId ist die
+  // Supabase-Zeilen-ID des aktuellen Anrufs, sobald startCall() erfolgreich
+  // war. callStartedForId/callEndedForId dedupen Start/Abschluss pro lokalem
+  // callId – exakt das Muster von customerCardLookupKey oben.
+  let dbCallId = null;
+  let callStartedForId = null;
+  let callEndedForId = null;
+
+  function writeCustomerCard(next) {
+    customerCardState = next;
+    storageSet({ [CONFIG.storageKeys.customerCard]: next });
+  }
+
+  // Löst pro Anruf+Kundennummer genau einen Lookup aus. Degradiert überall
+  // sauber: kein supabaseClient (Skript-Ladereihenfolge kaputt), keine
+  // Kundennummer erkannt, oder der Anruf ist schon vorbei → einfach nichts tun.
+  function maybeLookupCustomer(call) {
+    if (!supabaseClient || !call || call.status === STATUS.IDLE || !callId) return;
+    const number = (call.customerNumber || "").trim();
+    if (!number) return;
+    const lookupCallId = callId;
+    const key = `${lookupCallId}:${number}`;
+    if (customerCardLookupKey === key) return;
+    customerCardLookupKey = key;
+
+    writeCustomerCard({
+      callId: lookupCallId, customerNumber: number, status: "loading",
+      data: null, error: "", updatedAt: Date.now()
+    });
+
+    supabaseClient.customerCard(number).then((res) => {
+      if (stopped || customerCardLookupKey !== key) return;
+      const status = res.ok ? (res.data ? "ok" : "not-found") : (res.reason || "error");
+      writeCustomerCard({
+        callId: lookupCallId, customerNumber: number, status,
+        data: res.ok ? res.data : null, error: res.ok ? "" : (res.error || ""), updatedAt: Date.now()
+      });
+      renderOverlay(lastDetails || { status: STATUS.IDLE });
+    }).catch((error) => {
+      if (stopped || customerCardLookupKey !== key) return;
+      writeCustomerCard({
+        callId: lookupCallId, customerNumber: number, status: "error",
+        data: null, error: String((error && error.message) || error), updatedAt: Date.now()
+      });
+      renderOverlay(lastDetails || { status: STATUS.IDLE });
+    });
+  }
+
+  // "3:12" → 192, "1:01:01" → 3661. timio zeigt die Enddauer nur als Text
+  // ("Dauer: mm:ss" bzw. h:mm:ss, siehe readCallDetails/finalDuration) – für
+  // calls.duration_s (int, Sekunden) muss das zurückgerechnet werden.
+  function parseDurationToSeconds(text) {
+    if (!text) return null;
+    const parts = String(text).split(":").map((p) => Number(p));
+    if (!parts.length || parts.some((p) => !Number.isFinite(p))) return null;
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return null;
+  }
+
+  // Legt einmal pro Anruf eine calls-Zeile an, sobald er sichtbar wird
+  // (klingelt/verbindet). Richtung kommt aus dem aktuellen callMode – der ist
+  // beim Klingeln nicht immer schon korrekt gesetzt (siehe outboundHintMarkup),
+  // aber ein Best-Effort-Wert jetzt ist besser, als auf eine Bestätigung zu
+  // warten, die bei den meisten Anrufen nie kommt.
+  function maybeStartCall(call) {
+    if (!supabaseClient || !call || call.status === STATUS.IDLE || !callId) return;
+    if (callStartedForId === callId) return;
+    callStartedForId = callId;
+    const startedCallId = callId;
+
+    supabaseClient.startCall({
+      customerNumber: (call.customerNumber || "").trim() || undefined,
+      callerName: (call.callerName || "").trim() || undefined,
+      callerNumber: (call.callerNumber || "").trim() || undefined,
+      direction: isOutbound(callMode) ? "outbound" : "inbound",
+      queueGroup: (call.group || "").trim() || undefined
+    }).then((res) => {
+      // Anruf ist inzwischen vorbei oder ein neuer hat begonnen — die
+      // zurückkommende ID gehört dann nicht mehr zum aktuellen Gespräch.
+      if (stopped || callId !== startedCallId) return;
+      if (res.ok) dbCallId = res.id;
+    }).catch(() => {});
+  }
+
+  // Schließt die Anruf-Zeile ab, sobald der "Beendet"-Screen eine feste
+  // Enddauer zeigt. Der Fall ohne "Beendet"-Screen (aufgelegt, bevor
+  // angenommen wurde) wird best-effort im Idle-Reset von resolveCallState()
+  // abgeschlossen, s. dort.
+  function maybeEndCall(call) {
+    if (!supabaseClient || !call || call.status !== STATUS.ENDED || !dbCallId) return;
+    if (callEndedForId === callId) return;
+    callEndedForId = callId;
+    supabaseClient.endCall(dbCallId, {
+      endedAt: new Date().toISOString(),
+      durationS: parseDurationToSeconds(call.finalDuration)
+    }).catch(() => {});
+  }
+
   function callSignatureOf(state) {
     return [state.status, state.callerNumber, state.customerNumber, state.finalDuration, looksOutbound(state)].join("|");
   }
@@ -389,6 +517,50 @@
   function outboundHintMarkup(call) {
     if (isOutbound(callMode) || !looksOutbound(call)) return "";
     return `<button type="button" class="tc-hint-switch" data-act="mode-outbound">Wirkt ausgehend – auf Outbound umschalten?</button>`;
+  }
+
+  // Kundenakte aus dem CRM (Stufe 1, KONZEPT-INTEGRATION.md): Name,
+  // Kontaktdaten, Vorgangszählung und – falls vorhanden – ein direkter
+  // Ticket-Link. Macht die JQL-Suche unten überflüssig, sobald sie greift,
+  // ersetzt sie aber nicht (Lookup kann fehlschlagen: nicht angemeldet,
+  // Kunde unbekannt, offline).
+  function kundenakteMarkup(call) {
+    if (!call || !call.customerNumber) return "";
+    const number = call.customerNumber.trim();
+    if (!number || !customerCardState || customerCardState.customerNumber !== number) return "";
+    const state = customerCardState;
+
+    if (state.status === "loading") {
+      return `<div class="tc-akte tc-akte-loading">Kundenakte wird geladen …</div>`;
+    }
+    if (state.status === "not-configured") {
+      return "";
+    }
+    if (state.status === "not-logged-in") {
+      return `<div class="tc-akte tc-akte-hint">Kundenakte: nicht bei Supabase angemeldet (Einstellungen ⚙).</div>`;
+    }
+    if (state.status === "not-found") {
+      return `<div class="tc-akte tc-akte-hint">Kundennummer ${escapeHtml(number)} im CRM noch nicht bekannt.</div>`;
+    }
+    if (state.status !== "ok" || !state.data) {
+      return `<div class="tc-akte tc-akte-hint">Kundenakte gerade nicht abrufbar.</div>`;
+    }
+
+    const d = state.data;
+    const jiraButton = d.jiraTicket
+      ? `<a class="tc-akte-jira" href="${escapeHtml(jiraTicketUrl(d.jiraTicket))}" target="_blank" rel="noopener">Ticket ${escapeHtml(d.jiraTicket)} öffnen</a>`
+      : "";
+    return `
+      <div class="tc-akte">
+        <div class="tc-akte-head">${escapeHtml(d.name || "Unbenannt")}${d.phone ? ` · ${escapeHtml(d.phone)}` : ""}</div>
+        <div class="tc-akte-counts">
+          <span>${d.contractCount} Vertr.</span>
+          <span>${d.tariffChangeCount} Wechsel</span>
+          <span>${d.noteCount} Notizen</span>
+          <span>Seit ${escapeHtml(formatDateDE(d.firstSeenAt))}</span>
+        </div>
+        ${jiraButton}
+      </div>`;
   }
 
   // Sprung von der Kundennummer zur Jira-Trefferliste. Die Extension kann
@@ -572,6 +744,7 @@
             <strong>${escapeHtml(nameLine)}</strong>
             ${subLine ? `<p>${escapeHtml(subLine)}</p>` : ""}
             ${waitInfo}
+            ${kundenakteMarkup(call)}
             ${customerSearchMarkup(call)}
             ${outboundHintMarkup(call)}
           </div>
@@ -744,6 +917,9 @@
     if (!extensionAlive()) { shutdown(); return; }
 
     const callState = resolveCallState();
+    maybeLookupCustomer(callState);
+    maybeStartCall(callState);
+    maybeEndCall(callState);
     const callSignature = callSignatureOf(callState);
     const callHeartbeatDue = callState.status !== STATUS.IDLE
       && (Date.now() - lastCallWriteAt) >= HEARTBEAT_MS;

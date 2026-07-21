@@ -11,6 +11,7 @@ export function CustomerSearchBar() {
   const tariffChanges = useStore((s) => s.tariffChanges);
   const notes = useStore((s) => s.notes);
   const settings = useStore((s) => s.settings);
+  const customerRows = useStore((s) => s.customers);
   const { navigate } = useRouter();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -23,8 +24,8 @@ export function CustomerSearchBar() {
   // Suchindex erst aufbauen, wenn wirklich getippt wird — ohne Eingabe
   // kostet die Leiste bei Datenänderungen nichts.
   const customers = useMemo(
-    () => (hasQuery ? buildCustomerSummaries(contracts, tariffChanges, notes, settings) : []),
-    [hasQuery, contracts, tariffChanges, notes, settings],
+    () => (hasQuery ? buildCustomerSummaries(contracts, tariffChanges, notes, settings, customerRows) : []),
+    [hasQuery, contracts, tariffChanges, notes, settings, customerRows],
   );
 
   const results = useMemo(() => {

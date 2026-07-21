@@ -165,4 +165,95 @@ function run() {
   console.log("timio-content.test.js: alle Szenarien bestanden.");
 }
 
+// Anruf-Schreibpfad (Stufe 2, KONZEPT-INTEGRATION.md): eigener, async
+// Durchlauf mit injiziertem supabaseClient-Stub statt des echten Moduls, um
+// startCall()/endCall() ohne echtes Netzwerk zu beobachten. Bewusst eine
+// eigene Funktion statt Teil von run() oben, weil dafür await nötig ist
+// (die Extension schreibt fire-and-forget, ohne auf die Antwort zu warten).
+async function runCallsWritePath() {
+  const env = makeSandbox();
+  loadScripts(env.sandbox, ["src/config.js", "src/shared.js"]);
+
+  const startCalls = [];
+  const endCalls = [];
+  env.sandbox.SupportCopilot.supabaseClient = {
+    customerCard: async () => ({ ok: false, reason: "not-configured" }),
+    startCall: async (payload) => {
+      startCalls.push(payload);
+      return { ok: true, id: `db-${startCalls.length}` };
+    },
+    endCall: async (id, patch) => {
+      endCalls.push({ id, ...patch });
+      return { ok: true };
+    }
+  };
+
+  loadScripts(env.sandbox, ["src/timio-content.js"]);
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  // 1) Eingehender Anruf klingelt -> genau ein startCall(), Richtung inbound.
+  env.setPageText([
+    "AB", "Anna Beispiel", "Beispiel", "+49 (176) 34573586",
+    "Eingehender Anruf",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Wartezeit: 0:12",
+    "Kundennummer: 12345"
+  ].join("\n"));
+  env.tick();
+  await flush();
+  assert.strictEqual(startCalls.length, 1, "ein Anruf löst genau einen startCall() aus");
+  assert.strictEqual(startCalls[0].direction, "inbound");
+  assert.strictEqual(startCalls[0].customerNumber, "12345");
+
+  // Erneutes tick() beim selben Anruf löst KEINEN zweiten startCall() aus (Dedup).
+  env.tick();
+  await flush();
+  assert.strictEqual(startCalls.length, 1, "derselbe Anruf löst startCall() nur einmal aus");
+
+  // 2) Anruf verbindet, dann endet mit fester Dauer -> genau ein endCall()
+  //    mit korrekt aus "mm:ss" geparster Sekundenzahl.
+  env.setPageText([
+    "AB", "Anna Beispiel", "Beispiel", "+49 (176) 34573586",
+    "Beendet",
+    "Dauer: 3:12",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Kundennummer: 12345"
+  ].join("\n"));
+  env.tick();
+  await flush();
+  assert.strictEqual(endCalls.length, 1, "Anrufende mit \"Beendet\"-Screen löst genau einen endCall() aus");
+  assert.strictEqual(endCalls[0].id, "db-1");
+  assert.strictEqual(endCalls[0].durationS, 192, "\"3:12\" wird korrekt in Sekunden umgerechnet");
+
+  // 3) Zurück zu idle -> KEIN zusätzlicher endCall() (Anruf war schon sauber beendet).
+  env.setPageText("Willkommen");
+  env.tick();
+  await flush();
+  assert.strictEqual(endCalls.length, 1, "ein bereits sauber beendeter Anruf wird beim Idle-Reset nicht nochmal abgeschlossen");
+
+  // 4) Neuer Anruf klingelt und wird abgebrochen, bevor er angenommen wird
+  //    (kein "Beendet"-Screen) -> der Idle-Reset schließt ihn best-effort ab,
+  //    statt die Zeile für immer "aktiv" zu lassen.
+  env.setPageText([
+    "CD", "Chris Demo", "Demo", "+49 (176) 99999999",
+    "Eingehender Anruf",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Wartezeit: 0:03",
+    "Kundennummer: 54321"
+  ].join("\n"));
+  env.tick();
+  await flush();
+  assert.strictEqual(startCalls.length, 2, "der zweite Anruf löst einen eigenen startCall() aus");
+
+  env.setPageText("Willkommen");
+  env.tick();
+  await flush();
+  assert.strictEqual(endCalls.length, 2, "ein abgebrochener Anruf ohne Beendet-Screen wird beim Idle-Reset best-effort abgeschlossen");
+  assert.strictEqual(endCalls[1].id, "db-2");
+  assert.strictEqual(endCalls[1].durationS, null, "ohne jemals verbunden gewesen zu sein ist keine Dauer bekannt");
+
+  console.log("timio-content.test.js (Anruf-Schreibpfad): alle Szenarien bestanden.");
+}
+
 run();
+runCallsWritePath();

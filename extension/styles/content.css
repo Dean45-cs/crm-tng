@@ -1751,6 +1751,46 @@
   font-size: 12px;
 }
 
+/* Kundenakte aus dem CRM (Stufe 1, KONZEPT-INTEGRATION.md). */
+#support-copilot-root .sc-cockpit-akte {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--sc-line);
+  border-radius: 8px;
+  background: var(--sc-soft);
+  font-size: 12.5px;
+}
+
+#support-copilot-root .sc-cockpit-akte-head {
+  margin-bottom: 4px;
+  color: var(--sc-ink);
+  font-weight: 700;
+}
+
+#support-copilot-root .sc-cockpit-akte-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--sc-muted);
+  font-size: 11.5px;
+}
+
+#support-copilot-root .sc-cockpit-akte-jira {
+  display: block;
+  margin-top: 6px;
+  color: var(--sc-blue);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+#support-copilot-root .sc-cockpit-akte-jira:hover { text-decoration: underline; }
+
+#support-copilot-root .sc-cockpit-akte-loading,
+#support-copilot-root .sc-cockpit-akte-hint {
+  color: var(--sc-muted);
+}
+
 #support-copilot-root .sc-cockpit-search,
 #support-copilot-root .sc-cockpit-hint-switch {
   display: block;

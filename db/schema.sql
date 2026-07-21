@@ -26,6 +26,55 @@ create table if not exists public.users (
 );
 
 -- ------------------------------------------------------------
+-- CUSTOMERS
+-- ------------------------------------------------------------
+-- Eigenständige Kunden-Entität (Migration 017): ein Anrufer ohne Vertrag/
+-- Tarifwechsel/Notiz existiert damit trotzdem im CRM. customer_number bleibt
+-- in contracts/tariff_changes/notes/leads bewusst eine reine Textspalte ohne
+-- Fremdschlüssel hierher. Wird ausschließlich über den touch_customer()-
+-- Trigger weiter unten befüllt, siehe dort.
+-- ------------------------------------------------------------
+create table if not exists public.customers (
+  customer_number text primary key,
+  name text,
+  phone text,
+  first_seen_at timestamptz,
+  last_contact_at timestamptz,
+  created_by uuid references public.users(id) on delete set null
+);
+create index if not exists idx_customers_last_contact on public.customers(last_contact_at desc);
+
+-- ------------------------------------------------------------
+-- CALLS
+-- ------------------------------------------------------------
+-- Anruf-Historie (Migration 018): von der Support-Copilot-Extension über
+-- ihre eigene Supabase-Session automatisch geschrieben. customer_number ist
+-- nullable — nicht jeder Anrufer ist zuzuordnen. outcome/note/jira_ticket
+-- sind für Stufe 3 vorgesehen (gemeinsame Erfassung am Gesprächsende) und
+-- werden hier nur als Spalten angelegt.
+-- ------------------------------------------------------------
+create table if not exists public.calls (
+  id uuid primary key default gen_random_uuid(),
+  customer_number text,
+  caller_name text,
+  caller_number text,
+  direction text not null check (direction in ('inbound', 'outbound')),
+  queue_group text,
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  duration_s int,
+  agent_id uuid not null references public.users(id) on delete cascade,
+  outcome text,
+  note text,
+  jira_ticket text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_calls_customer on public.calls(customer_number);
+create index if not exists idx_calls_agent on public.calls(agent_id);
+create index if not exists idx_calls_started on public.calls(started_at desc);
+create index if not exists idx_calls_active on public.calls(started_at) where ended_at is null;
+
+-- ------------------------------------------------------------
 -- CONTRACTS
 -- ------------------------------------------------------------
 create table if not exists public.contracts (
@@ -263,6 +312,8 @@ create index if not exists idx_status_log_started on public.status_log(started_a
 -- ============================================================================
 
 alter table public.users enable row level security;
+alter table public.customers enable row level security;
+alter table public.calls enable row level security;
 alter table public.contracts enable row level security;
 alter table public.tariff_changes enable row level security;
 alter table public.notes enable row level security;
@@ -344,6 +395,87 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
+-- Kunden-Zeile automatisch pflegen: bei jedem neuen/geänderten Vertrag,
+-- Tarifwechsel, Notiz oder Lead legt dieser SECURITY-DEFINER-Trigger die
+-- passende public.customers-Zeile an bzw. aktualisiert last_contact_at. So
+-- bleibt customers aktuell, ohne die vier bestehenden Insert-Pfade im Client
+-- anzufassen (siehe src/lib/supabaseApi.ts).
+create or replace function public.touch_customer()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.customer_number is null or new.customer_number = '' then
+    return new;
+  end if;
+
+  insert into public.customers (customer_number, name, first_seen_at, last_contact_at, created_by)
+  values (
+    new.customer_number,
+    coalesce(nullif(new.customer_name, ''), ''),
+    now(),
+    now(),
+    new.created_by
+  )
+  on conflict (customer_number) do update
+    set last_contact_at = now(),
+        name = coalesce(nullif(public.customers.name, ''), excluded.name);
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_touch_customer_contracts on public.contracts;
+create trigger trg_touch_customer_contracts
+  after insert or update on public.contracts
+  for each row execute function public.touch_customer();
+
+drop trigger if exists trg_touch_customer_tariff on public.tariff_changes;
+create trigger trg_touch_customer_tariff
+  after insert or update on public.tariff_changes
+  for each row execute function public.touch_customer();
+
+drop trigger if exists trg_touch_customer_notes on public.notes;
+create trigger trg_touch_customer_notes
+  after insert or update on public.notes
+  for each row execute function public.touch_customer();
+
+drop trigger if exists trg_touch_customer_leads on public.leads;
+create trigger trg_touch_customer_leads
+  after insert or update on public.leads
+  for each row execute function public.touch_customer();
+
+-- calls hat weder customer_name noch created_by (stattdessen caller_name/
+-- agent_id) — touch_customer() passt nicht direkt, daher eine eigene,
+-- sonst identische Funktion. Ohne das bekäme ein Anrufer, der nie einen
+-- Vertrag/Tarifwechsel/Notiz/Lead hatte, trotz protokollierter Anrufe keine
+-- eigenständige customers-Zeile.
+create or replace function public.touch_customer_from_call()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.customer_number is null or new.customer_number = '' then
+    return new;
+  end if;
+
+  insert into public.customers (customer_number, name, first_seen_at, last_contact_at, created_by)
+  values (
+    new.customer_number,
+    coalesce(nullif(new.caller_name, ''), ''),
+    now(),
+    now(),
+    new.agent_id
+  )
+  on conflict (customer_number) do update
+    set last_contact_at = now(),
+        name = coalesce(nullif(public.customers.name, ''), excluded.name);
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_touch_customer_calls on public.calls;
+create trigger trg_touch_customer_calls
+  after insert on public.calls
+  for each row execute function public.touch_customer_from_call();
+
 -- Privilege-Escalation verhindern: role/is_active/key/id nur durch Manager:innen
 -- (oder serverseitig per service_role / SQL-Editor, wo auth.uid() NULL ist).
 -- Ausnahme: Solange noch KEIN Manager existiert, darf der erste Account sich
@@ -378,6 +510,30 @@ create policy "users insert own" on public.users
   for insert with check (auth.uid() = id);
 create policy "users update own or manager" on public.users
   for update using (auth.uid() = id or public.auth_is_manager());
+
+-- CUSTOMERS: lesen für alle aktiven Nutzer (auch die Extension-Session ist nur
+-- ein weiterer aktiver Nutzer). Schreiben ausschließlich über den
+-- touch_customer()-Trigger oben, deshalb keine insert/update-Policy für
+-- Clients. Löschen nur für Chefs (DSGVO-Purge in CustomerDetail.tsx ist
+-- managergated).
+create policy "customers read all" on public.customers
+  for select using (public.auth_is_active());
+create policy "customers delete manager" on public.customers
+  for delete using (public.auth_is_manager());
+
+-- CALLS: lesen für alle aktiven Nutzer (Live-Anrufleiste, Anrufhistorie,
+-- Team-KPI). Anlegen nur als sich selbst (agent_id = auth.uid()), damit kein
+-- Client Anrufe im Namen anderer Agent:innen einträgt. Abschließen
+-- (ended_at/duration_s) durch die eigene Sitzung oder einen Chef. Löschen
+-- (u.a. DSGVO-Purge) nur für Chefs.
+create policy "calls read all" on public.calls
+  for select using (public.auth_is_active());
+create policy "calls insert own" on public.calls
+  for insert with check (public.auth_is_active() and auth.uid() = agent_id);
+create policy "calls update own or manager" on public.calls
+  for update using (public.auth_is_active() and (auth.uid() = agent_id or public.auth_is_manager()));
+create policy "calls delete manager" on public.calls
+  for delete using (public.auth_is_manager());
 
 -- CONTRACTS / TARIFF / NOTES: aktive Nutzer lesen alles.
 -- Bearbeiten/Löschen nur, wenn der User den Datensatz selbst erfasst hat,
@@ -571,9 +727,56 @@ create policy "status_log delete manager" on public.status_log
   for delete using (public.auth_is_manager());
 
 -- ============================================================================
+-- RPCs
+-- ============================================================================
+
+-- Ein Aufruf statt vier Tabellenabfragen aus einem Content-Script — die
+-- Support-Copilot-Extension ruft das bei eingehendem Anruf für die
+-- Kundenakte auf. Bewusst NICHT security definer: RLS erlaubt bereits jedem
+-- aktiven Nutzer (auch der Extension-Session) das Lesen dieser Tabellen,
+-- Invoker-Rechte reichen also (least privilege). Kein customers-Eintrag zur
+-- Nummer → die Funktion liefert null ("im CRM nicht bekannt"). leads hat
+-- keine jira_ticket-Spalte, daher fließt nur contracts/tariff_changes/notes
+-- in die Ticket-Suche ein.
+create or replace function public.customer_card(p_customer_number text)
+returns jsonb language sql stable as $$
+  select jsonb_build_object(
+    'customerNumber', p_customer_number,
+    'name', c.name,
+    'phone', c.phone,
+    'firstSeenAt', c.first_seen_at,
+    'lastContactAt', c.last_contact_at,
+    'contractCount', (select count(*) from public.contracts x where x.customer_number = p_customer_number),
+    'tariffChangeCount', (select count(*) from public.tariff_changes x where x.customer_number = p_customer_number),
+    'noteCount', (select count(*) from public.notes x where x.customer_number = p_customer_number),
+    'leadCount', (select count(*) from public.leads x where x.customer_number = p_customer_number),
+    'jiraTicket', (
+      select jira_ticket from (
+        select jira_ticket, created_at from public.contracts
+          where customer_number = p_customer_number and jira_ticket is not null and jira_ticket <> ''
+        union all
+        select jira_ticket, created_at from public.tariff_changes
+          where customer_number = p_customer_number and jira_ticket is not null and jira_ticket <> ''
+        union all
+        select jira_ticket, created_at from public.notes
+          where customer_number = p_customer_number and jira_ticket is not null and jira_ticket <> ''
+      ) t
+      order by created_at desc
+      limit 1
+    )
+  )
+  from public.customers c
+  where c.customer_number = p_customer_number;
+$$;
+
+grant execute on function public.customer_card(text) to authenticated;
+
+-- ============================================================================
 -- REALTIME
 -- ============================================================================
 -- Damit alle Clients live Updates bekommen.
+alter publication supabase_realtime add table public.customers;
+alter publication supabase_realtime add table public.calls;
 alter publication supabase_realtime add table public.contracts;
 alter publication supabase_realtime add table public.tariff_changes;
 alter publication supabase_realtime add table public.notes;

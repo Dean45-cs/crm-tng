@@ -7,6 +7,7 @@ import { ToastHost } from './components/ToastHost';
 import { CommandPalette } from './components/CommandPalette';
 import { CustomerSearchBar } from './components/CustomerSearchBar';
 import { StatusBar } from './components/StatusBar';
+import { LiveCallBar } from './components/LiveCallBar';
 import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
 import { SupabaseSetup } from './components/SupabaseSetup';
@@ -17,6 +18,7 @@ import { useAuth } from './store/useAuth';
 import { useOnboarding, useOnboardingHotkey } from './store/useOnboarding';
 import { useStore } from './store/useStore';
 import { useStatus } from './store/useStatus';
+import { useCalls } from './store/useCalls';
 import { isConfigured, onConfigChange } from './lib/supabase';
 
 // Seiten werden bei Bedarf nachgeladen (Code-Splitting). Das hält das
@@ -138,6 +140,7 @@ function Shell() {
           </div>
           <div className="row" style={{ gap: 14, alignItems: 'center' }}>
             <CustomerSearchBar />
+            <LiveCallBar />
             <StatusBar />
             <span className="muted titlebar-date">
               {new Date().toLocaleDateString('de-DE', {
@@ -250,6 +253,10 @@ export default function App() {
   const subscribeStatus = useStatus((s) => s.subscribeRealtime);
   const resetStatus = useStatus((s) => s.reset);
 
+  const loadCalls = useCalls((s) => s.load);
+  const subscribeCalls = useCalls((s) => s.subscribeRealtime);
+  const resetCalls = useCalls((s) => s.reset);
+
   const [configured, setConfigured] = useState(isConfigured());
 
   // Tour-Steuerung: „." + „o" gleichzeitig öffnet die Einführungstour erneut
@@ -268,15 +275,19 @@ export default function App() {
     if (!configured || !currentUserKey) {
       resetStore();
       resetStatus();
+      resetCalls();
       return;
     }
     loadAll();
     loadStatus();
+    loadCalls();
     const unsub = subscribeRealtime();
     const unsubStatus = subscribeStatus();
+    const unsubCalls = subscribeCalls();
     return () => {
       unsub();
       unsubStatus();
+      unsubCalls();
     };
   }, [
     configured,
@@ -287,6 +298,9 @@ export default function App() {
     loadStatus,
     subscribeStatus,
     resetStatus,
+    loadCalls,
+    subscribeCalls,
+    resetCalls,
   ]);
 
   useEffect(() => onConfigChange(() => setConfigured(isConfigured())), []);

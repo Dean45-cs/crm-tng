@@ -4,7 +4,7 @@
   "version": "0.12.0",
   "description": "KI-gestützter Support-Assistent für klassische Jira-Vorgänge mit timio-Anruferkennung und Call-Cockpit (Anrufer, Gesprächsdauer, Wartefeld, Ticket-Abgleich) sowie Outbound-Modus (Gesprächsvorbereitung, Ergebnis-Erfassung, Rückrufliste). Zusammenfassung, Team-Doku, Einordnung, Antwort-Entwürfe und Qualitätscheck – automatisch, gecacht und vollständig lokal, ohne Cloud.",
   "permissions": ["storage", "clipboardWrite", "notifications", "alarms"],
-  "host_permissions": ["https://ccc.my-phone.cloud/*"],
+  "host_permissions": ["https://ccc.my-phone.cloud/*", "https://*.supabase.co/*"],
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -28,6 +28,7 @@
       "js": [
         "src/config.js",
         "src/shared.js",
+        "src/supabase.js",
         "src/ai-cache.js",
         "src/jira-reader.js",
         "src/rules.js",
@@ -43,6 +44,7 @@
       "js": [
         "src/config.js",
         "src/shared.js",
+        "src/supabase.js",
         "src/timio-content.js"
       ],
       "css": ["styles/timio.css"],

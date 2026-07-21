@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Plus,
@@ -15,10 +15,15 @@ import {
   Globe,
   ShieldAlert,
   Eraser,
+  Phone,
+  PhoneOutgoing,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { useRouter } from '../router';
+import type { Call } from '../types';
+import { fetchCallsForCustomer } from '../lib/supabaseApi';
+import { formatClock, formatDuration } from '../lib/statusBoard';
 import {
   calcContractCommission,
   calcTariffCommission,
@@ -40,7 +45,7 @@ interface Props {
 }
 
 export function CustomerDetail({ kdnr }: Props) {
-  const { contracts, tariffChanges, notes, settings, customerOwners, deleteContract, deleteTariffChange, deleteNote, purgeCustomer } =
+  const { contracts, tariffChanges, notes, settings, customerOwners, customers, deleteContract, deleteTariffChange, deleteNote, purgeCustomer } =
     useStore();
   const { currentUserKey, users, isManager } = useAuth();
   const { navigate } = useRouter();
@@ -70,11 +75,34 @@ export function CustomerDetail({ kdnr }: Props) {
     () => notes.filter((n) => n.customerNumber === kdnr).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [notes, kdnr],
   );
+  const customerRow = useMemo(
+    () => customers.find((c) => c.customerNumber === kdnr) ?? null,
+    [customers, kdnr],
+  );
+
+  // Anrufhistorie lebt bewusst nicht im globalen Store (siehe useCalls.ts) —
+  // Anrufvolumen kann deutlich höher sein als Verträge/Notizen, deshalb hier
+  // gezielt pro Kunde geladen.
+  const [callsList, setCallsList] = useState<Call[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchCallsForCustomer(kdnr)
+      .then((rows) => {
+        if (!cancelled) setCallsList(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setCallsList([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [kdnr]);
 
   const customerName =
     contractsList[0]?.customerName ??
     tariffList[0]?.customerName ??
     notesList[0]?.customerName ??
+    customerRow?.name ??
     '';
 
   const totalCommission =
@@ -83,7 +111,13 @@ export function CustomerDetail({ kdnr }: Props) {
 
   const initials = (customerName || kdnr).slice(0, 2).toUpperCase();
 
-  if (contractsList.length === 0 && tariffList.length === 0 && notesList.length === 0) {
+  if (
+    contractsList.length === 0 &&
+    tariffList.length === 0 &&
+    notesList.length === 0 &&
+    callsList.length === 0 &&
+    !customerRow
+  ) {
     return (
       <div>
         <button
@@ -118,6 +152,7 @@ export function CustomerDetail({ kdnr }: Props) {
           <h2 className="customer-hero-name">{customerName || 'Unbenannt'}</h2>
           <div className="customer-hero-kdnr">
             Kundennummer <code>{kdnr}</code>
+            {customerRow?.phone && <> · {customerRow.phone}</>}
           </div>
           <div className="customer-owner-row">
             {ownership.owner === null ? (
@@ -364,6 +399,56 @@ export function CustomerDetail({ kdnr }: Props) {
         )}
       </Section>
 
+      <Section
+        icon={<Phone size={15} />}
+        title="Anrufe"
+        count={callsList.length}
+      >
+        {callsList.length === 0 ? (
+          <div className="muted" style={{ padding: '14px 2px' }}>Keine Anrufe.</div>
+        ) : (
+          <div className="table-wrap">
+            <table className="crm-table">
+              <thead>
+                <tr>
+                  <th>Datum</th>
+                  <th>Richtung</th>
+                  <th>Anrufer</th>
+                  <th>Bearbeiter:in</th>
+                  <th>Gruppe</th>
+                  <th style={{ textAlign: 'right' }}>Dauer</th>
+                </tr>
+              </thead>
+              <tbody>
+                {callsList.map((call) => (
+                  <tr key={call.id}>
+                    <td>
+                      {formatDate(call.startedAt)} · {formatClock(call.startedAt)}
+                    </td>
+                    <td>
+                      <span className="row" style={{ gap: 4 }}>
+                        {call.direction === 'outbound' ? (
+                          <PhoneOutgoing size={13} />
+                        ) : (
+                          <Phone size={13} />
+                        )}
+                        {call.direction === 'outbound' ? 'Ausgehend' : 'Eingehend'}
+                      </span>
+                    </td>
+                    <td>{call.callerName || call.callerNumber || '–'}</td>
+                    <td>{users[call.agentId]?.displayName ?? '–'}</td>
+                    <td>{call.queueGroup || '–'}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {call.durationS != null ? formatDuration(call.durationS) : '–'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
       {isManager() && (
         <section className="customer-purge-section">
           <div className="customer-purge-head">
@@ -371,8 +456,9 @@ export function CustomerDetail({ kdnr }: Props) {
             <div>
               <div className="customer-purge-title">DSGVO: Recht auf Vergessenwerden</div>
               <div className="customer-purge-sub">
-                Löscht <strong>alle</strong> Verträge, Tarifwechsel und Notizen zu diesem Kunden
-                endgültig. Der Vorgang ist im Audit-Log nachvollziehbar und nicht rückgängig zu machen.
+                Löscht <strong>alle</strong> Verträge, Tarifwechsel, Notizen, Anrufe und den
+                Kundeneintrag selbst endgültig. Der Vorgang ist im Audit-Log nachvollziehbar und
+                nicht rückgängig zu machen.
               </div>
             </div>
           </div>

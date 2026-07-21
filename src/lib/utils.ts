@@ -8,6 +8,7 @@ import type {
   TariffChangeType,
   TariffContext,
   CustomerSummary,
+  Customer,
 } from '../types';
 
 export const formatCurrency = (value: number): string =>
@@ -188,8 +189,24 @@ export const buildCustomerSummaries = (
   tariffChanges: TariffChange[],
   notes: Note[],
   settings: Settings,
+  customers: Customer[] = [],
 ): CustomerSummary[] => {
   const map = new Map<string, CustomerSummary>();
+
+  // Kunden ohne jeglichen Vorgang zuerst eintragen (Nullstand) — ein Anrufer
+  // ohne Vertrag/Tarifwechsel/Notiz ist jetzt ein vollwertiger Kunde.
+  customers.forEach((c) => {
+    if (!c.customerNumber || map.has(c.customerNumber)) return;
+    map.set(c.customerNumber, {
+      customerNumber: c.customerNumber,
+      customerName: c.name || '',
+      contractCount: 0,
+      tariffChangeCount: 0,
+      noteCount: 0,
+      totalCommission: 0,
+      lastActivity: c.lastContactAt || c.firstSeenAt || '',
+    });
+  });
 
   const touch = (kdnr: string, name: string, date: string) => {
     if (!kdnr) return null;

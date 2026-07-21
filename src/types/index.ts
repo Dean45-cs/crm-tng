@@ -115,6 +115,30 @@ export interface CustomerSummary {
   lastActivity: string;
 }
 
+/** Eigenständige Kunden-Entität (Migration 017) – existiert auch ohne Vorgang */
+export interface Customer {
+  customerNumber: string;
+  name: string;
+  phone?: string;
+  firstSeenAt: string;
+  lastContactAt: string;
+  createdBy?: string;
+}
+
+/** Anruf-Historie (Migration 018) – von der Extension automatisch geschrieben */
+export interface Call {
+  id: string;
+  customerNumber?: string;
+  callerName?: string;
+  callerNumber?: string;
+  direction: 'inbound' | 'outbound';
+  queueGroup?: string;
+  startedAt: string;
+  endedAt?: string;
+  durationS?: number;
+  agentId: string;
+}
+
 /** Wer einen Kunden besitzt und mit wem er geteilt wird */
 export interface CustomerOwnership {
   /** User-Key des Besitzers */

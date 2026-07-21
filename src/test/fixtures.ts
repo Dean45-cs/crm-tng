@@ -1,4 +1,4 @@
-import type { Contract, TariffChange, Settings, Lead } from '../types';
+import type { Contract, TariffChange, Settings, Lead, Customer } from '../types';
 
 /** Minimale, deterministische Settings für Tests. */
 export const testSettings: Settings = {
@@ -62,6 +62,17 @@ export function makeLead(over: Partial<Lead> = {}): Lead {
     priority: 'normal',
     createdAt: '2024-06-15T10:00:00.000Z',
     updatedAt: '2024-06-15T10:00:00.000Z',
+    createdBy: 'agent-1',
+    ...over,
+  };
+}
+
+export function makeCustomer(over: Partial<Customer> = {}): Customer {
+  return {
+    customerNumber: '1000',
+    name: 'Test Kunde',
+    firstSeenAt: '2024-06-15T10:00:00.000Z',
+    lastContactAt: '2024-06-15T10:00:00.000Z',
     createdBy: 'agent-1',
     ...over,
   };

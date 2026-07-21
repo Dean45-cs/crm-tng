@@ -7,6 +7,7 @@ import type {
   ProductInfo,
   ProductType,
   TariffCommissionMatrix,
+  Customer,
   CustomerOwnership,
   Incentive,
   Lead,
@@ -14,6 +15,7 @@ import type {
   CustomerAccessRequest,
 } from '../types';
 import { useAuth } from './useAuth';
+import { useCalls } from './useCalls';
 import { toast } from './useToast';
 import { getSupabase } from '../lib/supabase';
 import { logAudit } from '../lib/audit';
@@ -51,6 +53,7 @@ import {
   fetchAccessRequests,
   insertAccessRequest,
   updateAccessRequestStatus,
+  fetchCustomers,
 } from '../lib/supabaseApi';
 
 const currentUserKey = () => useAuth.getState().currentUserKey ?? undefined;
@@ -103,6 +106,8 @@ interface StoreState {
   contracts: Contract[];
   tariffChanges: TariffChange[];
   notes: Note[];
+  /** Eigenständige Kunden-Entität (Migration 017) – existiert auch ohne Vorgang */
+  customers: Customer[];
   settings: Settings;
   customerOwners: Record<string, CustomerOwnership>;
   incentives: Incentive[];
@@ -198,6 +203,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   contracts: [],
   tariffChanges: [],
   notes: [],
+  customers: [],
   customerOwners: {},
   incentives: [],
   leads: [],
@@ -209,7 +215,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   loadAll: async () => {
     const uid = useAuth.getState().currentUserKey;
     try {
-      const [contracts, tariffChanges, notes, owners, incentives, leads, activities, accessRequests, settingsRes] = await Promise.all([
+      const [contracts, tariffChanges, notes, owners, incentives, leads, activities, accessRequests, customers, settingsRes] = await Promise.all([
         fetchContracts(),
         fetchTariffChanges(),
         fetchNotes(),
@@ -223,6 +229,8 @@ export const useStore = create<StoreState>()((set, get) => ({
         fetchLeadActivities().catch(() => [] as LeadActivity[]),
         // Zugriffsanfragen (Migration 013).
         fetchAccessRequests().catch(() => [] as CustomerAccessRequest[]),
+        // Eigenständige Kunden-Entität (Migration 017).
+        fetchCustomers().catch(() => [] as Customer[]),
         uid ? fetchSettings(uid) : Promise.resolve({ user: null, shared: null }),
       ]);
 
@@ -269,6 +277,7 @@ export const useStore = create<StoreState>()((set, get) => ({
         contracts,
         tariffChanges,
         notes,
+        customers,
         customerOwners: owners,
         incentives,
         leads,
@@ -288,6 +297,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       contracts: [],
       tariffChanges: [],
       notes: [],
+      customers: [],
       customerOwners: {},
       incentives: [],
       leads: [],
@@ -335,6 +345,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     const reloadAccessRequests = debounce(() => {
       fetchAccessRequests().then((rows) => set({ accessRequests: rows })).catch(() => {});
     });
+    const reloadCustomers = debounce(() => {
+      fetchCustomers().then((rows) => set({ customers: rows })).catch(() => {});
+    });
 
     const channel = sb
       .channel('crm-tng-changes')
@@ -346,6 +359,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, reloadLeads)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_activities' }, reloadActivities)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_access_requests' }, reloadAccessRequests)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, reloadCustomers)
       .subscribe();
     return () => {
       sb.removeChannel(channel);
@@ -846,11 +860,18 @@ export const useStore = create<StoreState>()((set, get) => ({
         contracts: s.contracts.filter((x) => x.customerNumber !== customerNumber),
         tariffChanges: s.tariffChanges.filter((x) => x.customerNumber !== customerNumber),
         notes: s.notes.filter((x) => x.customerNumber !== customerNumber),
+        customers: s.customers.filter((x) => x.customerNumber !== customerNumber),
         customerOwners: Object.fromEntries(
           Object.entries(s.customerOwners).filter(([k]) => k !== customerNumber),
         ),
       }));
-      const total = counts.contracts + counts.tariffChanges + counts.notes;
+      // Anrufe leben in einem eigenen Store (useCalls, hält nur die aktiven
+      // Anrufe) — defensiv mitbereinigen, falls der Kunde ausgerechnet jetzt
+      // einen laufenden Anruf hat.
+      useCalls.setState((s) => ({
+        activeCalls: s.activeCalls.filter((x) => x.customerNumber !== customerNumber),
+      }));
+      const total = counts.contracts + counts.tariffChanges + counts.notes + counts.calls;
       toast.success(`Kunde gelöscht (${total} Einträge entfernt).`);
       logAudit({
         action: 'purge',

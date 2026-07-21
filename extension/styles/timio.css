@@ -333,6 +333,45 @@
   color: #b26a00;
 }
 
+/* Kundenakte aus dem CRM (Stufe 1, KONZEPT-INTEGRATION.md). */
+#sc-timio-cockpit .tc-akte {
+  margin-top: 6px;
+  padding: 7px 9px;
+  border: 1px solid #c7d8f8;
+  border-radius: 7px;
+  background: #fbfdff;
+  font-size: 12px;
+}
+
+#sc-timio-cockpit .tc-akte-head {
+  margin-bottom: 3px;
+  font-weight: 700;
+}
+
+#sc-timio-cockpit .tc-akte-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: #5e6c84;
+  font-size: 11px;
+}
+
+#sc-timio-cockpit .tc-akte-jira {
+  display: block;
+  margin-top: 6px;
+  color: #0c66e4;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+#sc-timio-cockpit .tc-akte-jira:hover { text-decoration: underline; }
+
+#sc-timio-cockpit .tc-akte-loading,
+#sc-timio-cockpit .tc-akte-hint {
+  color: #5e6c84;
+}
+
 #sc-timio-cockpit .tc-search,
 #sc-timio-cockpit .tc-hint-switch {
   display: block;

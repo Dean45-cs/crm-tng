@@ -4,6 +4,8 @@ import type {
   TariffChange,
   Note,
   Settings,
+  Customer,
+  Call,
   CustomerOwnership,
   ProductInfo,
   ProductType,
@@ -860,34 +862,137 @@ export async function fetchAuditLog(limit = 100): Promise<AuditLogEntry[]> {
 }
 
 // ============================================================================
+// CUSTOMERS
+// ============================================================================
+
+interface CustomerRow {
+  customer_number: string;
+  name: string | null;
+  phone: string | null;
+  first_seen_at: string;
+  last_contact_at: string;
+  created_by: string | null;
+}
+
+const mapCustomer = (r: CustomerRow): Customer => ({
+  customerNumber: r.customer_number,
+  name: r.name ?? '',
+  phone: r.phone ?? undefined,
+  firstSeenAt: r.first_seen_at,
+  lastContactAt: r.last_contact_at,
+  createdBy: r.created_by ?? undefined,
+});
+
+export async function fetchCustomers(): Promise<Customer[]> {
+  const { data, error } = await getSupabase().from('customers').select('*');
+  if (error) throw error;
+  return (data as CustomerRow[]).map(mapCustomer);
+}
+
+// ============================================================================
+// CALLS
+// ============================================================================
+// Anruf-Historie (Migration 018) — geschrieben von der Support-Copilot-
+// Extension, hier nur gelesen. Bewusst NICHT Teil des globalen
+// contracts/notes-artigen Ladeprinzips (kein fetchCalls() für den ganzen
+// Store): Anrufvolumen kann deutlich höher sein als Verträge/Notizen, ein
+// unbegrenzter All-Time-Load würde mit der Zeit zum Skalierungsproblem.
+
+interface CallRow {
+  id: string;
+  customer_number: string | null;
+  caller_name: string | null;
+  caller_number: string | null;
+  direction: 'inbound' | 'outbound';
+  queue_group: string | null;
+  started_at: string;
+  ended_at: string | null;
+  duration_s: number | null;
+  agent_id: string;
+}
+
+const mapCall = (r: CallRow): Call => ({
+  id: r.id,
+  customerNumber: r.customer_number ?? undefined,
+  callerName: r.caller_name ?? undefined,
+  callerNumber: r.caller_number ?? undefined,
+  direction: r.direction,
+  queueGroup: r.queue_group ?? undefined,
+  startedAt: r.started_at,
+  endedAt: r.ended_at ?? undefined,
+  durationS: r.duration_s ?? undefined,
+  agentId: r.agent_id,
+});
+
+/** Anrufe, die noch nicht beendet sind — Grundlage der Live-Anrufleiste. */
+export async function fetchActiveCalls(): Promise<Call[]> {
+  const { data, error } = await getSupabase()
+    .from('calls')
+    .select('*')
+    .is('ended_at', null)
+    .order('started_at', { ascending: false });
+  if (error) throw error;
+  return (data as CallRow[]).map(mapCall);
+}
+
+/** Anrufhistorie eines einzelnen Kunden, für CustomerDetail. */
+export async function fetchCallsForCustomer(customerNumber: string, limit = 20): Promise<Call[]> {
+  const { data, error } = await getSupabase()
+    .from('calls')
+    .select('*')
+    .eq('customer_number', customerNumber)
+    .order('started_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data as CallRow[]).map(mapCall);
+}
+
+/** Anzahl Anrufe seit einem Zeitpunkt — für die Team-Dashboard-KPI, ohne Zeilen zu übertragen. */
+export async function fetchCallCountSince(iso: string): Promise<number> {
+  const { count, error } = await getSupabase()
+    .from('calls')
+    .select('*', { count: 'exact', head: true })
+    .gte('started_at', iso);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+// ============================================================================
 // CUSTOMER PURGE — Recht auf Vergessenwerden (Art. 17 DSGVO)
 // ============================================================================
 
 /**
- * Löscht alle CRM-Spuren eines Kunden: Verträge, Tarifwechsel, Notizen und
- * Ownership-Eintrag. Liefert die Anzahl gelöschter Zeilen pro Tabelle zurück.
- * RLS sorgt dafür, dass nur Berechtigte (Ersteller/Owner/Manager) das ausführen
- * können — Manager dürfen kraft Policy alle Zeilen löschen.
+ * Löscht alle CRM-Spuren eines Kunden: Verträge, Tarifwechsel, Notizen,
+ * Anrufe, Ownership-Eintrag und die Kunden-Zeile selbst. Liefert die Anzahl
+ * gelöschter Zeilen pro Tabelle zurück. RLS sorgt dafür, dass nur Berechtigte
+ * (Ersteller/Owner/Manager) das ausführen können — Manager dürfen kraft
+ * Policy alle Zeilen löschen.
  */
 export async function purgeCustomerData(customerNumber: string): Promise<{
   contracts: number;
   tariffChanges: number;
   notes: number;
   ownership: number;
+  customers: number;
+  calls: number;
 }> {
   const sb = getSupabase();
-  const [c, t, n, o] = await Promise.all([
+  const [c, t, n, o, cu, ca] = await Promise.all([
     sb.from('contracts').delete({ count: 'exact' }).eq('customer_number', customerNumber),
     sb.from('tariff_changes').delete({ count: 'exact' }).eq('customer_number', customerNumber),
     sb.from('notes').delete({ count: 'exact' }).eq('customer_number', customerNumber),
     sb.from('customer_ownerships').delete({ count: 'exact' }).eq('customer_number', customerNumber),
+    sb.from('customers').delete({ count: 'exact' }).eq('customer_number', customerNumber),
+    sb.from('calls').delete({ count: 'exact' }).eq('customer_number', customerNumber),
   ]);
-  for (const res of [c, t, n, o]) if (res.error) throw res.error;
+  for (const res of [c, t, n, o, cu, ca]) if (res.error) throw res.error;
   return {
     contracts: c.count ?? 0,
     tariffChanges: t.count ?? 0,
     notes: n.count ?? 0,
     ownership: o.count ?? 0,
+    customers: cu.count ?? 0,
+    calls: ca.count ?? 0,
   };
 }
 

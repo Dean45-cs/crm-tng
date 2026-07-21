@@ -58,7 +58,7 @@ export function CommandPalette() {
 }
 
 function PaletteDialog({ close: closePalette }: { close: () => void }) {
-  const { contracts, tariffChanges, notes, settings } = useStore();
+  const { contracts, tariffChanges, notes, settings, customers: customerRows } = useStore();
   const { navigate } = useRouter();
   const { openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote } =
     useQuickAdd();
@@ -74,8 +74,8 @@ function PaletteDialog({ close: closePalette }: { close: () => void }) {
   }, []);
 
   const customers = useMemo(
-    () => buildCustomerSummaries(contracts, tariffChanges, notes, settings),
-    [contracts, tariffChanges, notes, settings],
+    () => buildCustomerSummaries(contracts, tariffChanges, notes, settings, customerRows),
+    [contracts, tariffChanges, notes, settings, customerRows],
   );
 
   const items: CmdItem[] = useMemo(() => {
