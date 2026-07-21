@@ -1,7 +1,7 @@
-(function startSupportCopilot() {
+(function startStadtnetzCRM() {
   "use strict";
 
-  const app = window.SupportCopilot;
+  const app = window.StadtnetzCRM;
   const { CONFIG } = app;
   let lastUrl = "";
 

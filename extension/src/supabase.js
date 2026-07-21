@@ -1,9 +1,9 @@
-(function initSupportCopilotSupabase() {
+(function initStadtnetzCRMSupabase() {
   "use strict";
 
   // globalThis statt window: identisch im Content-Script, siehe config.js/shared.js.
-  globalThis.SupportCopilot = globalThis.SupportCopilot || {};
-  const app = globalThis.SupportCopilot;
+  globalThis.StadtnetzCRM = globalThis.StadtnetzCRM || {};
+  const app = globalThis.StadtnetzCRM;
   const CONFIG = app.CONFIG || {};
   const shared = app.shared || {};
   const extensionAlive = shared.extensionAlive || (() => true);
@@ -607,6 +607,134 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md) — Live-Suche über
+  // customers/contracts/tariff_changes/notes. Keine neue RLS-Policy nötig:
+  // "customers read all"/"contracts read all"/"tariff read all"/"notes read
+  // all" (db/schema.sql) erlauben bereits jedem auth_is_active()-Nutzer
+  // Lesezugriff — die Extension-Session aus Stufe 1 qualifiziert sich
+  // genauso wie ein CRM-Tab.
+  // ---------------------------------------------------------------------------
+
+  // Entfernt Zeichen, die die PostgREST-`or=(...)`-Syntax sprengen würden
+  // (Kommas trennen Bedingungen, Klammern gruppieren) — analog zum
+  // Anführungszeichen-Escaping in customerSearchUrl() oben.
+  function ilikePattern(rawQuery) {
+    const cleaned = String(rawQuery == null ? "" : rawQuery).trim().replace(/[,()]/g, "");
+    return cleaned ? encodeURIComponent(`*${cleaned}*`) : "";
+  }
+
+  function orFilter(columns, rawQuery) {
+    const pattern = ilikePattern(rawQuery);
+    if (!pattern) return "";
+    return columns.map((col) => `${col}.ilike.${pattern}`).join(",");
+  }
+
+  async function searchWorkspaceTable(config, session, table, select, filterColumns, query, limit) {
+    const filter = orFilter(filterColumns, query);
+    if (!filter) return { ok: true, rows: [] };
+    try {
+      const res = await fetch(`${config.url}/rest/v1/${table}?select=${select}&or=(${filter})&limit=${limit}`, {
+        method: "GET",
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${session.accessToken}`
+        }
+      });
+      if (res.status === 401) return { ok: false, reason: "not-logged-in" };
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
+      }
+      const rows = await res.json().catch(() => null);
+      return { ok: true, rows: Array.isArray(rows) ? rows : [] };
+    } catch (error) {
+      return { ok: false, reason: "network", error: String((error && error.message) || error) };
+    }
+  }
+
+  // Vier parallele Abfragen statt einer serverseitigen Volltextsuche über
+  // alle Tabellen — bewusste Vereinfachung: kein Teilstring-Match auf
+  // contracts.products (Array-Spalte, per ilike nicht robust abbildbar) und
+  // kein totalCommission-Wert bei Kundentreffern (bräuchte einen Join über
+  // alle Verträge, unverhältnismäßig für eine Schnellsuche). Kein Cache
+  // (anders als fetchSharedSettings) — Ergebnisse sollen aktuell sein, der
+  // Aufrufer debounced selbst.
+  async function searchWorkspace(query) {
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    const cleaned = String(query == null ? "" : query).trim().replace(/[,()]/g, "");
+    if (!cleaned) return { ok: true, groups: [] };
+
+    const [customers, contracts, tariffChanges, notes] = await Promise.all([
+      searchWorkspaceTable(config, session, "customers", "customer_number,name", ["name", "customer_number"], cleaned, 6),
+      searchWorkspaceTable(config, session, "contracts", "id,customer_number,customer_name,products,contract_date", ["customer_name", "customer_number", "jira_ticket"], cleaned, 5),
+      searchWorkspaceTable(config, session, "tariff_changes", "id,customer_number,customer_name,change_date", ["customer_name", "customer_number", "jira_ticket"], cleaned, 5),
+      searchWorkspaceTable(config, session, "notes", "id,title,content,customer_name,customer_number", ["title", "content", "customer_name"], cleaned, 5)
+    ]);
+
+    const results = [customers, contracts, tariffChanges, notes];
+    // Ein abgelaufenes Login auf irgendeiner der vier Abfragen ist ein
+    // eindeutiges Signal — nicht mit Teilergebnissen der anderen drei überdecken.
+    if (results.some((r) => r.reason === "not-logged-in")) {
+      clearSession();
+      return { ok: false, reason: "not-logged-in" };
+    }
+    const failed = results.find((r) => !r.ok);
+    if (failed) return { ok: false, reason: failed.reason || "error", error: failed.error };
+
+    const groups = [];
+    if (customers.rows.length) {
+      groups.push({
+        group: "Kunden",
+        items: customers.rows.map((r) => ({
+          kind: "customer",
+          customerNumber: r.customer_number,
+          label: r.name || r.customer_number,
+          sub: `KdNr. ${r.customer_number}`
+        }))
+      });
+    }
+    if (contracts.rows.length) {
+      groups.push({
+        group: "Verträge",
+        items: contracts.rows.map((r) => ({
+          kind: "contract",
+          customerNumber: r.customer_number,
+          label: r.customer_name || r.customer_number,
+          sub: `${(Array.isArray(r.products) ? r.products.join(", ") : "")} · ${r.contract_date || ""}`
+        }))
+      });
+    }
+    if (tariffChanges.rows.length) {
+      groups.push({
+        group: "Tarifwechsel",
+        items: tariffChanges.rows.map((r) => ({
+          kind: "tariff_change",
+          customerNumber: r.customer_number,
+          label: r.customer_name || r.customer_number,
+          sub: `KdNr. ${r.customer_number} · ${r.change_date || ""}`
+        }))
+      });
+    }
+    if (notes.rows.length) {
+      groups.push({
+        group: "Notizen",
+        items: notes.rows.map((r) => ({
+          kind: "note",
+          customerNumber: r.customer_number,
+          label: r.title || "(ohne Titel)",
+          sub: r.customer_name || (r.content || "").slice(0, 48)
+        }))
+      });
+    }
+
+    return { ok: true, groups };
+  }
+
   app.supabaseClient = {
     pinToPassword,
     nameToEmail,
@@ -631,6 +759,7 @@
     insertContract,
     insertTariffChange,
     insertAuditLog,
-    fetchSharedSettings
+    fetchSharedSettings,
+    searchWorkspace
   };
 })();

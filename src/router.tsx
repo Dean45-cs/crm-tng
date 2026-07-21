@@ -38,7 +38,22 @@ export const useRouter = () => {
   return c;
 };
 
+// Deep-Link für die Befehlspalette der Extension (Stufe 4,
+// KONZEPT-INTEGRATION.md): ein Treffer in Jira/timio öffnet
+// `${crmBaseUrl}/?kdnr=...` in einem neuen Tab. Der Router selbst bleibt
+// speicherbasiert (keine echten URLs pro Seite) — nur der Startzustand
+// wird einmalig aus der URL gelesen, danach verhält sich navigate()
+// unverändert. Ohne Parameter identisch zum bisherigen Verhalten. Als reine
+// Funktion exportiert (statt direkt `window.location` im Hook zu lesen),
+// damit sie ohne DOM/jsdom unit-testbar ist. Fast-Refresh-Hinweis wie beim
+// useRouter-Hook oben: reine Dev-DX-Warnung, ohne Laufzeit-Auswirkung.
+// eslint-disable-next-line react-refresh/only-export-components
+export function routeFromSearch(search: string): Route {
+  const kdnr = new URLSearchParams(search).get('kdnr');
+  return kdnr ? { name: 'customer', kdnr } : { name: 'dashboard' };
+}
+
 export function Router({ children }: { children: ReactNode }) {
-  const [route, navigate] = useState<Route>({ name: 'dashboard' });
+  const [route, navigate] = useState<Route>(() => routeFromSearch(window.location.search));
   return <Ctx.Provider value={{ route, navigate }}>{children}</Ctx.Provider>;
 }

@@ -22,15 +22,15 @@ function loadShared() {
   loadScripts(env.sandbox, ["src/config.js", "src/shared.js"]);
   return {
     env,
-    shared: env.sandbox.SupportCopilot.shared,
-    CONFIG: env.sandbox.SupportCopilot.CONFIG
+    shared: env.sandbox.StadtnetzCRM.shared,
+    CONFIG: env.sandbox.StadtnetzCRM.CONFIG
   };
 }
 
 function loadWorker() {
   const env = makeWorkerSandbox();
   loadScripts(env.sandbox, ["src/config.js", "src/shared.js", "src/background.js"]);
-  const app = env.sandbox.SupportCopilot;
+  const app = env.sandbox.StadtnetzCRM;
   return { env, bg: app.background, KEYS: app.CONFIG.storageKeys, BADGE: app.CONFIG.badge };
 }
 
@@ -237,7 +237,7 @@ async function run() {
         };
       }
     };
-    const localAi = env.sandbox.SupportCopilot.localAi;
+    const localAi = env.sandbox.StadtnetzCRM.localAi;
 
     const ticket = { key: "TNG-1", summary: "Zähler", description: "Kunde meldet fehlende Ablesung", comments: [] };
     const result = await localAi.prepareCall({ ticket, agent: { name: "Kevin" } });
@@ -259,7 +259,7 @@ async function run() {
     const env = makeSandbox();
     loadScripts(env.sandbox, ["src/config.js", "src/shared.js", "src/local-ai.js"]);
     env.sandbox.LanguageModel = { availability: async () => "unavailable", create: async () => { throw new Error("darf nicht passieren"); } };
-    const result = await env.sandbox.SupportCopilot.localAi.prepareCall({ ticket: { key: "TNG-1" } });
+    const result = await env.sandbox.StadtnetzCRM.localAi.prepareCall({ ticket: { key: "TNG-1" } });
     assert.strictEqual(result.status, "unavailable", "ohne Modell wird der Status durchgereicht");
     assert.strictEqual(result.data, undefined, "und es werden keine Daten erfunden");
   }

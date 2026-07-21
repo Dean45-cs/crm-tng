@@ -1,4 +1,4 @@
-# Support Copilot – lokale KI für Jira
+# Stadtnetz CRM Copilot – lokale KI für Jira
 
 Eine Chrome-Extension für die klassische Jira-Vorgangsansicht, die jeden Arbeitsschritt mit **Chromes lokaler On-Device-KI** unterstützt. Sie liest ausschließlich die aktuell sichtbaren Ticketinformationen, formuliert Zusammenfassungen, Einordnungen, Kommentare und E-Mails – und verlässt dabei **nie den Browser**. Kein Server, keine API, kein Cloud-Fallback.
 

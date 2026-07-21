@@ -1,7 +1,7 @@
 (function initTimioContent() {
   "use strict";
 
-  const app = window.SupportCopilot;
+  const app = window.StadtnetzCRM;
   const CONFIG = app.CONFIG;
   const {
     escapeHtml, extensionAlive, queueTotalWaiting, queueStaleMinutes, groupsMatch,
@@ -52,6 +52,13 @@
     if (intervalId) window.clearInterval(intervalId);
     const overlay = document.getElementById(OVERLAY_ID);
     if (overlay) overlay.remove();
+    // Die Befehlspalette hängt an einem eigenen DOM-Root und einem
+    // dokumentweiten Listener — beide würden die alte Instanz sonst
+    // überleben und nach einem Extension-Reload auf einem toten
+    // Chrome-Kontext suchen.
+    document.removeEventListener("keydown", onGlobalKeydown);
+    const palette = document.getElementById(PALETTE_ID);
+    if (palette) palette.remove();
   }
 
   function storageSet(payload) {
@@ -168,6 +175,13 @@
   let graceUntil = 0;
   let lastDetails = null;
   let callId = null;
+  // Zuletzt vergebene callId. Date.now() hat nur Millisekunden-Auflösung —
+  // folgen zwei Anrufe schnell genug aufeinander, bekämen sie dieselbe ID und
+  // jedes Dedup, das auf callId-Gleichheit prüft (Kundenakte, Anruf-Schreibpfad,
+  // Abschluss-Panel), hielte den zweiten Anruf fälschlich für den ersten.
+  // Die ID ist überall ein opaker Schlüssel, nie ein Zeitstempel — deshalb ist
+  // ein Hochzählen bei Gleichstand unbedenklich und garantiert Eindeutigkeit.
+  let lastAssignedCallId = 0;
   let connectedAt = null;
   let endedAt = null;
   let idleDismissed = false;
@@ -185,6 +199,8 @@
     if (raw === STATUS.RINGING || raw === STATUS.CONNECTED) {
       if (publicStatus === STATUS.IDLE || publicStatus === STATUS.ENDED) {
         callId = Date.now();
+        if (callId <= lastAssignedCallId) callId = lastAssignedCallId + 1;
+        lastAssignedCallId = callId;
         connectedAt = null;
         cameFromRinging = raw === STATUS.RINGING;
       }
@@ -372,6 +388,12 @@
   // Produktkatalog + Provisions-Matrix — überlebt über Anrufe hinweg als
   // Modul-Cache (ändert sich selten), deshalb NICHT im Idle-Reset gelöscht.
   let sharedSettingsState = { status: "idle", data: null, error: "" };
+
+  // Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md): unabhängig vom
+  // Call-Cockpit, muss jederzeit auslösbar sein — deshalb NICHT im
+  // Idle-Reset gelöscht, genau wie sharedSettingsState oben.
+  let paletteState = null; // { open, query, groups, status, error, activeIdx } | null
+  let paletteSearchTimer = null;
 
   function writeCustomerCard(next) {
     customerCardState = next;
@@ -945,6 +967,196 @@
       </div>`;
   }
 
+  // ---------------------------------------------------------------------------
+  // Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md) — ⌘K/Ctrl+K, unabhängig
+  // vom Call-Cockpit (eigener DOM-Root, jederzeit auslösbar, nicht nur
+  // während eines Anrufs). Sucht live über supabase.searchWorkspace() gegen
+  // Kunden/Verträge/Tarifwechsel/Notizen; ein Treffer öffnet die passende
+  // Kundenakte im CRM über den Deep-Link aus src/router.tsx (CRM-Repo).
+  // ---------------------------------------------------------------------------
+
+  const PALETTE_ID = "sc-timio-palette";
+  const PALETTE_MIN_QUERY_LENGTH = 2;
+  const PALETTE_DEBOUNCE_MS = 250;
+
+  function paletteFlatItems() {
+    const groups = (paletteState && paletteState.groups) || [];
+    const flat = [];
+    groups.forEach((g) => (g.items || []).forEach((item) => flat.push(item)));
+    return flat;
+  }
+
+  function openCrmDeepLink(customerNumber) {
+    if (!customerNumber) return;
+    const base = ((CONFIG.crm && CONFIG.crm.baseUrl) || "").replace(/\/+$/, "");
+    window.open(`${base}/?kdnr=${encodeURIComponent(customerNumber)}`, "_blank");
+    closePalette();
+  }
+
+  function openPalette() {
+    paletteState = { open: true, query: "", groups: [], status: "idle", error: "", activeIdx: 0 };
+    renderPalette();
+  }
+
+  function closePalette() {
+    if (paletteSearchTimer) { window.clearTimeout(paletteSearchTimer); paletteSearchTimer = null; }
+    paletteState = null;
+    renderPalette();
+  }
+
+  // Debounced statt bei jedem Tastendruck zu suchen — schont die vier
+  // parallelen Netzwerk-Requests von searchWorkspace(). Ergebnis wird
+  // verworfen, falls der Suchbegriff sich inzwischen geändert hat (Nutzer hat
+  // weitergetippt, während die Antwort noch unterwegs war).
+  function schedulePaletteSearch() {
+    if (paletteSearchTimer) { window.clearTimeout(paletteSearchTimer); paletteSearchTimer = null; }
+    const query = paletteState.query.trim();
+    if (query.length < PALETTE_MIN_QUERY_LENGTH) {
+      paletteState.status = "idle";
+      paletteState.groups = [];
+      updatePaletteResults();
+      return;
+    }
+    paletteState.status = "loading";
+    updatePaletteResults();
+    paletteSearchTimer = window.setTimeout(async () => {
+      if (!paletteState || !supabaseClient) return;
+      const activeQuery = paletteState.query.trim();
+      const res = await supabaseClient.searchWorkspace(activeQuery);
+      if (!paletteState || paletteState.query.trim() !== activeQuery) return; // veraltete Antwort
+      if (res.ok) {
+        paletteState.status = "ok";
+        paletteState.groups = res.groups;
+      } else {
+        paletteState.status = res.reason === "not-logged-in" ? "not-logged-in" : "error";
+        paletteState.error = res.error || "";
+      }
+      paletteState.activeIdx = 0;
+      updatePaletteResults();
+    }, PALETTE_DEBOUNCE_MS);
+  }
+
+  function paletteResultsMarkup() {
+    if (!paletteState) return "";
+    const q = paletteState.query.trim();
+    if (q.length < PALETTE_MIN_QUERY_LENGTH) return `<p class="tc-hint">Mindestens ${PALETTE_MIN_QUERY_LENGTH} Zeichen eingeben …</p>`;
+    if (paletteState.status === "loading") return `<p class="tc-hint">Suche …</p>`;
+    if (paletteState.status === "not-logged-in") return `<p class="tc-hint">Nicht bei Stadtnetz CRM angemeldet.</p>`;
+    if (paletteState.status === "error") return `<p class="tc-hint">Suche gerade nicht möglich${paletteState.error ? ": " + escapeHtml(paletteState.error) : "."}</p>`;
+    const groups = paletteState.groups || [];
+    if (!groups.length) return `<p class="tc-hint">Keine Treffer für „${escapeHtml(q)}".</p>`;
+
+    let idx = -1;
+    return groups.map((g) => `
+      <div class="tc-palette-group">${escapeHtml(g.group)}</div>
+      ${(g.items || []).map((item) => {
+        idx += 1;
+        const active = idx === paletteState.activeIdx;
+        return `
+          <button type="button" class="tc-palette-item ${active ? "is-active" : ""}" data-palette-item data-customer="${escapeHtml(item.customerNumber || "")}">
+            <span class="tc-palette-item-label">${escapeHtml(item.label || "")}</span>
+            <span class="tc-palette-item-sub">${escapeHtml(item.sub || "")}</span>
+          </button>`;
+      }).join("")}
+    `).join("");
+  }
+
+  function paletteMarkup() {
+    const q = paletteState.query;
+    return `
+      <div class="tc-palette-backdrop" data-act="palette-backdrop">
+        <div class="tc-palette" role="dialog" aria-modal="true" aria-label="Schnellsuche">
+          <div class="tc-palette-input-row">
+            <input type="text" data-role="palette-query" placeholder="Kunden, Verträge, Tarifwechsel, Notizen suchen …" value="${escapeHtml(q)}" autocomplete="off">
+            <button type="button" class="tc-palette-close" data-act="palette-close" aria-label="Schließen">×</button>
+          </div>
+          <div data-tid="palette-results">${paletteResultsMarkup()}</div>
+        </div>
+      </div>`;
+  }
+
+  // Nur die Ergebnisliste patchen (nicht die ganze Palette neu aufbauen) —
+  // sonst würde das fokussierte Eingabefeld bei jedem Suchergebnis (und bei
+  // jedem Tastendruck, s. onPaletteInput) neu erzeugt und den Fokus/Cursor
+  // verlieren. Gleiches Prinzip wie beim Timer-Patch in renderOverlay().
+  function updatePaletteResults() {
+    const root = document.getElementById(PALETTE_ID);
+    if (!root) return;
+    const resultsEl = root.querySelector("[data-tid='palette-results']");
+    if (resultsEl) resultsEl.innerHTML = paletteResultsMarkup();
+  }
+
+  function renderPalette() {
+    let root = document.getElementById(PALETTE_ID);
+    if (!paletteState || !paletteState.open) {
+      if (root) root.remove();
+      return;
+    }
+    if (!root) {
+      root = document.createElement("div");
+      root.id = PALETTE_ID;
+      document.body.appendChild(root);
+      root.addEventListener("click", onPaletteClick);
+      root.addEventListener("input", onPaletteInput);
+    }
+    root.innerHTML = paletteMarkup();
+    const inputEl = root.querySelector("[data-role='palette-query']");
+    if (inputEl && typeof inputEl.focus === "function") {
+      inputEl.focus();
+      if (typeof inputEl.setSelectionRange === "function") {
+        const len = inputEl.value.length;
+        inputEl.setSelectionRange(len, len);
+      }
+    }
+  }
+
+  function onPaletteClick(event) {
+    const target = event.target;
+    const item = target.closest && target.closest("[data-palette-item]");
+    if (item) { openCrmDeepLink(item.dataset.customer); return; }
+    const closeBtn = target.closest && target.closest("[data-act='palette-close']");
+    if (closeBtn) { closePalette(); return; }
+    const backdrop = target.closest && target.closest("[data-act='palette-backdrop']");
+    if (backdrop && target === backdrop) { closePalette(); }
+  }
+
+  // Freitext direkt ins State-Objekt, OHNE renderPalette()/updatePaletteResults()
+  // synchron aufzurufen — das Eingabefeld zeigt den Tastendruck bereits nativ.
+  function onPaletteInput(event) {
+    if (!paletteState) return;
+    const role = event.target && event.target.dataset && event.target.dataset.role;
+    if (role !== "palette-query") return;
+    paletteState.query = event.target.value;
+    paletteState.activeIdx = 0;
+    schedulePaletteSearch();
+  }
+
+  function onGlobalKeydown(event) {
+    if (stopped) return;
+    const isToggleCombo = (event.metaKey || event.ctrlKey) && String(event.key).toLowerCase() === "k";
+    if (isToggleCombo) {
+      event.preventDefault();
+      if (paletteState && paletteState.open) closePalette(); else openPalette();
+      return;
+    }
+    if (!paletteState || !paletteState.open) return;
+    if (event.key === "Escape") { event.preventDefault(); closePalette(); return; }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const total = paletteFlatItems().length;
+      if (!total) return;
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      paletteState.activeIdx = (paletteState.activeIdx + delta + total) % total;
+      updatePaletteResults();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const item = paletteFlatItems()[paletteState.activeIdx];
+      if (item) openCrmDeepLink(item.customerNumber);
+    }
+  }
+
   function queueTotal() {
     return queueTotalWaiting(queueStats);
   }
@@ -1399,6 +1611,10 @@
   window.addEventListener("pagehide", () => {
     storageSet({ [CONFIG.storageKeys.activeCall]: { status: STATUS.IDLE, updatedAt: Date.now() } });
   });
+
+  // Befehlspalette: einmalig registriert, unabhängig vom Call-Cockpit-Overlay
+  // (dessen eigene Listener erst beim ersten Rendern des Overlays entstehen).
+  document.addEventListener("keydown", onGlobalKeydown);
 
   intervalId = window.setInterval(tick, POLL_MS);
   tick();

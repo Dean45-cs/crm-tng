@@ -1,7 +1,7 @@
 (function initAiCache() {
   "use strict";
 
-  const app = window.SupportCopilot;
+  const app = window.StadtnetzCRM;
   const CONFIG = app.CONFIG;
   const MAX_TICKETS = (CONFIG.aiCache && CONFIG.aiCache.maxTickets) || 30;
 

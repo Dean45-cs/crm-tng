@@ -16,8 +16,8 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 function load() {
   const env = makeWorkerSandbox();
   loadScripts(env.sandbox, SCRIPTS);
-  const bg = env.sandbox.SupportCopilot.background;
-  const CONFIG = env.sandbox.SupportCopilot.CONFIG;
+  const bg = env.sandbox.StadtnetzCRM.background;
+  const CONFIG = env.sandbox.StadtnetzCRM.CONFIG;
   return { env, bg, KEYS: CONFIG.storageKeys, BADGE: CONFIG.badge };
 }
 

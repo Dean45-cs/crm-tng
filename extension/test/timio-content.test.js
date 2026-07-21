@@ -88,7 +88,7 @@ function run() {
   // umgeschaltet wird aber nur über den Modus-Schalter.
 
   // 8) Direkt verbunden ohne Klingeln -> likelyOutbound wird gemeldet.
-  const KEYS = env.sandbox.SupportCopilot.CONFIG.storageKeys;
+  const KEYS = env.sandbox.StadtnetzCRM.CONFIG.storageKeys;
   env.setPageText([
     "CD",
     "Carl Demo",
@@ -179,7 +179,7 @@ async function runCallsWritePath() {
 
   const startCalls = [];
   const endCalls = [];
-  env.sandbox.SupportCopilot.supabaseClient = {
+  env.sandbox.StadtnetzCRM.supabaseClient = {
     customerCard: async () => ({ ok: false, reason: "not-configured" }),
     startCall: async (payload) => {
       startCalls.push(payload);
@@ -263,7 +263,7 @@ async function runCallsWritePath() {
 // runCallsWritePath() oben.
 async function runCloseoutWritePath() {
   const env = makeSandbox();
-  loadScripts(env.sandbox, ["src/config.js", "src/shared.js"]);
+  loadScripts(env.sandbox, ["src/config.js", "src/commission.js", "src/shared.js"]);
 
   const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
   const sharedSettingsFixture = {
@@ -276,7 +276,7 @@ async function runCloseoutWritePath() {
       upgrade: { mvlz_gt3: 5, mvlz_lt3: 7.5, outside_mvlz: 7.5 }
     }
   };
-  env.sandbox.SupportCopilot.supabaseClient = {
+  env.sandbox.StadtnetzCRM.supabaseClient = {
     customerCard: async () => ({ ok: false, reason: "not-configured" }),
     startCall: async () => ({ ok: true, id: "call-1" }),
     endCall: async () => ({ ok: true }),
@@ -357,6 +357,83 @@ async function runCloseoutWritePath() {
   console.log("timio-content.test.js (Abschluss-Panel): alle Szenarien bestanden.");
 }
 
-run();
-runCallsWritePath();
-runCloseoutWritePath();
+// Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md) — ⌘K-getriebene
+// Live-Suche mit gefaktem searchWorkspace-Stub. Die Sandbox kann kein echtes
+// Tippen simulieren; das Eingabe-Event wird deshalb direkt am
+// Palette-Root-Listener gefeuert (der Produktivcode liest daraus denselben
+// event.target.dataset.role wie im Browser).
+async function runPaletteFlow() {
+  const PALETTE_ID = "sc-timio-palette";
+  const env = makeSandbox();
+  loadScripts(env.sandbox, ["src/config.js", "src/commission.js", "src/shared.js"]);
+
+  const searchCalls = [];
+  let searchResult = {
+    ok: true,
+    groups: [
+      { group: "Kunden", items: [{ kind: "customer", customerNumber: "1000", label: "Anna Beispiel", sub: "KdNr. 1000" }] },
+      { group: "Verträge", items: [{ kind: "contract", customerNumber: "1000", label: "Anna Beispiel", sub: "Fibrelight · 2024-06-15" }] }
+    ]
+  };
+  env.sandbox.StadtnetzCRM.supabaseClient = {
+    customerCard: async () => ({ ok: false, reason: "not-configured" }),
+    startCall: async () => ({ ok: true, id: "call-1" }),
+    endCall: async () => ({ ok: true }),
+    searchWorkspace: async (query) => { searchCalls.push(query); return searchResult; }
+  };
+
+  loadScripts(env.sandbox, ["src/timio-content.js"]);
+  const key = (k, extra) => Object.assign({ key: k, preventDefault() {} }, extra || {});
+  const typeQuery = async (value) => {
+    const root = env.getElementById(PALETTE_ID);
+    root._listeners.input({ target: { dataset: { role: "palette-query" }, value } });
+    await Promise.all(env.flushTimers()); // Debounce-Rückruf ausführen
+  };
+
+  // 1) ⌘K öffnet die Palette (unabhängig vom Call-Cockpit, ohne aktiven Anruf).
+  assert.strictEqual(env.getElementById(PALETTE_ID), null, "vor ⌘K existiert keine Palette");
+  env.fireKeydown(key("k", { metaKey: true }));
+  assert.ok(env.getElementById(PALETTE_ID), "⌘K öffnet die Befehlspalette");
+
+  // 2) Tippen unterhalb der Mindestlänge löst keine Suche aus.
+  await typeQuery("A");
+  assert.strictEqual(searchCalls.length, 0, "ein einzelnes Zeichen sucht noch nicht (Mindestlänge 2)");
+
+  // 3) Ausreichend lange Eingabe -> searchWorkspace() genau einmal mit dem Suchbegriff.
+  await typeQuery("Anna");
+  assert.strictEqual(searchCalls.length, 1, "ab zwei Zeichen wird gesucht");
+  assert.strictEqual(searchCalls[0], "Anna");
+
+  // 4) Enter auf dem ersten Treffer öffnet die passende Kundenakte im CRM.
+  env.fireKeydown(key("Enter"));
+  assert.strictEqual(env.openedUrls.length, 1, "Enter öffnet genau einen CRM-Tab");
+  assert.strictEqual(env.openedUrls[0], "https://crm-tng.vercel.app/?kdnr=1000", "Deep-Link auf die Kundennummer des Treffers");
+  assert.strictEqual(env.getElementById(PALETTE_ID), null, "nach dem Öffnen schließt sich die Palette");
+
+  // 5) Erneutes ⌘K öffnet wieder, ein zweites ⌘K schließt (Toggle).
+  env.fireKeydown(key("k", { ctrlKey: true }));
+  assert.ok(env.getElementById(PALETTE_ID), "Ctrl+K öffnet die Palette ebenfalls");
+  env.fireKeydown(key("k", { ctrlKey: true }));
+  assert.strictEqual(env.getElementById(PALETTE_ID), null, "zweites ⌘K/Ctrl+K schließt die Palette (Toggle)");
+
+  // 6) Abgelaufenes Login -> Palette bleibt offen und crasht nicht.
+  searchResult = { ok: false, reason: "not-logged-in" };
+  env.fireKeydown(key("k", { metaKey: true }));
+  await typeQuery("Beispiel");
+  assert.ok(env.getElementById(PALETTE_ID), "bei nicht angemeldet bleibt die Palette offen (statt zu crashen)");
+  env.fireKeydown(key("Enter"));
+  assert.strictEqual(env.openedUrls.length, 1, "ohne Treffer öffnet Enter keinen weiteren Tab");
+
+  console.log("timio-content.test.js (Befehlspalette): alle Szenarien bestanden.");
+}
+
+// Streng sequenziell ausführen: die async-Durchläufe nutzen echte Timer
+// (flush) und dürfen sich nicht überlappen — sonst wäre die Reihenfolge der
+// Macrotasks zwischen den Durchläufen nicht deterministisch. Ein Fehler in
+// einem Durchlauf beendet den Prozess mit != 0 (unbehandelte Rejection).
+(async () => {
+  run();
+  await runCallsWritePath();
+  await runCloseoutWritePath();
+  await runPaletteFlow();
+})();

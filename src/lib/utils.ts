@@ -10,6 +10,11 @@ import type {
   CustomerSummary,
   Customer,
 } from '../types';
+// Provisions-/Produktlogik lebt in der Extension (Stufe 4,
+// KONZEPT-INTEGRATION.md: "gemeinsames Paket für Typen und
+// Provisionslogik") — einzige Quelle für CRM und Chrome-Extension, damit
+// beide Seiten nie mehr manuell in Sync gehalten werden müssen.
+import commissionShared from '../../extension/src/commission.js';
 
 export const formatCurrency = (value: number): string =>
   new Intl.NumberFormat('de-DE', {
@@ -60,27 +65,13 @@ export const TARIFF_CONTEXT_LABEL: Record<TariffContext, string> = {
   outside_mvlz: 'Außerhalb MVLZ',
 };
 
-export const getProductCommission = (
-  settings: Settings,
-  product: ProductType,
-): number => settings.products.find((p) => p.name === product)?.commission ?? 0;
-
-export const calcContractCommission = (
-  contract: Contract,
-  settings: Settings,
-): number => {
-  if (contract.status === 'storniert') return 0;
-  return contract.products.reduce(
-    (sum, p) => sum + getProductCommission(settings, p),
-    0,
-  );
-};
-
-export const calcTariffCommission = (
-  change: TariffChange,
-  settings: Settings,
-): number =>
-  settings.tariffCommission[change.changeType]?.[change.context] ?? 0;
+export const { getProductCommission, calcContractCommission, calcTariffCommission, groupProductsByCategory } =
+  commissionShared as {
+    getProductCommission: (settings: Settings, product: ProductType) => number;
+    calcContractCommission: (contract: Pick<Contract, 'products' | 'status'>, settings: Settings) => number;
+    calcTariffCommission: (change: Pick<TariffChange, 'changeType' | 'context'>, settings: Settings) => number;
+    groupProductsByCategory: (products: Settings['products']) => { category: string; products: Settings['products'] }[];
+  };
 
 export const isSameMonth = (iso: string, ref = new Date()): boolean => {
   const d = parseLocalDate(iso);

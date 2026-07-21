@@ -1,60 +1,60 @@
-(function initSupportCopilotConfig() {
+(function initStadtnetzCRMConfig() {
   "use strict";
 
   // globalThis statt window: im Content-Script ist beides identisch, aber der
   // Hintergrund-Service-Worker (src/background.js) hat kein window – so kann er
   // dieselbe CONFIG per importScripts laden statt Konstanten zu duplizieren.
-  globalThis.SupportCopilot = globalThis.SupportCopilot || {};
+  globalThis.StadtnetzCRM = globalThis.StadtnetzCRM || {};
 
   const CONFIG = {
-    rootId: "support-copilot-root",
+    rootId: "stadtnetzcrm-root",
     storageKeys: {
-      isOpen: "supportCopilot.isOpen",
-      activeTab: "supportCopilot.activeTab",
-      emailTemplates: "supportCopilot.emailTemplates",
-      tone: "supportCopilot.tone",
-      settings: "supportCopilot.settings",
-      aiCache: "supportCopilot.aiCache",
-      activeCall: "supportCopilot.activeCall",
+      isOpen: "stadtnetzCrm.isOpen",
+      activeTab: "stadtnetzCrm.activeTab",
+      emailTemplates: "stadtnetzCrm.emailTemplates",
+      tone: "stadtnetzCrm.tone",
+      settings: "stadtnetzCrm.settings",
+      aiCache: "stadtnetzCrm.aiCache",
+      activeCall: "stadtnetzCrm.activeCall",
       // Wartefeld-Zahlen aus dem timio-Portal (nur Gruppennamen + Zähler,
       // keine personenbezogenen Daten).
-      queueStats: "supportCopilot.queueStats",
+      queueStats: "stadtnetzCrm.queueStats",
       // Position/Modus des Call-Cockpits (Overlay während des Gesprächs).
-      callOverlay: "supportCopilot.callOverlay",
+      callOverlay: "stadtnetzCrm.callOverlay",
       // Kontext des aktuell in Jira geöffneten Tickets – wird von der
       // Jira-Seite geschrieben, damit das Cockpit in timio den Ticket-Abgleich
       // und die KI-Zusammenfassung anzeigen kann. Bleibt lokal.
-      ticketContext: "supportCopilot.ticketContext",
+      ticketContext: "stadtnetzCrm.ticketContext",
       // Position/Modus des Cockpits auf der timio-Seite.
-      timioOverlay: "supportCopilot.timioOverlay",
+      timioOverlay: "stadtnetzCrm.timioOverlay",
       // Merkposten des Hintergrund-Service-Workers fürs Symbolleisten-Badge
       // (zuletzt gemeldete Wartefeld-Zahl, um die steigende Flanke für
       // Benachrichtigungen zu erkennen). Bleibt lokal.
-      badgeState: "supportCopilot.badgeState",
+      badgeState: "stadtnetzCrm.badgeState",
       // Arbeitsrichtung: "inbound" (Anrufe kommen rein) oder "outbound"
       // (timio wählt selbst aus seiner Anrufliste). Der Call-Screen sieht in
       // timio in beiden Fällen gleich aus – die Richtung ist aus dem
       // Seitentext nicht ableitbar, deshalb setzt sie der Bearbeiter selbst
       // über den Schalter im Panel bzw. im timio-Cockpit.
-      callMode: "supportCopilot.callMode",
+      callMode: "stadtnetzCrm.callMode",
       // Eigene Rückruf-/Wiedervorlageliste. Bewusst getrennt von timios
       // eigener Anrufliste: hier stehen nur individuell vereinbarte Rückrufe,
       // die der Bearbeiter selbst aufgenommen hat.
-      callbacks: "supportCopilot.callbacks",
+      callbacks: "stadtnetzCrm.callbacks",
       // Staffelstab für das Gesprächsergebnis: geklickt wird es meist in
       // timio (dort sitzt der Bearbeiter am Ende des Gesprächs), verarbeitet
       // wird es in Jira (dort läuft die lokale KI). Die Jira-Seite räumt den
       // Eintrag nach der Übernahme sofort wieder weg.
-      callOutcome: "supportCopilot.callOutcome",
+      callOutcome: "stadtnetzCrm.callOutcome",
       // Sitzung des eigenen CRM-Logins der Extension (Name+PIN, siehe
       // supabase.js). Eigene Sitzung, unabhängig von der CRM-Tab-Session
       // (Option a aus KONZEPT-INTEGRATION.md).
-      supabaseSession: "supportCopilot.supabaseSession",
+      supabaseSession: "stadtnetzCrm.supabaseSession",
       // Zuletzt nachgeschlagene Kundenakte (customer_card-RPC). Geschrieben
       // von timio-content.js bei eingehendem Anruf, gelesen von
       // timio-content.js selbst UND von ui.js fürs Jira-Cockpit — analog zu
       // ticketContext, nur in die andere Richtung.
-      customerCard: "supportCopilot.customerCard"
+      customerCard: "stadtnetzCrm.customerCard"
     },
 
     // Cache der KI-Ergebnisse pro Ticket, damit ein bereits besuchtes Ticket
@@ -123,6 +123,14 @@
     supabase: {
       url: "https://yslxkevljrhznjtzjvji.supabase.co",
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzbHhrZXZsanJoem5qdHpqdmppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2ODE2ODgsImV4cCI6MjA5NDI1NzY4OH0.QU8Blb0hBolVfIs7BwrUQn27yXD4oDy95yh1UeJztX8"
+    },
+
+    // CRM-Weboberfläche (Stufe 4, Befehlspalette): ein Treffer öffnet die
+    // passende Kundenakte per Deep-Link (siehe src/router.tsx im CRM-Repo)
+    // in einem neuen Tab. Nur ein window.open() auf eine feste URL — kein
+    // host_permissions-Eintrag nötig, das ist kein Fetch/Scripting-Zugriff.
+    crm: {
+      baseUrl: "https://crm-tng.vercel.app"
     },
 
     // Ausgehende Gespräche. Anders als eingehend gibt es keine Vorlaufzeit:
@@ -352,5 +360,5 @@
     ]
   };
 
-  globalThis.SupportCopilot.CONFIG = CONFIG;
+  globalThis.StadtnetzCRM.CONFIG = CONFIG;
 })();

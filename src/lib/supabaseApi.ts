@@ -892,7 +892,7 @@ export async function fetchCustomers(): Promise<Customer[]> {
 // ============================================================================
 // CALLS
 // ============================================================================
-// Anruf-Historie (Migration 018) — geschrieben von der Support-Copilot-
+// Anruf-Historie (Migration 018) — geschrieben von der Stadtnetz-CRM-Copilot-
 // Extension, hier nur gelesen. Bewusst NICHT Teil des globalen
 // contracts/notes-artigen Ladeprinzips (kein fetchCalls() für den ganzen
 // Store): Anrufvolumen kann deutlich höher sein als Verträge/Notizen, ein

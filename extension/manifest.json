@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Support Copilot – lokale KI für Jira",
+  "name": "Stadtnetz CRM Copilot – lokale KI für Jira",
   "version": "0.12.0",
   "description": "KI-gestützter Support-Assistent für klassische Jira-Vorgänge mit timio-Anruferkennung und Call-Cockpit (Anrufer, Gesprächsdauer, Wartefeld, Ticket-Abgleich) sowie Outbound-Modus (Gesprächsvorbereitung, Ergebnis-Erfassung, Rückrufliste). Zusammenfassung, Team-Doku, Einordnung, Antwort-Entwürfe und Qualitätscheck – automatisch, gecacht und vollständig lokal, ohne Cloud.",
   "permissions": ["storage", "clipboardWrite", "notifications", "alarms"],
@@ -12,7 +12,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Support Copilot – Wartefeld (klicken für timio)",
+    "default_title": "Stadtnetz CRM Copilot – Wartefeld (klicken für timio)",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -27,6 +27,7 @@
       "matches": ["https://jira.ennit.de/*"],
       "js": [
         "src/config.js",
+        "src/commission.js",
         "src/shared.js",
         "src/supabase.js",
         "src/ai-cache.js",
@@ -43,6 +44,7 @@
       "matches": ["https://ccc.my-phone.cloud/*"],
       "js": [
         "src/config.js",
+        "src/commission.js",
         "src/shared.js",
         "src/supabase.js",
         "src/timio-content.js"

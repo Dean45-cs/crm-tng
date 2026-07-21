@@ -24,7 +24,7 @@ try {
 }
 
 (function initBackground() {
-  const app = globalThis.SupportCopilot || (globalThis.SupportCopilot = {});
+  const app = globalThis.StadtnetzCRM || (globalThis.StadtnetzCRM = {});
   const CONFIG = app.CONFIG || {};
   const shared = app.shared || {};
   const KEYS = CONFIG.storageKeys || {};
@@ -187,7 +187,7 @@ try {
       if (chrome.action.setBadgeTextColor) {
         try { chrome.action.setBadgeTextColor({ color: "#FFFFFF" }); } catch (error) { /* ältere Chrome-Version */ }
       }
-      chrome.action.setTitle({ title: badge.title || "Support Copilot" });
+      chrome.action.setTitle({ title: badge.title || "Stadtnetz CRM Copilot" });
     } catch (error) { /* Worker beendet */ }
   }
 

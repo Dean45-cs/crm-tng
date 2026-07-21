@@ -1,7 +1,7 @@
 (function initLocalAi() {
   "use strict";
 
-  const app = window.SupportCopilot;
+  const app = window.StadtnetzCRM;
   const AI = (app.CONFIG && app.CONFIG.ai) || {};
 
   // Erwartete Sprachen. Eingaben können deutsch oder englisch sein

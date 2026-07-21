@@ -41,11 +41,11 @@ function makeStub(inserted) {
 
 async function mountPanel(inserted, options) {
   const env = makePanelSandbox(options);
-  loadScripts(env.sandbox, ["src/config.js", "src/shared.js"]);
-  env.sandbox.SupportCopilot.supabaseClient = makeStub(inserted);
+  loadScripts(env.sandbox, ["src/config.js", "src/commission.js", "src/shared.js"]);
+  env.sandbox.StadtnetzCRM.supabaseClient = makeStub(inserted);
   loadScripts(env.sandbox, ["src/ai-cache.js", "src/jira-reader.js", "src/rules.js", "src/ui.js"]);
-  await env.sandbox.SupportCopilot.ui.mount();
-  return { env, KEYS: env.sandbox.SupportCopilot.CONFIG.storageKeys };
+  await env.sandbox.StadtnetzCRM.ui.mount();
+  return { env, KEYS: env.sandbox.StadtnetzCRM.CONFIG.storageKeys };
 }
 
 function endedCall(overrides) {

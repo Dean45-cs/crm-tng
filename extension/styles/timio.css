@@ -1,4 +1,4 @@
-/* Call-Cockpit auf der timio-Seite (Support Copilot). Eigener Namensraum
+/* Call-Cockpit auf der timio-Seite (Stadtnetz CRM Copilot). Eigener Namensraum
    #sc-timio-cockpit, damit timio-Styles unberührt bleiben. */
 
 #sc-timio-cockpit,
@@ -621,4 +621,122 @@
   font-weight: 700;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md) — eigener Root
+   #sc-timio-palette, unabhängig vom Call-Cockpit oben: sie ist jederzeit per
+   ⌘K erreichbar, nicht nur während eines Gesprächs. Bewusst funktionales
+   Grundstyling (Layer, Lesbarkeit, Trefferliste) — Feinschliff kommt später.
+   --------------------------------------------------------------------------- */
+
+#sc-timio-palette,
+#sc-timio-palette * {
+  box-sizing: border-box;
+}
+
+#sc-timio-palette .tc-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483100; /* über dem Call-Cockpit (2147483000) */
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgba(9, 30, 66, 0.45);
+  color: #172b4d;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+#sc-timio-palette .tc-palette {
+  display: flex;
+  flex-direction: column;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  max-height: 70vh;
+  overflow: hidden;
+  border: 1px solid #dfe1e6;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 14px 40px rgba(9, 30, 66, 0.35);
+}
+
+#sc-timio-palette .tc-palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #dfe1e6;
+}
+
+#sc-timio-palette .tc-palette-input-row input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #dfe1e6;
+  border-radius: 6px;
+  font: inherit;
+  color: inherit;
+}
+#sc-timio-palette .tc-palette-input-row input:focus {
+  outline: none;
+  border-color: #0c66e4;
+}
+
+#sc-timio-palette .tc-palette-close {
+  padding: 2px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #5e6c84;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+#sc-timio-palette .tc-palette-close:hover { background: #f4f5f7; }
+
+#sc-timio-palette [data-tid="palette-results"] {
+  overflow-y: auto;
+  padding: 6px;
+}
+
+#sc-timio-palette .tc-hint {
+  margin: 0;
+  padding: 10px 6px;
+  color: #5e6c84;
+  font-size: 12px;
+}
+
+#sc-timio-palette .tc-palette-group {
+  padding: 8px 6px 4px;
+  color: #5e6c84;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#sc-timio-palette .tc-palette-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#sc-timio-palette .tc-palette-item:hover,
+#sc-timio-palette .tc-palette-item.is-active { background: #e9f2ff; }
+
+#sc-timio-palette .tc-palette-item-label { font-weight: 700; }
+
+#sc-timio-palette .tc-palette-item-sub {
+  color: #5e6c84;
+  font-size: 12px;
 }

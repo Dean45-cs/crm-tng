@@ -12,7 +12,7 @@ import { formatDuration } from '../lib/statusBoard';
 const STALE_AFTER_MS = 2 * 60 * 60 * 1000;
 
 /** Live-Anrufleiste in der Titlebar (Stufe 2, KONZEPT-INTEGRATION.md) — zeigt
- * Anrufe, die die Support-Copilot-Extension gerade als aktiv gemeldet hat.
+ * Anrufe, die die Stadtnetz-CRM-Copilot-Extension gerade als aktiv gemeldet hat.
  * Für alle Nutzer:innen sichtbar, Parität mit der bestehenden StatusBar. */
 export function LiveCallBar() {
   const allActiveCalls = useCalls((s) => s.activeCalls);

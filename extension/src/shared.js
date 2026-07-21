@@ -4,8 +4,8 @@
   // globalThis statt window: identisch im Content-Script, aber auch im
   // Hintergrund-Service-Worker (src/background.js) verfügbar, der kein window
   // kennt. So teilen sich Content-Scripts und Worker dieselben Helfer.
-  globalThis.SupportCopilot = globalThis.SupportCopilot || {};
-  const app = globalThis.SupportCopilot;
+  globalThis.StadtnetzCRM = globalThis.StadtnetzCRM || {};
+  const app = globalThis.StadtnetzCRM;
 
   function escapeHtml(value) {
     return String(value == null ? "" : value)
@@ -125,7 +125,7 @@
   // ---------------------------------------------------------------------------
 
   function outboundConfig() {
-    const config = (globalThis.SupportCopilot && globalThis.SupportCopilot.CONFIG) || {};
+    const config = (globalThis.StadtnetzCRM && globalThis.StadtnetzCRM.CONFIG) || {};
     return config.outbound || {};
   }
 
@@ -183,7 +183,7 @@
   function customerSearchUrl(customerNumber, jqlTemplate) {
     const query = String(customerNumber == null ? "" : customerNumber).trim();
     if (!query) return "";
-    const config = (globalThis.SupportCopilot && globalThis.SupportCopilot.CONFIG) || {};
+    const config = (globalThis.StadtnetzCRM && globalThis.StadtnetzCRM.CONFIG) || {};
     const jira = config.jira || {};
     const template = (jqlTemplate || "").trim() || jira.customerSearchJql || 'text ~ "{q}"';
     // Anführungszeichen im Wert würden den JQL-String sprengen.
@@ -199,7 +199,7 @@
   function jiraTicketUrl(ticket) {
     const key = String(ticket == null ? "" : ticket).trim();
     if (!key) return "";
-    const config = (globalThis.SupportCopilot && globalThis.SupportCopilot.CONFIG) || {};
+    const config = (globalThis.StadtnetzCRM && globalThis.StadtnetzCRM.CONFIG) || {};
     const base = ((config.jira && config.jira.baseUrl) || "").replace(/\/+$/, "");
     return `${base}/browse/${encodeURIComponent(key)}`;
   }
@@ -213,40 +213,34 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Provisions-Mathematik (Stufe 3, KONZEPT-INTEGRATION.md) — exakter
-  // Nachbau von src/lib/utils.ts (CRM-Repo, Zeile 63-83), keine
-  // Neuinterpretation: dieselbe Formel wie im CRM, sonst weichen die im
-  // Abschluss-Panel angezeigten Provisionen von der Wahrheit im CRM ab.
+  // Provisions-Mathematik — lebt jetzt in commission.js (Stufe 4,
+  // KONZEPT-INTEGRATION.md: "gemeinsames Paket für Typen und
+  // Provisionslogik"), von dort per Default-Import auch im CRM genutzt
+  // (src/lib/utils.ts). Hier nur noch dünne, lazy auflösende Wrapper, damit
+  // bestehende Aufrufer (timio-content.js, ui.js) unverändert
+  // `shared.calcContractCommission(...)` etc. aufrufen können. Lazy statt
+  // Direktreferenz beim IIFE-Eval, damit Tests, die shared.js ohne
+  // commission.js laden, nicht schon beim Laden crashen.
   // ---------------------------------------------------------------------------
 
+  function commissionApi() {
+    return (globalThis.StadtnetzCRM && globalThis.StadtnetzCRM.commission) || {};
+  }
+
   function getProductCommission(settings, productName) {
-    const products = (settings && settings.products) || [];
-    const match = products.find((p) => p && p.name === productName);
-    return (match && Number(match.commission)) || 0;
+    return (commissionApi().getProductCommission || (() => 0))(settings, productName);
   }
 
   function calcContractCommission(contract, settings) {
-    if (!contract || contract.status === "storniert") return 0;
-    const products = Array.isArray(contract.products) ? contract.products : [];
-    return products.reduce((sum, p) => sum + getProductCommission(settings, p), 0);
+    return (commissionApi().calcContractCommission || (() => 0))(contract, settings);
   }
 
   function calcTariffCommission(change, settings) {
-    const matrix = (settings && settings.tariffCommission) || {};
-    const byType = change && matrix[change.changeType];
-    const value = byType && change && byType[change.context];
-    return typeof value === "number" ? value : 0;
+    return (commissionApi().calcTariffCommission || (() => 0))(change, settings);
   }
 
-  // Feste Kategorie-Reihenfolge, damit der Produkt-Picker immer gleich sortiert ist.
-  const PRODUCT_CATEGORY_ORDER = ["Privat", "Business", "Zusatz"];
-
   function groupProductsByCategory(products) {
-    const list = Array.isArray(products) ? products : [];
-    return PRODUCT_CATEGORY_ORDER.map((category) => ({
-      category,
-      products: list.filter((p) => p && p.category === category)
-    })).filter((group) => group.products.length > 0);
+    return (commissionApi().groupProductsByCategory || (() => []))(products);
   }
 
   // Heutiges Datum als YYYY-MM-DD in lokaler Zeit (nicht UTC) — Vorbelegung

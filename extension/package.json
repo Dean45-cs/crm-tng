@@ -1,5 +1,5 @@
 {
-  "name": "support-copilot-extension",
+  "name": "stadtnetz-crm-extension",
   "private": true,
   "description": "Chrome-Extension: bringt das Stadtnetz CRM und die lokale KI nach Jira und timio. Kein Build-Schritt — wird entpackt geladen (chrome://extensions).",
   "type": "commonjs",

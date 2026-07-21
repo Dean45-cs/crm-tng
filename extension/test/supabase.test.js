@@ -14,7 +14,7 @@ const { makeSandbox, loadScripts } = require("./support/stub-env");
 function load() {
   const env = makeSandbox();
   loadScripts(env.sandbox, ["src/config.js", "src/shared.js", "src/supabase.js"]);
-  return env.sandbox.SupportCopilot.supabaseClient;
+  return env.sandbox.StadtnetzCRM.supabaseClient;
 }
 
 function run() {
@@ -182,4 +182,68 @@ function run() {
   console.log("supabase.test.js: alle Szenarien bestanden.");
 }
 
+// searchWorkspace() (Stufe 4, Befehlspalette) — eigener async Durchlauf mit
+// gefaktem fetch, da hier (anders als oben) die netzwerkaufrufende Funktion
+// selbst getestet wird statt nur reiner Payload-Builder.
+async function runSearchWorkspace() {
+  const env = makeSandbox();
+  loadScripts(env.sandbox, ["src/config.js", "src/shared.js", "src/supabase.js"]);
+  const sb = env.sandbox.StadtnetzCRM.supabaseClient;
+  const CONFIG = env.sandbox.StadtnetzCRM.CONFIG;
+
+  // Konfiguriert + eingeloggt, wie getEffectiveSupabaseConfig()/ensureFreshSession() es erwarten.
+  env.storage[CONFIG.storageKeys.settings] = { supabaseUrl: "https://x.supabase.co", supabaseAnonKey: "anon-key" };
+  env.storage[CONFIG.storageKeys.supabaseSession] = {
+    accessToken: "at-1", refreshToken: "rt-1", expiresAt: Date.now() + 3600000, userId: "u1", displayName: "Max"
+  };
+
+  const calls = [];
+  env.sandbox.fetch = async (url) => {
+    calls.push(url);
+    if (url.includes("/customers?")) {
+      return { ok: true, status: 200, json: async () => [{ customer_number: "1000", name: "Anna Beispiel" }] };
+    }
+    if (url.includes("/contracts?")) {
+      return {
+        ok: true, status: 200,
+        json: async () => [{ id: "c1", customer_number: "1000", customer_name: "Anna Beispiel", products: ["Fibrelight"], contract_date: "2024-06-15" }]
+      };
+    }
+    if (url.includes("/tariff_changes?")) return { ok: true, status: 200, json: async () => [] };
+    if (url.includes("/notes?")) return { ok: true, status: 200, json: async () => [] };
+    return { ok: false, status: 404, json: async () => ({ message: `unerwartete URL: ${url}` }) };
+  };
+
+  const res = await sb.searchWorkspace("Anna");
+  assert.strictEqual(res.ok, true);
+  assert.strictEqual(calls.length, 4, "vier parallele Abfragen (customers/contracts/tariff_changes/notes)");
+  assert.ok(calls.every((u) => u.includes("*Anna*")), "Suchbegriff steckt in jeder der vier Abfragen");
+  assert.strictEqual(res.groups.length, 2, "nur Kunden und Verträge haben Treffer, leere Gruppen fehlen");
+  assert.strictEqual(res.groups[0].group, "Kunden");
+  assert.strictEqual(res.groups[0].items[0].customerNumber, "1000");
+  assert.strictEqual(res.groups[1].group, "Verträge");
+  assert.ok(res.groups[1].items[0].sub.includes("Fibrelight"), "Vertrags-Treffer zeigt die Produkte");
+
+  // Leere Suche (nur Whitespace) -> keine Netzwerkaufrufe, leeres Ergebnis statt Fehler.
+  calls.length = 0;
+  const empty = await sb.searchWorkspace("   ");
+  assert.strictEqual(empty.ok, true);
+  assert.strictEqual(Array.from(empty.groups).length, 0);
+  assert.strictEqual(calls.length, 0, "leere Suche löst keine Netzwerkaufrufe aus");
+
+  // 401 bei irgendeiner der vier Abfragen -> not-logged-in für alle, Session gelöscht
+  // (ein abgelaufenes Login darf nicht durch Teilergebnisse der anderen drei überdeckt werden).
+  env.sandbox.fetch = async (url) => {
+    if (url.includes("/notes?")) return { ok: false, status: 401, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => [] };
+  };
+  const unauthorized = await sb.searchWorkspace("Anna");
+  assert.strictEqual(unauthorized.ok, false);
+  assert.strictEqual(unauthorized.reason, "not-logged-in");
+  assert.strictEqual(env.storage[CONFIG.storageKeys.supabaseSession], undefined, "Session wird bei 401 gelöscht");
+
+  console.log("supabase.test.js (searchWorkspace): alle Szenarien bestanden.");
+}
+
 run();
+runSearchWorkspace();

@@ -1,7 +1,7 @@
 (function initUi() {
   "use strict";
 
-  const app = window.SupportCopilot;
+  const app = window.StadtnetzCRM;
   const { CONFIG, jiraReader, rules, aiCache, shared } = app;
   const {
     escapeHtml, extensionAlive, formatDuration, callTimerText,
@@ -57,6 +57,11 @@
     // Produktkatalog + Provisions-Matrix für Vertrag/Tarifwechsel im
     // Abschluss-Panel.
     sharedSettings: { status: "idle", data: null, error: "" },
+    // Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md): ⌘K-Schnellsuche,
+    // eigener DOM-Root unabhängig vom Panel. { open, query, groups, status,
+    // error, activeIdx } oder null. Eigene Instanz, unabhängig vom Gegenstück
+    // in timio-content.js.
+    palette: null,
     ai: {
       replyLanguage: "de",
       caps: null,           // Ergebnis von localAi.capabilities()
@@ -2077,7 +2082,7 @@
   // Recht auf Löschung, lokal umgesetzt: entfernt sämtliche Storage-Schlüssel
   // der Extension und setzt den Arbeitsspeicher-Zustand auf Werkseinstellung.
   function wipeAllData() {
-    if (!window.confirm("Wirklich alle lokal gespeicherten Daten des Support Copilot löschen? (Einstellungen, Vorlagen, KI-Ergebnisse, Anruf-Status)")) return;
+    if (!window.confirm("Wirklich alle lokal gespeicherten Daten von Stadtnetz CRM Copilot löschen? (Einstellungen, Vorlagen, KI-Ergebnisse, Anruf-Status)")) return;
     safeLocalRemove(Object.values(CONFIG.storageKeys));
     lastTicketContextSignature = null;
     aiCache.init(null);
@@ -2117,13 +2122,13 @@
     }).join("");
     return `
       ${renderCallCockpit()}
-      <button class="sc-launcher ${state.isOpen ? "is-hidden" : ""}" type="button" data-action="open-panel" aria-label="Support Copilot öffnen">
+      <button class="sc-launcher ${state.isOpen ? "is-hidden" : ""}" type="button" data-action="open-panel" aria-label="Stadtnetz CRM Copilot öffnen">
         <span>AI</span><span>Copilot</span>
       </button>
-      <aside class="sc-panel ${state.isOpen ? "is-open" : ""}" aria-label="Support Copilot">
+      <aside class="sc-panel ${state.isOpen ? "is-open" : ""}" aria-label="Stadtnetz CRM Copilot">
         <header class="sc-panel-header">
           <div>
-            <span class="sc-eyebrow">Support Copilot · lokale KI</span>
+            <span class="sc-eyebrow">Stadtnetz CRM Copilot · lokale KI</span>
             <strong>Smart dokumentieren.</strong>
           </div>
           <div class="sc-header-actions">
@@ -2139,6 +2144,210 @@
         <footer class="sc-panel-footer">Verarbeitet Ticketdaten ausschließlich lokal – On-Device-KI, kein Cloud-Dienst.</footer>
         <div class="sc-toast" role="status" aria-live="polite"></div>
       </aside>`;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md) — ⌘K/Ctrl+K, eigener
+  // DOM-Root unabhängig vom Panel (jederzeit auslösbar). Eigenständige, aber
+  // verhaltensgleiche Umsetzung zum Gegenstück in timio-content.js — geteilt
+  // wird nur supabase.searchWorkspace(). Ein Treffer öffnet die passende
+  // Kundenakte im CRM über den Deep-Link aus src/router.tsx (CRM-Repo).
+  // ---------------------------------------------------------------------------
+
+  const PALETTE_ID = "sc-jira-palette";
+  const PALETTE_MIN_QUERY_LENGTH = 2;
+  const PALETTE_DEBOUNCE_MS = 250;
+  let paletteSearchTimer = null;
+  let paletteKeydownBound = false;
+
+  function paletteRoot() {
+    return document.getElementById(PALETTE_ID);
+  }
+
+  function paletteFlatItems() {
+    const groups = (state.palette && state.palette.groups) || [];
+    const flat = [];
+    groups.forEach((g) => (g.items || []).forEach((item) => flat.push(item)));
+    return flat;
+  }
+
+  function openCrmDeepLink(customerNumber) {
+    if (!customerNumber) return;
+    const base = ((CONFIG.crm && CONFIG.crm.baseUrl) || "").replace(/\/+$/, "");
+    window.open(`${base}/?kdnr=${encodeURIComponent(customerNumber)}`, "_blank");
+    closePalette();
+  }
+
+  function openPalette() {
+    state.palette = { open: true, query: "", groups: [], status: "idle", error: "", activeIdx: 0 };
+    renderPalette();
+  }
+
+  function closePalette() {
+    if (paletteSearchTimer) { window.clearTimeout(paletteSearchTimer); paletteSearchTimer = null; }
+    state.palette = null;
+    renderPalette();
+  }
+
+  // Debounced, damit nicht jeder Tastendruck die vier parallelen Requests von
+  // searchWorkspace() auslöst. Veraltete Antworten (Nutzer tippt weiter,
+  // während die Antwort unterwegs ist) werden verworfen.
+  function schedulePaletteSearch() {
+    if (paletteSearchTimer) { window.clearTimeout(paletteSearchTimer); paletteSearchTimer = null; }
+    const query = state.palette.query.trim();
+    if (query.length < PALETTE_MIN_QUERY_LENGTH) {
+      state.palette.status = "idle";
+      state.palette.groups = [];
+      updatePaletteResults();
+      return;
+    }
+    state.palette.status = "loading";
+    updatePaletteResults();
+    paletteSearchTimer = window.setTimeout(async () => {
+      if (!state.palette || !supabaseClient) return;
+      const activeQuery = state.palette.query.trim();
+      const res = await supabaseClient.searchWorkspace(activeQuery);
+      if (!state.palette || state.palette.query.trim() !== activeQuery) return; // veraltete Antwort
+      if (res.ok) {
+        state.palette.status = "ok";
+        state.palette.groups = res.groups;
+      } else {
+        state.palette.status = res.reason === "not-logged-in" ? "not-logged-in" : "error";
+        state.palette.error = res.error || "";
+      }
+      state.palette.activeIdx = 0;
+      updatePaletteResults();
+    }, PALETTE_DEBOUNCE_MS);
+  }
+
+  function paletteResultsMarkup() {
+    if (!state.palette) return "";
+    const q = state.palette.query.trim();
+    if (q.length < PALETTE_MIN_QUERY_LENGTH) return `<p class="sc-palette-hint">Mindestens ${PALETTE_MIN_QUERY_LENGTH} Zeichen eingeben …</p>`;
+    if (state.palette.status === "loading") return `<p class="sc-palette-hint">Suche …</p>`;
+    if (state.palette.status === "not-logged-in") return `<p class="sc-palette-hint">Nicht bei Stadtnetz CRM angemeldet.</p>`;
+    if (state.palette.status === "error") return `<p class="sc-palette-hint">Suche gerade nicht möglich${state.palette.error ? ": " + escapeHtml(state.palette.error) : "."}</p>`;
+    const groups = state.palette.groups || [];
+    if (!groups.length) return `<p class="sc-palette-hint">Keine Treffer für „${escapeHtml(q)}".</p>`;
+
+    let idx = -1;
+    return groups.map((g) => `
+      <div class="sc-palette-group">${escapeHtml(g.group)}</div>
+      ${(g.items || []).map((item) => {
+        idx += 1;
+        const active = idx === state.palette.activeIdx;
+        return `
+          <button type="button" class="sc-palette-item ${active ? "is-active" : ""}" data-palette-item data-customer="${escapeHtml(item.customerNumber || "")}">
+            <span class="sc-palette-item-label">${escapeHtml(item.label || "")}</span>
+            <span class="sc-palette-item-sub">${escapeHtml(item.sub || "")}</span>
+          </button>`;
+      }).join("")}
+    `).join("");
+  }
+
+  function paletteMarkup() {
+    return `
+      <div class="sc-palette-backdrop" data-action="palette-backdrop">
+        <div class="sc-palette" role="dialog" aria-modal="true" aria-label="Schnellsuche">
+          <div class="sc-palette-input-row">
+            <input type="text" data-role="palette-query" placeholder="Kunden, Verträge, Tarifwechsel, Notizen suchen …" value="${escapeHtml(state.palette.query)}" autocomplete="off">
+            <button type="button" class="sc-palette-close" data-action="palette-close" aria-label="Schließen">×</button>
+          </div>
+          <div data-tid="palette-results">${paletteResultsMarkup()}</div>
+        </div>
+      </div>`;
+  }
+
+  // Nur die Ergebnisliste patchen, nicht die ganze Palette neu bauen — sonst
+  // verlöre das fokussierte Eingabefeld bei jedem Suchergebnis den Cursor.
+  function updatePaletteResults() {
+    const rootEl = paletteRoot();
+    if (!rootEl) return;
+    const resultsEl = rootEl.querySelector("[data-tid='palette-results']");
+    if (resultsEl) resultsEl.innerHTML = paletteResultsMarkup();
+  }
+
+  function renderPalette() {
+    let rootEl = paletteRoot();
+    if (!state.palette || !state.palette.open) {
+      if (rootEl) rootEl.remove();
+      return;
+    }
+    if (!rootEl) {
+      rootEl = document.createElement("div");
+      rootEl.id = PALETTE_ID;
+      document.body.appendChild(rootEl);
+      rootEl.addEventListener("click", onPaletteClick);
+      rootEl.addEventListener("input", onPaletteInput);
+    }
+    rootEl.innerHTML = paletteMarkup();
+    const inputEl = rootEl.querySelector("[data-role='palette-query']");
+    if (inputEl && typeof inputEl.focus === "function") {
+      inputEl.focus();
+      if (typeof inputEl.setSelectionRange === "function") {
+        const len = inputEl.value.length;
+        inputEl.setSelectionRange(len, len);
+      }
+    }
+  }
+
+  function onPaletteClick(event) {
+    const target = event.target;
+    const item = target.closest && target.closest("[data-palette-item]");
+    if (item) { openCrmDeepLink(item.dataset.customer); return; }
+    const closeBtn = target.closest && target.closest("[data-action='palette-close']");
+    if (closeBtn) { closePalette(); return; }
+    const backdrop = target.closest && target.closest("[data-action='palette-backdrop']");
+    if (backdrop && target === backdrop) { closePalette(); }
+  }
+
+  // Freitext direkt in den State, OHNE Re-Render — das Eingabefeld zeigt den
+  // Tastendruck bereits nativ (gleiches Muster wie call-notes im Panel).
+  function onPaletteInput(event) {
+    if (!state.palette) return;
+    const role = event.target && event.target.dataset && event.target.dataset.role;
+    if (role !== "palette-query") return;
+    state.palette.query = event.target.value;
+    state.palette.activeIdx = 0;
+    schedulePaletteSearch();
+  }
+
+  function onGlobalKeydown(event) {
+    // Nach einem Extension-Reload arbeitet die alte Instanz auf einem toten
+    // Chrome-Kontext — dann die Palette gar nicht erst öffnen (der Listener
+    // lässt sich ohne eigenen Shutdown-Pfad in ui.js nicht sauber abmelden).
+    if (!extensionAlive()) return;
+    const isToggleCombo = (event.metaKey || event.ctrlKey) && String(event.key).toLowerCase() === "k";
+    if (isToggleCombo) {
+      event.preventDefault();
+      if (state.palette && state.palette.open) closePalette(); else openPalette();
+      return;
+    }
+    if (!state.palette || !state.palette.open) return;
+    if (event.key === "Escape") { event.preventDefault(); closePalette(); return; }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const total = paletteFlatItems().length;
+      if (!total) return;
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      state.palette.activeIdx = (state.palette.activeIdx + delta + total) % total;
+      updatePaletteResults();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const item = paletteFlatItems()[state.palette.activeIdx];
+      if (item) openCrmDeepLink(item.customerNumber);
+    }
+  }
+
+  // Einmalig registrieren: mount() kann bei Ticketwechseln mehrfach laufen
+  // (content.js entfernt und mountet das Panel neu), der dokumentweite
+  // Listener soll sich dabei nicht stapeln.
+  function bindPaletteHotkey() {
+    if (paletteKeydownBound) return;
+    paletteKeydownBound = true;
+    document.addEventListener("keydown", onGlobalKeydown);
   }
 
   // Baut das Panel komplett neu auf. Damit ein Re-Render (z. B. durch das
@@ -3200,6 +3409,7 @@
     container.addEventListener("click", handleClick);
     container.addEventListener("input", handleInput);
     container.addEventListener("pointerdown", startCockpitDrag);
+    bindPaletteHotkey();
 
     if (chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((changes, area) => {

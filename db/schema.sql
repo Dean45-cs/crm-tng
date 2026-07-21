@@ -47,7 +47,7 @@ create index if not exists idx_customers_last_contact on public.customers(last_c
 -- ------------------------------------------------------------
 -- CALLS
 -- ------------------------------------------------------------
--- Anruf-Historie (Migration 018): von der Support-Copilot-Extension über
+-- Anruf-Historie (Migration 018): von der Stadtnetz-CRM-Copilot-Extension über
 -- ihre eigene Supabase-Session automatisch geschrieben. customer_number ist
 -- nullable — nicht jeder Anrufer ist zuzuordnen. outcome/note/jira_ticket
 -- sind für Stufe 3 vorgesehen (gemeinsame Erfassung am Gesprächsende) und
@@ -731,7 +731,7 @@ create policy "status_log delete manager" on public.status_log
 -- ============================================================================
 
 -- Ein Aufruf statt vier Tabellenabfragen aus einem Content-Script — die
--- Support-Copilot-Extension ruft das bei eingehendem Anruf für die
+-- Stadtnetz-CRM-Copilot-Extension ruft das bei eingehendem Anruf für die
 -- Kundenakte auf. Bewusst NICHT security definer: RLS erlaubt bereits jedem
 -- aktiven Nutzer (auch der Extension-Session) das Lesen dieser Tabellen,
 -- Invoker-Rechte reichen also (least privilege). Kein customers-Eintrag zur

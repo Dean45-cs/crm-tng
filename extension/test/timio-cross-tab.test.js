@@ -37,7 +37,7 @@ function run() {
   loadScripts(tabA.sandbox, SCRIPTS);
   tabA.setPageText(portalText(2));
   tabA.tick();
-  assert.ok(bus.storage["supportCopilot.queueStats"], "Tab A schreibt Wartefeld-Daten in den geteilten Storage");
+  assert.ok(bus.storage["stadtnetzCrm.queueStats"], "Tab A schreibt Wartefeld-Daten in den geteilten Storage");
 
   // Tab B: wird ERST NACH Tab A geöffnet (z. B. für echte Anrufe) und
   // bekommt beim Laden bereits den vorhandenen Stand aus dem Storage.

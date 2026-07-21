@@ -11,8 +11,8 @@ const { makeSandbox, loadScripts } = require("./support/stub-env");
 
 function load() {
   const env = makeSandbox();
-  loadScripts(env.sandbox, ["src/config.js", "src/shared.js"]);
-  return env.sandbox.SupportCopilot.shared;
+  loadScripts(env.sandbox, ["src/config.js", "src/commission.js", "src/shared.js"]);
+  return env.sandbox.StadtnetzCRM.shared;
 }
 
 function run() {

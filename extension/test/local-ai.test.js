@@ -40,7 +40,7 @@ function setup(jsonResponse) {
       };
     }
   };
-  return { localAi: env.sandbox.SupportCopilot.localAi, captured, createdOptions };
+  return { localAi: env.sandbox.StadtnetzCRM.localAi, captured, createdOptions };
 }
 
 function ticketWithManyComments(count) {

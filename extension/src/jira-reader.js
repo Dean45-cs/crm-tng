@@ -1,7 +1,7 @@
 (function initJiraReader() {
   "use strict";
 
-  const app = window.SupportCopilot;
+  const app = window.StadtnetzCRM;
   const UNKNOWN = "Nicht sichtbar";
 
   // Ausschließlich klassische Jira-Bereiche. Es gibt absichtlich keine Suche

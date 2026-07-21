@@ -1,7 +1,7 @@
 (function initRules() {
   "use strict";
 
-  const app = window.SupportCopilot;
+  const app = window.StadtnetzCRM;
   const UNKNOWN = app.jiraReader.UNKNOWN;
 
   function isKnown(value) {

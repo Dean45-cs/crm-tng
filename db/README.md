@@ -75,9 +75,9 @@ bereits — Migrationen sind dann nicht nötig.
   Tabelle danach selbstständig aktuell, ohne bestehenden Insert-Code
   anzufassen. Neue RPC-Funktion `customer_card()` liefert Name, Kontaktdaten,
   Vorgangszählung und das zuletzt verwendete Jira-Ticket in einem Aufruf —
-  Grundlage für die „Kundenakte" in der Support-Copilot-Extension.
+  Grundlage für die „Kundenakte" in der Stadtnetz-CRM-Copilot-Extension.
 - `018_calls.sql` — legt die Tabelle `calls` an (Stufe 2: „Der Anruf wird Teil
-  der Akte"). Die Support-Copilot-Extension schreibt jeden Anruf automatisch
+  der Akte"). Die Stadtnetz-CRM-Copilot-Extension schreibt jeden Anruf automatisch
   über ihre eigene Supabase-Session (Migration 017) hierher — Start bei
   Klingeln/Verbinden, Abschluss beim Auflegen. `customer_number` ist
   nullable, nicht jeder Anrufer ist zuzuordnen. Ein eigener Trigger

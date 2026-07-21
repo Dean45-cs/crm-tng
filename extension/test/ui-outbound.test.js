@@ -26,8 +26,8 @@ const SCRIPTS = [
 async function mountPanel(options) {
   const env = makePanelSandbox(options);
   loadScripts(env.sandbox, SCRIPTS);
-  await env.sandbox.SupportCopilot.ui.mount();
-  return { env, CONFIG: env.sandbox.SupportCopilot.CONFIG, KEYS: env.sandbox.SupportCopilot.CONFIG.storageKeys };
+  await env.sandbox.StadtnetzCRM.ui.mount();
+  return { env, CONFIG: env.sandbox.StadtnetzCRM.CONFIG, KEYS: env.sandbox.StadtnetzCRM.CONFIG.storageKeys };
 }
 
 async function run() {
@@ -60,9 +60,9 @@ async function run() {
   {
     const env = makePanelSandbox();
     loadScripts(env.sandbox, SCRIPTS);
-    const KEYS = env.sandbox.SupportCopilot.CONFIG.storageKeys;
+    const KEYS = env.sandbox.StadtnetzCRM.CONFIG.storageKeys;
     env.storage[KEYS.callMode] = "outbound";
-    await env.sandbox.SupportCopilot.ui.mount();
+    await env.sandbox.StadtnetzCRM.ui.mount();
     assert.ok(env.html().includes(">Outbound<"), "die zuletzt gewählte Richtung wird beim Laden übernommen");
   }
 
@@ -71,7 +71,7 @@ async function run() {
     const { env, CONFIG } = await mountPanel();
     // Titel enthalten Zeichen wie "&", die im Markup escaped landen – deshalb
     // mit derselben Funktion vergleichen, die auch das Panel benutzt.
-    const escapeHtml = env.sandbox.SupportCopilot.shared.escapeHtml;
+    const escapeHtml = env.sandbox.StadtnetzCRM.shared.escapeHtml;
     env.click("switch-tab", { tab: "call" });
 
     const inboundFirst = escapeHtml(CONFIG.callGuides.inbound[0].title);
