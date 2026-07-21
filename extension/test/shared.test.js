@@ -61,6 +61,50 @@ function run() {
   assert.strictEqual(shared.groupsMatch("Ausbaustatus", "Bestellhotline"), false);
   assert.strictEqual(shared.groupsMatch("", "x"), false);
 
+  // Provisions-Mathematik (Stufe 3) — Parität zu src/lib/utils.ts (CRM-Repo).
+  const settings = {
+    products: [
+      { name: "Fibrelight", category: "Privat", commission: 7.5 },
+      { name: "Fibrepro", category: "Privat", commission: 15 },
+      { name: "Basic 1000", category: "Business", commission: 40 }
+    ],
+    tariffCommission: {
+      sidegrade: { mvlz_gt3: 0, mvlz_lt3: 5, outside_mvlz: 5 },
+      upgrade: { mvlz_gt3: 5, mvlz_lt3: 7.5, outside_mvlz: 7.5 }
+    }
+  };
+  assert.strictEqual(shared.getProductCommission(settings, "Fibrelight"), 7.5);
+  assert.strictEqual(shared.getProductCommission(settings, "Unbekanntes Produkt"), 0, "unbekanntes Produkt liefert 0, statt zu werfen");
+
+  assert.strictEqual(
+    shared.calcContractCommission({ products: ["Fibrelight", "Fibrepro"], status: "aktiv" }, settings),
+    22.5,
+    "Summe über alle Produkte des Vertrags"
+  );
+  assert.strictEqual(
+    shared.calcContractCommission({ products: ["Fibrelight"], status: "storniert" }, settings),
+    0,
+    "ein stornierter Vertrag liefert immer 0"
+  );
+
+  assert.strictEqual(shared.calcTariffCommission({ changeType: "upgrade", context: "mvlz_lt3" }, settings), 7.5);
+  assert.strictEqual(shared.calcTariffCommission({ changeType: "sidegrade", context: "mvlz_gt3" }, settings), 0);
+  assert.strictEqual(
+    shared.calcTariffCommission({ changeType: "upgrade", context: "unbekannt" }, settings),
+    0,
+    "unbekannter Kontext liefert 0, statt zu werfen"
+  );
+
+  // groupProductsByCategory — feste Reihenfolge Privat/Business/Zusatz, leere Kategorien fallen weg.
+  const grouped = shared.groupProductsByCategory(settings.products);
+  assert.strictEqual(grouped.length, 2, "Zusatz ist leer und fehlt in der Liste");
+  assert.strictEqual(grouped[0].category, "Privat");
+  assert.strictEqual(grouped[0].products.length, 2);
+  assert.strictEqual(grouped[1].category, "Business");
+
+  // todayIso — Format YYYY-MM-DD.
+  assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(shared.todayIso()), "todayIso liefert YYYY-MM-DD");
+
   console.log("shared.test.js: alle Szenarien bestanden.");
 }
 

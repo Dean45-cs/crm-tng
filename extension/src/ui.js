@@ -6,7 +6,8 @@
   const {
     escapeHtml, extensionAlive, formatDuration, callTimerText,
     callModeMeta, isOutbound, normalizePhone, nextRetryAt, pruneCallbacks, customerSearchUrl,
-    jiraTicketUrl, formatDateDE
+    jiraTicketUrl, formatDateDE, calcContractCommission, calcTariffCommission,
+    groupProductsByCategory, todayIso
   } = shared;
   const AI = CONFIG.ai;
   const localAi = app.localAi;
@@ -49,6 +50,13 @@
     // Zuletzt nachgeschlagene Kundenakte, geschrieben von timio-content.js bei
     // eingehendem Anruf (siehe CONFIG.storageKeys.customerCard).
     customerCard: null,
+    // Abschluss-Panel (Stufe 3, KONZEPT-INTEGRATION.md): { callId, entryType,
+    // fields, status, error }. Eigene Instanz, unabhängig vom Gegenstück in
+    // timio-content.js — siehe dortige Kommentare für die Feld-Semantik.
+    closeout: null,
+    // Produktkatalog + Provisions-Matrix für Vertrag/Tarifwechsel im
+    // Abschluss-Panel.
+    sharedSettings: { status: "idle", data: null, error: "" },
     ai: {
       replyLanguage: "de",
       caps: null,           // Ergebnis von localAi.capabilities()
@@ -496,6 +504,11 @@
     }
     if (status === "ended" && previousStatus !== "ended") {
       scheduleCockpitEndedHide();
+      // Eingehende Anrufe bekommen das Abschluss-Panel ohne Klick — anders
+      // als bei ausgehenden Anrufen gibt es keinen "niemand erreicht"-Fall
+      // (Stufe 3, KONZEPT-INTEGRATION.md). previousStatus !== "ended" sorgt
+      // hier bereits dafür, dass das pro Anruf nur einmal passiert.
+      if (!outboundMode()) openCloseout("notiz", state.activeCall, "");
     }
     render();
   }
@@ -545,6 +558,14 @@
     cockpitEndedTimer = window.setTimeout(() => {
       const call = currentActiveCall();
       if (call && call.status === "ended") {
+        const closeoutPending = state.closeout && state.closeout.callId === callIdOf(call) && state.closeout.status !== "done";
+        if (closeoutPending) {
+          // Nicht ausblenden, solange das Abschluss-Panel offen und
+          // ungespeichert ist — sonst gingen unvollständige Eingaben
+          // verloren. Später erneut prüfen, falls doch noch abgeschlossen wird.
+          scheduleCockpitEndedHide();
+          return;
+        }
         state.callOverlay.dismissedForCallId = callIdOf(call);
         render();
       }
@@ -708,8 +729,8 @@
     // Reihenfolge folgt dem, was in der jeweiligen Richtung zuerst zählt:
     // ausgehend "was will ich von dieser Person", eingehend "wer wartet noch".
     const blocks = outbound
-      ? `${renderCockpitPrep()}${renderCockpitTicket(call)}${renderOutcomeBar(call, "sc-cockpit-outcome")}<div class="sc-cockpit-queues" data-role="overlay-queues">${queueMarkup()}</div>`
-      : `<div class="sc-cockpit-queues" data-role="overlay-queues">${queueMarkup()}</div>${renderCockpitTicket(call)}${renderOutcomeBar(call, "sc-cockpit-outcome")}`;
+      ? `${renderCockpitPrep()}${renderCockpitTicket(call)}${renderOutcomeBar(call, "sc-cockpit-outcome")}${renderCloseoutPanel(call)}<div class="sc-cockpit-queues" data-role="overlay-queues">${queueMarkup()}</div>`
+      : `<div class="sc-cockpit-queues" data-role="overlay-queues">${queueMarkup()}</div>${renderCockpitTicket(call)}${renderOutcomeBar(call, "sc-cockpit-outcome")}${renderCloseoutPanel(call)}`;
 
     return `
       <div class="sc-cockpit ${status.className}" data-role="cockpit" role="status" style="${cockpitPositionStyle()}">
@@ -1454,14 +1475,21 @@
 
   // --- Gesprächsergebnis ------------------------------------------------------
 
-  const OUTCOMES = (CONFIG.outbound && CONFIG.outbound.outcomes) || [];
+  // Eingehend und ausgehend haben eigene Wortschätze (Stufe 3,
+  // KONZEPT-INTEGRATION.md) — "Mailbox"/"Falsche Nummer" ergeben bei einem
+  // eingehenden Anruf keinen Sinn.
+  function activeOutcomes() {
+    const cfg = outboundMode() ? CONFIG.outbound : CONFIG.inbound;
+    return (cfg && cfg.outcomes) || [];
+  }
 
   // Erscheint nach dem Auflegen. Ein Klick füllt die Gesprächsnotiz vor, lässt
   // die lokale KI daraus den Jira-Kommentar bauen und legt bei Nichterreichen
   // gleich die Wiedervorlage an.
   function renderOutcomeBar(call, className) {
-    if (!call || call.status !== "ended" || !OUTCOMES.length) return "";
-    const buttons = OUTCOMES.map((outcome) =>
+    const outcomes = activeOutcomes();
+    if (!call || call.status !== "ended" || !outcomes.length) return "";
+    const buttons = outcomes.map((outcome) =>
       `<button class="sc-outcome-button" type="button" data-action="call-outcome" data-outcome="${escapeHtml(outcome.id)}">${escapeHtml(outcome.label)}</button>`
     ).join("");
     return `
@@ -1473,7 +1501,7 @@
 
   // Verarbeitet ein Ergebnis – egal ob hier oder im timio-Cockpit geklickt.
   function applyOutcome(outcomeId, context) {
-    const outcome = OUTCOMES.find((entry) => entry.id === outcomeId);
+    const outcome = activeOutcomes().find((entry) => entry.id === outcomeId);
     if (!outcome) return;
     const call = context || currentActiveCall() || {};
 
@@ -1483,6 +1511,10 @@
     state.settingsOpen = false;
     state.activeTab = "call";
     persistUiState();
+    // "Ergebnis festhalten" öffnet für Optionen mit echtem Gesprächsinhalt
+    // zusätzlich das Abschluss-Panel — das "fehlende Ziel" des Staffelstabs
+    // (KONZEPT-INTEGRATION.md, Stufe 3).
+    if (outcome.opensPanel) openCloseout("notiz", call, outcome.seed);
 
     let scheduled = null;
     if (outcome.followUp) {
@@ -1508,6 +1540,286 @@
     }
     // Kommentar-Entwurf im Anschluss, damit der Toast nicht überschrieben wird.
     runCallClean();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Abschluss-Panel (Stufe 3, KONZEPT-INTEGRATION.md) — "Ein Gespräch, eine
+  // Erfassung". Eigene Instanz, unabhängig vom Gegenstück in
+  // timio-content.js — geteilt werden nur die reinen Helfer in shared.js und
+  // die Payload-Form in supabase.js.
+  // ---------------------------------------------------------------------------
+
+  const CLOSEOUT_TYPE_LABEL = { notiz: "Notiz", lead: "Lead", vertrag: "Vertrag", tarifwechsel: "Tarifwechsel" };
+  const CLOSEOUT_LEAD_STATUS = [["neu", "Neu"], ["inBearbeitung", "In Bearbeitung"], ["gewonnen", "Gewonnen"], ["verloren", "Verloren"]];
+  const CLOSEOUT_LEAD_PRIORITY = [["normal", "Normal"], ["hoch", "Hoch"], ["dringend", "Dringend"]];
+  const CLOSEOUT_CONTRACT_STATUS = [["offen", "Offen"], ["aktiv", "Aktiv"], ["storniert", "Storniert"]];
+  const CLOSEOUT_LAUFZEIT = [[12, "12 Monate"], [24, "24 Monate"], [null, "Unbefristet"]];
+  const CLOSEOUT_TARIFF_TYPE = [["sidegrade", "Sidegrade / VVL"], ["upgrade", "Upgrade"]];
+  // Labels 1:1 aus TARIFF_CONTEXT_LABEL, src/lib/utils.ts (CRM-Repo).
+  const CLOSEOUT_TARIFF_CONTEXT = [
+    ["mvlz_gt3", "Restlaufzeit > 3 Monate"],
+    ["mvlz_lt3", "Restlaufzeit < 3 Monate"],
+    ["outside_mvlz", "Außerhalb MVLZ"]
+  ];
+
+  // Inhalt bevorzugt aus dem KI-Entwurf (state.ai.callDraft, derselbe Text
+  // wie für den Jira-Kommentar — kein zweiter KI-Prompt), sonst aus dem
+  // übergebenen Seed, sonst aus den rohen Gesprächsnotizen.
+  function defaultCloseoutFields(call, seedText) {
+    const card = state.customerCard && state.customerCard.status === "ok" ? state.customerCard.data : null;
+    const ticket = state.ticket;
+    const ticketKey = ticket && known(ticket.key) ? ticket.key : "";
+    const aiText = state.ai.callDraft && state.ai.callDraft.status === "ok" ? state.ai.callDraft.text : "";
+    return {
+      title: `Telefonat${ticketKey ? " zu " + ticketKey : ""}`,
+      content: aiText || seedText || state.ai.callNotes || "",
+      contentTouched: false,
+      customerName: (card && card.name) || (call && call.callerName) || (ticket && known(ticket.customerName) ? ticket.customerName : "") || "",
+      customerNumber: (call && call.customerNumber) || (ticket && known(ticket.customerReference) ? ticket.customerReference : "") || "",
+      phone: (call && call.callerNumber) || "",
+      topic: ticket && known(ticket.summary) ? ticket.summary : "",
+      status: "neu",
+      priority: "normal",
+      followUpDate: "",
+      products: [],
+      contractDate: todayIso(),
+      contractStatus: "aktiv",
+      laufzeitMonate: null,
+      changeType: null,
+      context: null,
+      oldProduct: "",
+      newProduct: "",
+      changeDate: todayIso(),
+      notes: "",
+      jiraTicket: ticketKey
+    };
+  }
+
+  // Öffnet das Panel für den aktuellen Anruf. Ist es für diesen Anruf schon
+  // offen, wird NICHT zurückgesetzt — nur ein noch unangetasteter
+  // content-Text wird nachträglich befüllt (z. B. wenn der KI-Entwurf erst
+  // eintrifft, nachdem der Bearbeiter das Panel schon manuell geöffnet hat),
+  // damit weder ein späterer Klick noch ein später eintreffender KI-Text
+  // bereits Getipptes überschreibt.
+  function openCloseout(entryType, call, seedText) {
+    const id = callIdOf(call);
+    if (!state.closeout || state.closeout.callId !== id) {
+      state.closeout = {
+        callId: id,
+        entryType,
+        fields: defaultCloseoutFields(call, seedText),
+        status: "idle",
+        error: ""
+      };
+    } else if (!state.closeout.fields.contentTouched) {
+      const aiText = state.ai.callDraft && state.ai.callDraft.status === "ok" ? state.ai.callDraft.text : "";
+      if (aiText || seedText) state.closeout.fields.content = aiText || seedText;
+    }
+    if (entryType === "vertrag" || entryType === "tarifwechsel") maybeLoadSharedSettings();
+    render();
+  }
+
+  function maybeLoadSharedSettings(opts) {
+    if (!supabaseClient) return;
+    const forceRefresh = Boolean(opts && opts.forceRefresh);
+    if (state.sharedSettings.status === "loading") return;
+    if (!forceRefresh && state.sharedSettings.status === "ok") return;
+    state.sharedSettings = { status: "loading", data: state.sharedSettings.data, error: "" };
+    render();
+    supabaseClient.fetchSharedSettings({ forceRefresh }).then((res) => {
+      state.sharedSettings = res.ok
+        ? { status: "ok", data: res.data, error: "" }
+        : { status: res.reason === "not-logged-in" ? "not-logged-in" : "error", data: state.sharedSettings.data, error: res.error || "" };
+      render();
+    }).catch((error) => {
+      state.sharedSettings = { status: "error", data: state.sharedSettings.data, error: String((error && error.message) || error) };
+      render();
+    });
+  }
+
+  async function submitCloseout() {
+    if (!state.closeout || !supabaseClient) return;
+    syncInputsFromDom();
+    const submittedCallId = state.closeout.callId;
+    const entryType = state.closeout.entryType;
+    const fields = state.closeout.fields;
+    state.closeout.status = "saving";
+    state.closeout.error = "";
+    render();
+
+    let res;
+    if (entryType === "notiz") res = await supabaseClient.insertNote(fields);
+    else if (entryType === "lead") res = await supabaseClient.insertLead(fields);
+    else if (entryType === "vertrag") res = await supabaseClient.insertContract(fields);
+    else if (entryType === "tarifwechsel") res = await supabaseClient.insertTariffChange(fields);
+    else return;
+
+    // Anruf ist inzwischen vorbei oder ein neuer hat begonnen — das Ergebnis
+    // gehört dann nicht mehr zum aktuell sichtbaren Panel.
+    if (!state.closeout || state.closeout.callId !== submittedCallId) return;
+
+    if (res.ok) {
+      state.closeout.status = "done";
+      toast(`${CLOSEOUT_TYPE_LABEL[entryType]} gespeichert.`);
+    } else {
+      state.closeout.status = "error";
+      state.closeout.error = res.reason === "not-logged-in"
+        ? "Nicht bei Supabase angemeldet."
+        : (res.error || "Speichern fehlgeschlagen.");
+    }
+    render();
+  }
+
+  function closeoutStatusLine() {
+    if (state.sharedSettings.status === "loading") return `<p class="sc-cockpit-hint">Produktkatalog wird geladen …</p>`;
+    if (state.sharedSettings.status === "not-logged-in") return `<p class="sc-cockpit-hint">Nicht bei Supabase angemeldet — Produktkatalog nicht verfügbar.</p>`;
+    if (state.sharedSettings.status === "error") {
+      return `<p class="sc-cockpit-hint">Produktkatalog gerade nicht abrufbar. <button type="button" class="sc-link-button" data-action="closeout-refresh-settings">Erneut versuchen</button></p>`;
+    }
+    return "";
+  }
+
+  function productDatalistMarkup() {
+    const products = (state.sharedSettings.data && state.sharedSettings.data.products) || [];
+    return `<datalist id="sc-closeout-products">${products.map((p) => `<option value="${escapeHtml(p.name)}"></option>`).join("")}</datalist>`;
+  }
+
+  function closeoutChipGroup(action, options, currentValue) {
+    return `<div class="sc-closeout-chipgroup">${options.map(([id, label]) =>
+      `<button type="button" class="sc-chip ${currentValue === id ? "is-active" : ""}" data-action="${action}" data-value="${id === null ? "" : escapeHtml(String(id))}">${escapeHtml(label)}</button>`
+    ).join("")}</div>`;
+  }
+
+  function closeoutProductPickerMarkup(fields) {
+    if (state.sharedSettings.status !== "ok") return "";
+    const groups = groupProductsByCategory(state.sharedSettings.data.products);
+    return groups.map((group) => `
+      <div class="sc-closeout-product-group">
+        <span class="sc-closeout-product-cat">${escapeHtml(group.category)}</span>
+        <div class="sc-closeout-product-chips">
+          ${group.products.map((p) => {
+            const active = fields.products.includes(p.name);
+            return `<button type="button" class="sc-chip ${active ? "is-active" : ""}" data-action="closeout-toggle-product" data-product="${escapeHtml(p.name)}">${escapeHtml(p.name)} · ${Number(p.commission).toFixed(2)} €</button>`;
+          }).join("")}
+        </div>
+      </div>`).join("");
+  }
+
+  function closeoutNotizFieldsMarkup(fields) {
+    return `
+      <label class="sc-input-label">Titel
+        <input class="sc-text-input" data-role="closeout-title" value="${escapeHtml(fields.title)}">
+      </label>
+      <label class="sc-input-label">Inhalt
+        <textarea class="sc-comment-draft" data-role="closeout-content" rows="4">${escapeHtml(fields.content)}</textarea>
+      </label>`;
+  }
+
+  function closeoutLeadFieldsMarkup(fields) {
+    return `
+      <label class="sc-input-label">Anliegen
+        <input class="sc-text-input" data-role="closeout-topic" value="${escapeHtml(fields.topic)}">
+      </label>
+      <label class="sc-input-label">Telefon
+        <input class="sc-text-input" data-role="closeout-phone" value="${escapeHtml(fields.phone)}">
+      </label>
+      ${closeoutChipGroup("closeout-set-lead-status", CLOSEOUT_LEAD_STATUS, fields.status)}
+      ${closeoutChipGroup("closeout-set-lead-priority", CLOSEOUT_LEAD_PRIORITY, fields.priority)}
+      <label class="sc-input-label">Wiedervorlage
+        <input class="sc-text-input" type="date" data-role="closeout-followup-date" value="${escapeHtml(fields.followUpDate)}">
+      </label>
+      <label class="sc-input-label">Notizen
+        <textarea class="sc-comment-draft" data-role="closeout-notes" rows="3">${escapeHtml(fields.notes)}</textarea>
+      </label>`;
+  }
+
+  function closeoutVertragFieldsMarkup(fields) {
+    return `
+      <label class="sc-input-label">Vertragsdatum
+        <input class="sc-text-input" type="date" data-role="closeout-contract-date" value="${escapeHtml(fields.contractDate)}">
+      </label>
+      ${closeoutChipGroup("closeout-set-contract-status", CLOSEOUT_CONTRACT_STATUS, fields.contractStatus)}
+      ${closeoutChipGroup("closeout-set-contract-laufzeit", CLOSEOUT_LAUFZEIT, fields.laufzeitMonate)}
+      ${closeoutStatusLine()}
+      <div class="sc-closeout-products">${closeoutProductPickerMarkup(fields)}</div>
+      <label class="sc-input-label">Wiedervorlage
+        <input class="sc-text-input" type="date" data-role="closeout-followup-date" value="${escapeHtml(fields.followUpDate)}">
+      </label>
+      <label class="sc-input-label">Notizen
+        <textarea class="sc-comment-draft" data-role="closeout-notes" rows="3">${escapeHtml(fields.notes)}</textarea>
+      </label>`;
+  }
+
+  function closeoutTarifwechselFieldsMarkup(fields) {
+    return `
+      <label class="sc-input-label">Wechseldatum
+        <input class="sc-text-input" type="date" data-role="closeout-change-date" value="${escapeHtml(fields.changeDate)}">
+      </label>
+      ${closeoutChipGroup("closeout-set-tarif-changetype", CLOSEOUT_TARIFF_TYPE, fields.changeType)}
+      ${closeoutChipGroup("closeout-set-tarif-context", CLOSEOUT_TARIFF_CONTEXT, fields.context)}
+      ${closeoutStatusLine()}
+      <label class="sc-input-label">Altes Produkt
+        <input class="sc-text-input" list="sc-closeout-products" data-role="closeout-old-product" value="${escapeHtml(fields.oldProduct)}">
+      </label>
+      <label class="sc-input-label">Neues Produkt
+        <input class="sc-text-input" list="sc-closeout-products" data-role="closeout-new-product" value="${escapeHtml(fields.newProduct)}">
+      </label>
+      ${productDatalistMarkup()}
+      <label class="sc-input-label">Notizen
+        <textarea class="sc-comment-draft" data-role="closeout-notes" rows="3">${escapeHtml(fields.notes)}</textarea>
+      </label>`;
+  }
+
+  function closeoutCommissionMarkup(entryType, fields) {
+    if (entryType === "vertrag") {
+      const total = calcContractCommission({ products: fields.products, status: fields.contractStatus }, state.sharedSettings.data || {});
+      return `<div class="sc-closeout-commission">Provision: <strong>${total.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</strong></div>`;
+    }
+    if (entryType === "tarifwechsel") {
+      const canCalc = fields.changeType && fields.context;
+      const total = canCalc ? calcTariffCommission({ changeType: fields.changeType, context: fields.context }, state.sharedSettings.data || {}) : null;
+      return `<div class="sc-closeout-commission">Provision: <strong>${total === null ? "–" : total.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €"}</strong></div>`;
+    }
+    return "";
+  }
+
+  function renderCloseoutPanel(call) {
+    if (!state.closeout || state.closeout.callId !== callIdOf(call)) return "";
+    const { entryType, fields, status, error } = state.closeout;
+
+    if (status === "done") {
+      return `<div class="sc-closeout sc-closeout-done">✓ ${escapeHtml(CLOSEOUT_TYPE_LABEL[entryType] || entryType)} gespeichert.</div>`;
+    }
+
+    const typeButtons = ["notiz", "lead", "vertrag", "tarifwechsel"].map((type) =>
+      `<button type="button" class="sc-chip ${entryType === type ? "is-active" : ""}" data-action="closeout-type" data-value="${type}">${CLOSEOUT_TYPE_LABEL[type]}</button>`
+    ).join("");
+
+    let fieldsMarkup = "";
+    let submitDisabled = false;
+    if (entryType === "notiz") fieldsMarkup = closeoutNotizFieldsMarkup(fields);
+    else if (entryType === "lead") fieldsMarkup = closeoutLeadFieldsMarkup(fields);
+    else if (entryType === "vertrag") { fieldsMarkup = closeoutVertragFieldsMarkup(fields); submitDisabled = state.sharedSettings.status !== "ok"; }
+    else if (entryType === "tarifwechsel") { fieldsMarkup = closeoutTarifwechselFieldsMarkup(fields); submitDisabled = state.sharedSettings.status !== "ok"; }
+
+    return `
+      <div class="sc-closeout">
+        <div class="sc-closeout-head"><span class="sc-closeout-title">Abschluss erfassen</span></div>
+        <div class="sc-closeout-chipgroup">${typeButtons}</div>
+        <label class="sc-input-label">Kundenname
+          <input class="sc-text-input" data-role="closeout-customer-name" value="${escapeHtml(fields.customerName)}">
+        </label>
+        <label class="sc-input-label">Kundennummer
+          <input class="sc-text-input" data-role="closeout-customer-number" value="${escapeHtml(fields.customerNumber)}">
+        </label>
+        ${fieldsMarkup}
+        <label class="sc-input-label">Jira-Ticket
+          <input class="sc-text-input" data-role="closeout-jira-ticket" value="${escapeHtml(fields.jiraTicket)}">
+        </label>
+        ${closeoutCommissionMarkup(entryType, fields)}
+        ${error ? `<p class="sc-cockpit-mismatch">${escapeHtml(error)}</p>` : ""}
+        <button type="button" class="sc-primary-button" data-action="closeout-submit" ${status === "saving" || submitDisabled ? "disabled" : ""}>${status === "saving" ? "Speichert …" : "Speichern"}</button>
+      </div>`;
   }
 
   // --- Rückrufliste -----------------------------------------------------------
@@ -1640,6 +1952,7 @@
         ${details ? `<p class="sc-callback-meta">${escapeHtml(details)}</p>` : ""}
         ${renderCustomerSearchButton(call, "sc-secondary-button")}
         ${renderOutcomeBar(call)}
+        ${renderCloseoutPanel(call)}
       </section>`;
   }
 
@@ -1779,6 +2092,8 @@
     state.supabaseSession = null;
     state.supabaseAuth = { name: "", pin: "", busy: false, error: "" };
     state.customerCard = null;
+    state.closeout = null;
+    state.sharedSettings = { status: "idle", data: null, error: "" };
     if (state.ticket) hydrateAiFromCache(state.ticket);
     render();
     toast("Alle lokalen Daten wurden gelöscht.");
@@ -2689,6 +3004,46 @@
       case "generate-call-prep": generateCallPrep(); return;
       case "copy-call-prep": copyText(callPrepAsText(), "Gesprächsvorbereitung kopiert."); return;
       case "call-outcome": applyOutcome(control.dataset.outcome); return;
+      case "closeout-type":
+        if (state.closeout) {
+          state.closeout.entryType = control.dataset.value;
+          if (control.dataset.value === "vertrag" || control.dataset.value === "tarifwechsel") maybeLoadSharedSettings();
+          render();
+        }
+        return;
+      case "closeout-toggle-product": {
+        if (state.closeout) {
+          const name = control.dataset.product;
+          const products = state.closeout.fields.products;
+          const idx = products.indexOf(name);
+          if (idx >= 0) products.splice(idx, 1); else products.push(name);
+          render();
+        }
+        return;
+      }
+      case "closeout-set-lead-status":
+        if (state.closeout) { state.closeout.fields.status = control.dataset.value; render(); }
+        return;
+      case "closeout-set-lead-priority":
+        if (state.closeout) { state.closeout.fields.priority = control.dataset.value; render(); }
+        return;
+      case "closeout-set-contract-status":
+        if (state.closeout) { state.closeout.fields.contractStatus = control.dataset.value; render(); }
+        return;
+      case "closeout-set-contract-laufzeit":
+        if (state.closeout) {
+          state.closeout.fields.laufzeitMonate = control.dataset.value ? Number(control.dataset.value) : null;
+          render();
+        }
+        return;
+      case "closeout-set-tarif-changetype":
+        if (state.closeout) { state.closeout.fields.changeType = control.dataset.value; render(); }
+        return;
+      case "closeout-set-tarif-context":
+        if (state.closeout) { state.closeout.fields.context = control.dataset.value; render(); }
+        return;
+      case "closeout-refresh-settings": maybeLoadSharedSettings({ forceRefresh: true }); return;
+      case "closeout-submit": await submitCloseout(); return;
       case "add-callback": addCurrentTicketToCallbacks(); return;
       case "dial-callback": dialCallback(control.dataset.callbackId); return;
       case "snooze-callback": snoozeCallback(control.dataset.callbackId, Number(control.dataset.snooze) || 3600000); return;
@@ -2717,6 +3072,23 @@
     else if (role === "set-supabase-anon-key") state.settings.supabaseAnonKey = event.target.value;
     else if (role === "sb-login-name") state.supabaseAuth.name = event.target.value;
     else if (role === "sb-login-pin") state.supabaseAuth.pin = event.target.value;
+    else if (role && role.indexOf("closeout-") === 0 && state.closeout) {
+      const f = state.closeout.fields;
+      const value = event.target.value;
+      if (role === "closeout-title") f.title = value;
+      else if (role === "closeout-content") { f.content = value; f.contentTouched = true; }
+      else if (role === "closeout-customer-name") f.customerName = value;
+      else if (role === "closeout-customer-number") f.customerNumber = value;
+      else if (role === "closeout-phone") f.phone = value;
+      else if (role === "closeout-topic") f.topic = value;
+      else if (role === "closeout-notes") f.notes = value;
+      else if (role === "closeout-jira-ticket") f.jiraTicket = value;
+      else if (role === "closeout-old-product") f.oldProduct = value;
+      else if (role === "closeout-new-product") f.newProduct = value;
+      else if (role === "closeout-followup-date") f.followUpDate = value;
+      else if (role === "closeout-contract-date") f.contractDate = value;
+      else if (role === "closeout-change-date") f.changeDate = value;
+    }
   }
 
   // ---------------------------------------------------------------------------

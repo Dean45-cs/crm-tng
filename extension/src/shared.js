@@ -212,6 +212,52 @@
     return Number.isNaN(d.getTime()) ? "unbekannt" : d.toLocaleDateString("de-DE");
   }
 
+  // ---------------------------------------------------------------------------
+  // Provisions-Mathematik (Stufe 3, KONZEPT-INTEGRATION.md) — exakter
+  // Nachbau von src/lib/utils.ts (CRM-Repo, Zeile 63-83), keine
+  // Neuinterpretation: dieselbe Formel wie im CRM, sonst weichen die im
+  // Abschluss-Panel angezeigten Provisionen von der Wahrheit im CRM ab.
+  // ---------------------------------------------------------------------------
+
+  function getProductCommission(settings, productName) {
+    const products = (settings && settings.products) || [];
+    const match = products.find((p) => p && p.name === productName);
+    return (match && Number(match.commission)) || 0;
+  }
+
+  function calcContractCommission(contract, settings) {
+    if (!contract || contract.status === "storniert") return 0;
+    const products = Array.isArray(contract.products) ? contract.products : [];
+    return products.reduce((sum, p) => sum + getProductCommission(settings, p), 0);
+  }
+
+  function calcTariffCommission(change, settings) {
+    const matrix = (settings && settings.tariffCommission) || {};
+    const byType = change && matrix[change.changeType];
+    const value = byType && change && byType[change.context];
+    return typeof value === "number" ? value : 0;
+  }
+
+  // Feste Kategorie-Reihenfolge, damit der Produkt-Picker immer gleich sortiert ist.
+  const PRODUCT_CATEGORY_ORDER = ["Privat", "Business", "Zusatz"];
+
+  function groupProductsByCategory(products) {
+    const list = Array.isArray(products) ? products : [];
+    return PRODUCT_CATEGORY_ORDER.map((category) => ({
+      category,
+      products: list.filter((p) => p && p.category === category)
+    })).filter((group) => group.products.length > 0);
+  }
+
+  // Heutiges Datum als YYYY-MM-DD in lokaler Zeit (nicht UTC) — Vorbelegung
+  // für Vertragsdatum/Tarifwechseldatum im Abschluss-Panel.
+  function todayIso() {
+    const d = new Date();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${month}-${day}`;
+  }
+
   app.shared = {
     escapeHtml,
     extensionAlive,
@@ -230,6 +276,11 @@
     dueCallbacks,
     customerSearchUrl,
     jiraTicketUrl,
-    formatDateDE
+    formatDateDE,
+    getProductCommission,
+    calcContractCommission,
+    calcTariffCommission,
+    groupProductsByCategory,
+    todayIso
   };
 })();

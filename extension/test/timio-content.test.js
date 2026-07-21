@@ -141,6 +141,9 @@ function run() {
 
   // 11) Gesprächsergebnis: in timio geklickt, in Jira verarbeitet. Das
   //     Content-Script legt es nur als Staffelstab in den Storage.
+  //     "not-reached" existiert nur im Outbound-Wortschatz (Stufe 3) — für
+  //     dieses Szenario zurück auf outbound schalten.
+  env.clickControl("mode-outbound");
   env.setPageText([
     "AB",
     "Anna Beispiel",
@@ -255,5 +258,105 @@ async function runCallsWritePath() {
   console.log("timio-content.test.js (Anruf-Schreibpfad): alle Szenarien bestanden.");
 }
 
+// Abschluss-Panel (Stufe 3, KONZEPT-INTEGRATION.md) — eigener, async
+// Durchlauf mit injiziertem supabaseClient-Stub, gleiche Technik wie
+// runCallsWritePath() oben.
+async function runCloseoutWritePath() {
+  const env = makeSandbox();
+  loadScripts(env.sandbox, ["src/config.js", "src/shared.js"]);
+
+  const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
+  const sharedSettingsFixture = {
+    products: [
+      { name: "Fibrelight", category: "Privat", commission: 7.5 },
+      { name: "Basic 1000", category: "Business", commission: 40 }
+    ],
+    tariffCommission: {
+      sidegrade: { mvlz_gt3: 0, mvlz_lt3: 5, outside_mvlz: 5 },
+      upgrade: { mvlz_gt3: 5, mvlz_lt3: 7.5, outside_mvlz: 7.5 }
+    }
+  };
+  env.sandbox.SupportCopilot.supabaseClient = {
+    customerCard: async () => ({ ok: false, reason: "not-configured" }),
+    startCall: async () => ({ ok: true, id: "call-1" }),
+    endCall: async () => ({ ok: true }),
+    fetchSharedSettings: async () => ({ ok: true, data: sharedSettingsFixture }),
+    insertNote: async (fields) => { inserted.notiz.push(fields); return { ok: true, id: "note-1" }; },
+    insertLead: async (fields) => { inserted.lead.push(fields); return { ok: true, id: "lead-1" }; },
+    insertContract: async (fields) => { inserted.vertrag.push(fields); return { ok: true, id: "contract-1" }; },
+    insertTariffChange: async (fields) => { inserted.tarifwechsel.push(fields); return { ok: true, id: "tariff-1" }; }
+  };
+
+  loadScripts(env.sandbox, ["src/timio-content.js"]);
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  // 1) Outbound "Mailbox" (kein echter Gesprächsinhalt) -> kein Abschluss-Panel.
+  env.setPageText([
+    "AB", "Anna Beispiel", "+49 (176) 34573586",
+    "Eingehender Anruf",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Kundennummer: 12345"
+  ].join("\n"));
+  env.tick();
+  env.clickControl("mode-outbound");
+  env.setPageText([
+    "AB", "Anna Beispiel", "+49 (176) 34573586",
+    "Beendet",
+    "Dauer: 1:00",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Kundennummer: 12345"
+  ].join("\n"));
+  env.tick();
+  env.clickControl("outcome", { outcome: "mailbox" });
+  assert.ok(!env.getOverlay().innerHTML.includes("tc-closeout"), "Mailbox hat keinen Gesprächsinhalt und öffnet kein Abschluss-Panel");
+
+  // 2) Outbound "Erreicht & geklärt" -> Panel öffnet mit Notiz vorausgewählt.
+  env.clickControl("outcome", { outcome: "reached-done" });
+  assert.ok(env.getOverlay().innerHTML.includes("tc-closeout"), "\"Erreicht & geklärt\" öffnet das Abschluss-Panel");
+  assert.ok(env.getOverlay().innerHTML.includes('data-role="closeout-title"'), "Notiz ist der Standard-Eintragstyp");
+
+  // 3) Inbound-Anruf ohne jeden Klick -> Panel öffnet automatisch.
+  env.clickControl("mode-inbound");
+  env.setPageText([
+    "CD", "Chris Demo", "+49 (176) 99999999",
+    "Eingehender Anruf",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Kundennummer: 54321"
+  ].join("\n"));
+  env.tick();
+  env.setPageText([
+    "CD", "Chris Demo", "+49 (176) 99999999",
+    "Beendet",
+    "Dauer: 0:45",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Kundennummer: 54321"
+  ].join("\n"));
+  env.tick();
+  assert.ok(env.getOverlay().innerHTML.includes("tc-closeout"), "Inbound öffnet das Panel ohne Klick auf einen Outcome-Button");
+
+  // Dedup: ein Typwechsel bleibt über weitere ticks() hinweg erhalten, statt
+  // beim nächsten Tick auf den Default zurückgesetzt zu werden.
+  env.clickControl("closeout-type", { value: "lead" });
+  env.tick();
+  env.tick();
+  assert.ok(env.getOverlay().innerHTML.includes('data-role="closeout-topic"'), "Typwechsel auf Lead übersteht weitere ticks() (kein erneutes Öffnen)");
+
+  // 4) Typ auf Vertrag wechseln, Produkt togglen, absenden -> insertContract
+  //    genau einmal mit den erwarteten Feldern.
+  env.clickControl("closeout-type", { value: "vertrag" });
+  await flush();
+  env.clickControl("closeout-toggle-product", { product: "Fibrelight" });
+  assert.ok(env.getOverlay().innerHTML.includes("7.50"), "Provisions-Vorschau zeigt die Summe der gewählten Produkte");
+  env.clickControl("closeout-submit");
+  await flush();
+  assert.strictEqual(inserted.vertrag.length, 1, "genau ein insertContract()-Aufruf");
+  assert.strictEqual(inserted.vertrag[0].customerNumber, "54321");
+  assert.deepStrictEqual(Array.from(inserted.vertrag[0].products), ["Fibrelight"]);
+  assert.strictEqual(inserted.vertrag[0].contractStatus, "aktiv", "Default-Status");
+
+  console.log("timio-content.test.js (Abschluss-Panel): alle Szenarien bestanden.");
+}
+
 run();
 runCallsWritePath();
+runCloseoutWritePath();

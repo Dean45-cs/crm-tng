@@ -97,6 +97,88 @@ function run() {
   assert.strictEqual(cardMinimal.contractCount, 0, "fehlende Zählung wird zu 0");
   assert.strictEqual(cardMinimal.jiraTicket, "", "kein Ticket gefunden");
 
+  // Payload-Builder (Stufe 3) — exakte snake_case-Feldnamen, Parität zu
+  // insertContract()/insertTariffChange()/insertNote()/insertLead() in
+  // src/lib/supabaseApi.ts (CRM-Repo).
+  const note = sb.buildNotePayload(
+    { customerNumber: "1000", customerName: "Anna Beispiel", title: "Telefonat", content: "Text", jiraTicket: "TNG-1" },
+    "agent-1",
+    "2024-06-15T10:00:00.000Z"
+  );
+  assert.strictEqual(note.customer_number, "1000");
+  assert.strictEqual(note.title, "Telefonat");
+  assert.strictEqual(note.created_by, "agent-1");
+  assert.strictEqual(note.created_at, "2024-06-15T10:00:00.000Z");
+  assert.strictEqual(note.updated_at, "2024-06-15T10:00:00.000Z");
+
+  const noteMinimal = sb.buildNotePayload({ title: "T", content: "C" }, "agent-1", "2024-06-15T10:00:00.000Z");
+  assert.strictEqual(noteMinimal.customer_number, null, "leere Kundennummer wird zu null");
+  assert.strictEqual(noteMinimal.jira_ticket, null, "leeres Jira-Ticket wird zu null");
+
+  const lead = sb.buildLeadPayload(
+    { customerName: "Anna Beispiel", customerNumber: "1000", phone: "+49123", topic: "Frage", status: "neu", priority: "hoch", followUpDate: "2024-07-01" },
+    "agent-1"
+  );
+  assert.strictEqual(lead.customer_name, "Anna Beispiel");
+  assert.strictEqual(lead.priority, "hoch");
+  assert.strictEqual(lead.follow_up_date, "2024-07-01");
+  assert.strictEqual(lead.created_by, "agent-1");
+
+  const leadDefaults = sb.buildLeadPayload({ customerName: "X" }, "agent-1");
+  assert.strictEqual(leadDefaults.status, "neu", "Status-Default");
+  assert.strictEqual(leadDefaults.priority, "normal", "Priority-Default");
+
+  const contract = sb.buildContractPayload(
+    { customerNumber: "1000", customerName: "Anna Beispiel", products: ["Fibrelight"], contractDate: "2024-06-15", contractStatus: "aktiv", laufzeitMonate: 24 },
+    "agent-1"
+  );
+  assert.deepStrictEqual(contract.products, ["Fibrelight"]);
+  assert.strictEqual(contract.contract_date, "2024-06-15");
+  assert.strictEqual(contract.status, "aktiv");
+  assert.strictEqual(contract.laufzeit_monate, 24);
+  assert.strictEqual(contract.created_by, "agent-1");
+
+  // Feldvergleich statt deepStrictEqual – innerhalb der Sandbox neu erzeugte
+  // Arrays haben einen anderen Array-Prototyp als der Test-Realm (siehe
+  // shared.test.js).
+  const contractMinimal = sb.buildContractPayload({ customerNumber: "1000", customerName: "X", contractDate: "2024-06-15" }, "agent-1");
+  assert.ok(Array.isArray(contractMinimal.products) && contractMinimal.products.length === 0, "fehlende Produkte werden zum leeren Array, nicht undefined");
+  assert.strictEqual(contractMinimal.laufzeit_monate, null, "fehlende Laufzeit wird zu null (unbefristet)");
+
+  const tariff = sb.buildTariffChangePayload(
+    { customerNumber: "1000", customerName: "Anna Beispiel", changeType: "upgrade", context: "mvlz_lt3", changeDate: "2024-06-15", oldProduct: "A", newProduct: "B" },
+    "agent-1"
+  );
+  assert.strictEqual(tariff.change_type, "upgrade");
+  assert.strictEqual(tariff.context, "mvlz_lt3");
+  assert.strictEqual(tariff.old_product, "A");
+  assert.strictEqual(tariff.new_product, "B");
+  assert.strictEqual(tariff.exported_at, null, "exported_at ist SharePoint-Export-Sache und bleibt immer null");
+  assert.strictEqual(tariff.created_by, "agent-1");
+
+  const auditPayload = sb.buildAuditLogPayload(
+    { action: "create", entityType: "note", entityId: "n1", entityLabel: "Anna Beispiel", details: { source: "extension" } },
+    "agent-1",
+    "Max Muster"
+  );
+  assert.strictEqual(auditPayload.actor_id, "agent-1");
+  assert.strictEqual(auditPayload.actor_name, "Max Muster");
+  assert.strictEqual(auditPayload.action, "create");
+  assert.strictEqual(auditPayload.entity_type, "note");
+  assert.strictEqual(auditPayload.entity_id, "n1");
+  assert.deepStrictEqual(auditPayload.details, { source: "extension" });
+  assert.strictEqual(auditPayload.created_at, undefined, "created_at wird nicht gesetzt, die Tabelle hat einen DB-Default");
+
+  // shared_settings-Antwort normalisieren.
+  const settings = sb.parseSharedSettingsResponse({
+    products: [{ name: "Fibrelight", category: "Privat", commission: 7.5 }],
+    tariff_commission: { sidegrade: { mvlz_gt3: 0 } }
+  });
+  assert.strictEqual(settings.products.length, 1);
+  assert.deepStrictEqual(settings.tariffCommission, { sidegrade: { mvlz_gt3: 0 } });
+  assert.strictEqual(sb.parseSharedSettingsResponse(null), null, "keine Zeile gefunden");
+  assert.strictEqual(sb.parseSharedSettingsResponse(false), null, "falsy-Wert (kein Treffer aus rows[0]) liefert null");
+
   console.log("supabase.test.js: alle Szenarien bestanden.");
 }
 

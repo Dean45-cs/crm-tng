@@ -109,11 +109,11 @@ im `audit_log`. Die Aufbewahrungsfrist für `calls` ist zu klären (Vorschlag:
 
 ## Ausbaustufen
 
-### Stufe 1 — Der Anrufer bekommt ein Gesicht *(Startpunkt)*
+### Stufe 1 — Der Anrufer bekommt ein Gesicht *(umgesetzt)*
 
 Die Fünf-Sekunden-Frage lösen: Wer ruft an, und was wissen wir über ihn?
 
-- Migration `015_customers.sql` inklusive Backfill
+- Migration `017_customers.sql` inklusive Backfill
 - CRM: `customers` wird geladen und im Store gehalten; `CustomerDetail` zeigt
   auch Kunden ohne Vorgang; `Customers.tsx` listet sie mit
 - Extension: Anbindung an Supabase (siehe „Anmeldung" unten)
@@ -123,21 +123,40 @@ Die Fünf-Sekunden-Frage lösen: Wer ruft an, und was wissen wir über ihn?
   findet das Jira-Ticket künftig über das CRM, weil `jiraTicket` an jedem
   Vorgang hängt.
 
-### Stufe 2 — Der Anruf wird Teil der Akte
+### Stufe 2 — Der Anruf wird Teil der Akte *(umgesetzt)*
 
-- Migration `016_calls.sql`
+- Migration `018_calls.sql`
 - Extension schreibt Anrufe automatisch mit
 - CRM: Anrufhistorie in `CustomerDetail`, Live-Anrufleiste in der Titlebar
 - Damit sieht der Chef erstmals Anrufaufkommen neben Provision
 
-### Stufe 3 — Ein Gespräch, eine Erfassung
+### Stufe 3 — Ein Gespräch, eine Erfassung *(umgesetzt)*
 
 Heute: dreimal dieselbe Kundennummer eintippen (timio-Notiz, Jira-Kommentar,
 CRM-Erfassung). Künftig ein Formular am Gesprächsende, dort wo der Bearbeiter
 ohnehin sitzt — im timio-Cockpit.
 
+Umgesetzt mit allen vier Eintragstypen von Anfang an (Notiz, Lead, Vertrag,
+Tarifwechsel — inklusive nachgebauter Provisionsmathematik und
+Produktkatalog-Anbindung) sowie eigenen Abschluss-Flüssen für ein- und
+ausgehende Anrufe. Jeder erfolgreiche Eintrag wird zusätzlich im
+`audit_log` protokolliert, damit Schreiben über die Extension nicht an der
+DSGVO-Nachvollziehbarkeit vorbeiläuft, die für CRM-eigene Erfassungen
+bereits gilt.
+
+**Mitschreiben während des Gesprächs, nicht erst danach.** Das Cockpit
+bekommt ein freies Notizfeld, das während des laufenden Anrufs offen bleibt —
+Stichpunkte reichen, formuliert wird nicht live. Nach Auflegen macht die
+lokale KI daraus eine polierte **interne Notiz** fürs CRM. Kein Neubau: das
+Notizfeld (`state.ai.callNotes`), das automatische Aufräumen beim Tippen
+(`cleanCallNotes()`) und die Umwandlung in einen Text-Entwurf
+(`useCallDraft()`) existieren im Cockpit bereits für den Jira-Kommentar —
+Stufe 3 verdrahtet denselben Weg zusätzlich auf einen CRM-Notiz-Datensatz statt
+nur auf die Zwischenablage.
+
 Ein Abschluss erzeugt in einem Rutsch:
-- CRM-Eintrag (Notiz, Lead, Vertrag oder Tarifwechsel)
+- CRM-Eintrag (Notiz — aus den Gesprächsstichpunkten von der lokalen KI
+  formuliert —, Lead, Vertrag oder Tarifwechsel)
 - Jira-Ticket-Text in der Zwischenablage (siehe unten)
 - optionale Wiedervorlage
 
@@ -149,6 +168,47 @@ nur das Ziel.
 - Gemeinsames Paket für Typen, Provisionslogik und Design-Tokens
 - Befehlspalette (⌘K) auch in Jira und timio, mit denselben Ergebnissen
 - Die Extension verliert ihren eigenen Produktnamen
+
+### Stufe 5 — Das Cockpit verlässt den Browser
+
+Unabhängig von 3 und 4, sobald 1+2 stehen (also ab jetzt startbar). Das
+Cockpit lebt heute als DOM-Overlay in einem timio- oder Jira-Tab — wechselt
+der Bearbeiter das Fenster (Mail, Slack, ein zweiter Monitor), verschwindet
+es. Ein Browser-Tab kann grundsätzlich nicht außerhalb des Browserfensters
+zeichnen; „immer sichtbar, über allem" ist eine Eigenschaft des
+Betriebssystem-Fensters, keine, die sich in einer Extension nachbauen lässt.
+
+**Lösung: ein kleiner nativer Desktop-Begleiter**, kein Ersatz für die
+Extension, sondern eine zweite, dünne Oberfläche auf denselben Daten:
+
+- Rahmenloses Fenster mit `alwaysOnTop`-Flag (unter Windows `WS_EX_TOPMOST`,
+  unter macOS ein entsprechendes `NSWindowLevel`) — eine Zeile Konfiguration
+  in Tauri oder Electron, keine Betriebssystem-Programmierung.
+- **Tauri statt Electron** empfohlen: nutzt das System-Webview statt ein
+  eigenes Chromium mitzubringen, dadurch spürbar kleinere und genügsamere App.
+- Datenschicht komplett wiederverwendbar: dieselbe Supabase-Realtime-
+  Anbindung auf `calls`, derselbe `customer_card()`-Aufruf, dieselbe Login-
+  Logik wie in `extension/src/supabase.js` — praktisch Copy-Paste in eine
+  andere Hülle, kein neuer Server, keine neue RLS.
+- Login folgt Option **(a)** aus „Anmeldung" unten — dieselbe Entscheidung,
+  die die Extension bereits umsetzt, hier nur ein zweites Mal.
+- Neu ist nur die UI-Schicht: kompakteres Cockpit als heute (Wartefeld kommt
+  weiterhin aus dem Portal-Tab, das bleibt Browser-Aufgabe), plus das
+  Tauri-Projekt-Setup selbst.
+- **Das Notizfeld aus Stufe 3 (Mitschreiben während des Gesprächs → lokale KI
+  → interne Notiz) ist eine harte Anforderung an Stufe 5, kein Nice-to-have.**
+  Es muss im Desktop-Cockpit tatsächlich funktionieren. Tauri nutzt kein
+  Chromium (macOS: WKWebView, Windows: WebView2) — die Prompt API des
+  Host-Webviews scheidet damit als Grundlage aus, unabhängig von diesem
+  konkreten Notizfeld. Das ist der Auslöser für die grundsätzliche
+  Entscheidung „weg von Chrome, hin zu Ollama" (siehe eigener Abschnitt unten)
+  — das Desktop-Cockpit spricht dieselbe lokale Ollama-Instanz an wie die
+  Extension, kein separates Modell nur für Stufe 5.
+
+Der größte reale Aufwand ist nicht der Code, sondern die **Verteilung**:
+macOS verlangt für eine reibungslose Installation eine Notarisierung,
+Windows im Idealfall ein Code-Signing-Zertifikat — sonst Warnmeldungen beim
+ersten Start. Siehe „Offene Punkte" unten.
 
 ## Der Jira-Baustein: Text statt API
 
@@ -188,24 +248,51 @@ Empfehlung: **(a)**, bis (b) verifiziert ist. Der Eindruck „ein Produkt"
 entsteht ohnehin nicht durch gesparte Logins, sondern durch identische Optik
 und gemeinsame Daten.
 
-## Die lokale KI als Dienst der Extension
+## Die lokale KI: weg von Chrome, hin zu einem gemeinsamen Modell
 
-Die Prompt API (`globalThis.LanguageModel`) ist in Extensions verlässlich
-verfügbar. Für normale Webseiten ist ihr Status zu prüfen — falls sie dort
-nicht stabil ist, gilt der robuste Weg:
+**Entscheidung:** Chromes Prompt API (`globalThis.LanguageModel` /
+Gemini Nano) wird abgelöst — nicht nur für Stufe 5 (dort ist sie ohnehin
+nicht verfügbar, siehe dort), sondern überall. Grund ist nicht nur die
+fehlende Verfügbarkeit im Tauri-Webview, sondern auch, dass die heutige
+Lösung selbst schon fragil ist: sie hängt an einem experimentellen
+Chrome-Flag und einem manuellen Modell-Download (`chrome://components`),
+den jede neue Installation einzeln erledigen muss.
 
-**Die Extension stellt dem CRM die KI zur Verfügung.** Ein Content-Script auf
-der CRM-Domain nimmt Anfragen der Seite entgegen, lässt sie durch
-`src/local-ai.js` laufen und gibt das Ergebnis zurück. Das CRM bekommt damit
-KI-Funktionen, ohne selbst eine KI-Schicht zu brauchen — und die Extension
-wird vom Beiwerk zum unverzichtbaren Teil.
+**Neues Fundament: ein lokal installierter Ollama-Dienst**, den Extension
+*und* Desktop-Cockpit gleichermaßen über `localhost` ansprechen — ein
+Modell, ein Verhalten, eine Installation, egal auf welcher Oberfläche
+gerade gearbeitet wird. Modellempfehlung: Gemma 2/3 (2B–4B) oder Qwen2.5 3B
+— ähnliche Größenklasse wie das bisherige Gemini Nano, mit dem der
+bisherige Qualitätseindruck entstanden ist, und für deutsche Texte
+brauchbar.
 
-Die Grenze bleibt scharf:
+**Wichtig: Ollama ist ein eigenständiger Hintergrunddienst, keine
+Zutat des Desktop-Cockpits.** Die Extension bekommt KI-Fähigkeit über
+Ollama unabhängig davon, ob überhaupt jemand die Tauri-App aus Stufe 5
+installiert hat — sonst würde eine heute funktionierende, App-freie
+Extension plötzlich einen nativen App-Download voraussetzen, nur um ihre
+bestehenden KI-Funktionen zu behalten. Fehlt Ollama, degradiert die
+Extension wie heute schon bei fehlender Chrome-KI: klarer Hinweis statt
+Cloud-Fallback, lokale Regelprüfung statt KI-Qualitätscheck.
+
+**Größenordnung ehrlich benannt:** Das ist kein Austausch einer Zeile Code.
+`src/local-ai.js` (36 KB) treibt praktisch jede KI-Funktion der Extension —
+Zusammenfassung, Triage, Antwort-Entwürfe, Qualitätscheck, Team-Doku,
+Anrufvorbereitung. Diese Umstellung ist ein eigenständiges
+Migrationsprojekt neben Stufe 5, nicht Teil davon.
+
+Das CRM bekommt KI-Funktionen weiterhin über die Extension: ein
+Content-Script auf der CRM-Domain nimmt Anfragen der Seite entgegen, leitet
+sie an Ollama weiter (statt wie bisher an `src/local-ai.js`s
+Chrome-API-Aufruf) und gibt das Ergebnis zurück. Das CRM selbst braucht
+weiterhin keine eigene KI-Schicht.
+
+Die Grenze bleibt scharf, ändert sich durch den Modellwechsel nicht:
 
 - Kundendaten ins eigene Supabase — kein Bruch der Zusage, das ist der Ort,
   an dem diese Daten ohnehin leben, mit RLS, Audit-Log und Löschrecht.
 - Ticketinhalte und Gesprächstexte an ein Sprachmodell — ausschließlich
-  auf dem Gerät.
+  auf dem Gerät, jetzt via Ollama statt via Chrome.
 
 ## Offene Punkte
 
@@ -213,9 +300,23 @@ Die Grenze bleibt scharf:
   (Vercel). Diese Domain kommt in `host_permissions` und ans Content-Script.
 - **Verteilung der Extension.** Chrome Web Store, Enterprise-Policy oder
   entpackt geladen? Bestimmt, wie tief integriert werden kann.
-- **Prompt-API-Status für Webseiten** (siehe oben).
+- ~~Prompt-API-Status für Webseiten~~ Hinfällig — Chromes Prompt API wird
+  komplett durch Ollama abgelöst (siehe „Die lokale KI: weg von Chrome").
 - **Aufbewahrungsfrist für `calls`.**
 - **Refresh-Token-Rotation** bei geteilter Sitzung.
+- **Verteilung des Desktop-Cockpits (Stufe 5).** Tauri vs. Electron final
+  entscheiden; Code-Signing/Notarisierung für Windows/macOS klären, sonst
+  Sicherheitswarnungen beim ersten Start. Bestimmt auch den
+  Auto-Update-Mechanismus.
+- **Ollama-Rollout.** Welches Modell genau (Gemma 2/3 vs. Qwen2.5, Größe
+  2B–4B), automatischer Download/Update des Modells oder manueller Schritt
+  bei der Installation, wie die Extension erkennt und meldet, dass Ollama
+  fehlt oder nicht läuft (heute: Hinweis + Regelprüfung statt KI).
+- **Migration von `local-ai.js` auf Ollama.** Eigenständiges Projekt: alle
+  bestehenden KI-Funktionen (Zusammenfassung, Triage, Antwort-Entwürfe,
+  Qualitätscheck, Team-Doku, Anrufvorbereitung) von der Chrome-Prompt-API
+  auf Ollama-Aufrufe umstellen, ohne die heutige Qualität/das Prompting zu
+  verschlechtern.
 
 ## Sicherheitsbefund im CRM-Repo
 

@@ -161,6 +161,9 @@ async function run() {
   // --- Ergebnis aus dem timio-Cockpit ---------------------------------------
   {
     const { env, KEYS } = await mountPanel();
+    // "mailbox" existiert nur im Outbound-Wortschatz (Stufe 3) — der frische
+    // Panel-Start ist standardmäßig inbound.
+    env.click("set-call-mode", { mode: "outbound" });
     // In timio läuft keine lokale KI – der Klick kommt dort nur als
     // Staffelstab über den Storage an und wird hier verarbeitet.
     env.sandbox.chrome.storage.local.set({

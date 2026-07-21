@@ -133,13 +133,17 @@
       // Gesprächsergebnisse für den Ein-Klick-Abschluss. "seed" füllt die
       // Gesprächsnotiz vor, aus der die lokale KI den Jira-Kommentar baut.
       // "followUp: true" legt zusätzlich einen Wiedervorlage-Eintrag an.
+      // "opensPanel: true" öffnet zusätzlich das Abschluss-Panel (Stufe 3,
+      // KONZEPT-INTEGRATION.md) für einen echten CRM-Eintrag — nur bei
+      // Optionen mit echtem Gesprächsinhalt; wer niemanden erreicht hat
+      // (Mailbox, kein Abheben, falsche Nummer), hat nichts zu dokumentieren.
       outcomes: [
-        { id: "reached-done", label: "Erreicht & geklärt", followUp: false, seed: "Kunde telefonisch erreicht. Anliegen besprochen und geklärt. Ergebnis: [ergänzen]." },
-        { id: "reached-callback", label: "Erreicht – Rückruf vereinbart", followUp: true, seed: "Kunde telefonisch erreicht. Rückruf vereinbart für [Datum] um [Uhrzeit]. Offener Punkt: [ergänzen]." },
-        { id: "mailbox", label: "Mailbox", followUp: true, seed: "Kunde telefonisch nicht erreicht, Mailbox erreicht. Keine Nachricht hinterlassen / Nachricht hinterlassen: [ergänzen]. Erneuter Kontaktversuch geplant." },
-        { id: "not-reached", label: "Nicht erreicht", followUp: true, seed: "Kunde telefonisch nicht erreicht (kein Abheben). Erneuter Kontaktversuch geplant." },
-        { id: "wrong-number", label: "Falsche Nummer", followUp: false, seed: "Hinterlegte Rufnummer ist nicht korrekt bzw. gehört nicht zum Kunden. Aktuelle Kontaktdaten müssen ermittelt werden." },
-        { id: "no-interest", label: "Kein Interesse / später", followUp: false, seed: "Kunde wünscht aktuell keine weitere Besprechung des Anliegens. Begründung: [ergänzen]." }
+        { id: "reached-done", label: "Erreicht & geklärt", followUp: false, opensPanel: true, seed: "Kunde telefonisch erreicht. Anliegen besprochen und geklärt. Ergebnis: [ergänzen]." },
+        { id: "reached-callback", label: "Erreicht – Rückruf vereinbart", followUp: true, opensPanel: true, seed: "Kunde telefonisch erreicht. Rückruf vereinbart für [Datum] um [Uhrzeit]. Offener Punkt: [ergänzen]." },
+        { id: "mailbox", label: "Mailbox", followUp: true, opensPanel: false, seed: "Kunde telefonisch nicht erreicht, Mailbox erreicht. Keine Nachricht hinterlassen / Nachricht hinterlassen: [ergänzen]. Erneuter Kontaktversuch geplant." },
+        { id: "not-reached", label: "Nicht erreicht", followUp: true, opensPanel: false, seed: "Kunde telefonisch nicht erreicht (kein Abheben). Erneuter Kontaktversuch geplant." },
+        { id: "wrong-number", label: "Falsche Nummer", followUp: false, opensPanel: false, seed: "Hinterlegte Rufnummer ist nicht korrekt bzw. gehört nicht zum Kunden. Aktuelle Kontaktdaten müssen ermittelt werden." },
+        { id: "no-interest", label: "Kein Interesse / später", followUp: false, opensPanel: false, seed: "Kunde wünscht aktuell keine weitere Besprechung des Anliegens. Begründung: [ergänzen]." }
       ],
       // Abstand bis zum nächsten Versuch, gestaffelt nach Anzahl der bisherigen
       // Versuche: 2 Stunden, 1 Tag, 3 Tage. Danach ist Telefonieren erkennbar
@@ -151,6 +155,20 @@
       // ausgemistet (siehe pruneCallbacks in shared.js).
       maxCallbacks: 100,
       keepDoneDays: 30
+    },
+
+    // Eingehende Gespräche (Stufe 3, KONZEPT-INTEGRATION.md). Eigener,
+    // neutraler Wortschatz statt der Erreichbarkeits-Sprache aus "outbound"
+    // ("Mailbox", "Falsche Nummer" ergeben bei einem eingehenden Anruf
+    // keinen Sinn — wer anruft, hat den Bearbeiter per Definition erreicht).
+    // Alle drei öffnen das Abschluss-Panel: anders als bei ausgehenden
+    // Anrufen gibt es hier keinen "nichts ist passiert"-Fall.
+    inbound: {
+      outcomes: [
+        { id: "resolved", label: "Anliegen geklärt", followUp: false, opensPanel: true, seed: "Anliegen des Kunden geklärt. Ergebnis: [ergänzen]." },
+        { id: "callback-agreed", label: "Rückruf vereinbart", followUp: true, opensPanel: true, seed: "Anliegen aufgenommen. Rückruf vereinbart für [Datum] um [Uhrzeit]. Offener Punkt: [ergänzen]." },
+        { id: "handed-off", label: "Weitergegeben", followUp: true, opensPanel: true, seed: "Anliegen an [Fachabteilung/Kollege] weitergegeben. Rückmeldung erwartet bis [Datum]." }
+      ]
     },
 
     // Lokale Bearbeiter-/Firmenangaben. Fließen in KI-Entwürfe ein, damit

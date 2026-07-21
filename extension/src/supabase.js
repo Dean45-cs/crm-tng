@@ -75,6 +75,103 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Stufe 3 (KONZEPT-INTEGRATION.md, "Ein Gespräch, eine Erfassung") — Payload-
+  // Builder für den Abschluss eines Anrufs. Feldnamen exakt nach den
+  // insertContract()/insertTariffChange()/insertNote()/insertLead()-
+  // Gegenstücken in src/lib/supabaseApi.ts (CRM-Repo): snake_case, leere
+  // Strings werden zu null. Reine Funktionen, kein fetch — direkt testbar.
+  // ---------------------------------------------------------------------------
+
+  function buildNotePayload(fields, createdBy, nowIso) {
+    const now = nowIso || new Date().toISOString();
+    const f = fields || {};
+    return {
+      customer_number: f.customerNumber || null,
+      customer_name: f.customerName || null,
+      title: f.title || "",
+      content: f.content || "",
+      jira_ticket: f.jiraTicket || null,
+      created_at: now,
+      updated_at: now,
+      created_by: createdBy || null
+    };
+  }
+
+  function buildLeadPayload(fields, createdBy) {
+    const f = fields || {};
+    return {
+      customer_name: f.customerName || "",
+      customer_number: f.customerNumber || null,
+      phone: f.phone || null,
+      topic: f.topic || null,
+      status: f.status || "neu",
+      priority: f.priority || "normal",
+      follow_up_date: f.followUpDate || null,
+      notes: f.notes || null,
+      created_by: createdBy || null
+    };
+  }
+
+  function buildContractPayload(fields, createdBy) {
+    const f = fields || {};
+    return {
+      customer_number: f.customerNumber || "",
+      customer_name: f.customerName || "",
+      products: Array.isArray(f.products) ? f.products : [],
+      contract_date: f.contractDate || "",
+      status: f.contractStatus || "aktiv",
+      jira_ticket: f.jiraTicket || null,
+      follow_up_date: f.followUpDate || null,
+      laufzeit_monate: f.laufzeitMonate ?? null,
+      notes: f.notes || null,
+      created_by: createdBy || null
+    };
+  }
+
+  function buildTariffChangePayload(fields, createdBy) {
+    const f = fields || {};
+    return {
+      customer_number: f.customerNumber || "",
+      customer_name: f.customerName || "",
+      change_type: f.changeType || null,
+      context: f.context || null,
+      old_product: f.oldProduct || null,
+      new_product: f.newProduct || null,
+      change_date: f.changeDate || "",
+      jira_ticket: f.jiraTicket || null,
+      notes: f.notes || null,
+      exported_at: null,
+      created_by: createdBy || null
+    };
+  }
+
+  // Gleiche Form wie insertAuditLog() in src/lib/supabaseApi.ts (CRM-Repo).
+  // created_at bewusst nicht gesetzt — die Tabelle hat einen DB-Default.
+  function buildAuditLogPayload(entry, actorId, actorName) {
+    const e = entry || {};
+    return {
+      actor_id: actorId || null,
+      actor_name: actorName || "",
+      action: e.action,
+      entity_type: e.entityType,
+      entity_id: e.entityId ?? null,
+      entity_label: e.entityLabel ?? null,
+      details: e.details ?? null
+    };
+  }
+
+  // shared_settings-Zeile (Produktkatalog + Provisions-Matrix) normalisieren.
+  function parseSharedSettingsResponse(row) {
+    if (!row || typeof row !== "object") return null;
+    return {
+      products: Array.isArray(row.products) ? row.products : [],
+      tariffCommission: row.tariff_commission && typeof row.tariff_commission === "object"
+        ? row.tariff_commission
+        : {}
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // Storage — eigene Wrapper wie in ui.js/timio-content.js (kein gemeinsamer
   // Helfer in shared.js, siehe dortige Konvention).
   // ---------------------------------------------------------------------------
@@ -325,18 +422,215 @@
     }
   }
 
+  // Interner Helfer für die neuen Stufe-3-Inserts: config/session werden vom
+  // Aufrufer übergeben (statt hier erneut aufgelöst), damit ein Aufruf, der
+  // zusätzlich created_by/agent_id aus der Session braucht, sie nicht zweimal
+  // laden muss. Nicht exportiert — customerCard()/startCall()/endCall()
+  // bleiben bewusst unangetastet, dies ist nur für die neuen Inserts.
+  async function insertRow(config, session, table, payload) {
+    try {
+      const res = await fetch(`${config.url}/rest/v1/${table}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: config.anonKey,
+          Authorization: `Bearer ${session.accessToken}`,
+          Prefer: "return=representation"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.status === 401) {
+        clearSession();
+        return { ok: false, reason: "not-logged-in" };
+      }
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
+      }
+
+      const rows = await res.json().catch(() => null);
+      const row = Array.isArray(rows) && rows[0];
+      if (!row) return { ok: false, reason: "error", error: "Eintrag angelegt, aber keine Zeile erhalten." };
+      return { ok: true, id: row.id, row };
+    } catch (error) {
+      return { ok: false, reason: "network", error: String((error && error.message) || error) };
+    }
+  }
+
+  // Protokolliert eine Aktion im audit_log (DSGVO Art. 30) — dieselbe Pflicht,
+  // der logAudit() im CRM für jeden Vertrag/Notiz/Lead/Tarifwechsel schon
+  // nachkommt. Schreiben über die Extension läuft an useStore.ts vorbei, ohne
+  // diese Funktion entstünde eine Lücke im Audit-Trail für extension-erfasste
+  // Einträge. Fire-and-forget vom Aufrufer erwartet: ein Fehler hier darf die
+  // eigentliche Erfassung nie blockieren.
+  async function insertAuditLog(entry) {
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    const payload = buildAuditLogPayload(entry, session.userId, session.displayName);
+    return insertRow(config, session, "audit_log", payload);
+  }
+
+  async function insertNote(fields) {
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    const payload = buildNotePayload(fields, session.userId);
+    const res = await insertRow(config, session, "notes", payload);
+    if (res.ok) {
+      insertAuditLog({
+        action: "create",
+        entityType: "note",
+        entityId: res.id,
+        entityLabel: (fields && (fields.customerName || fields.title)) || "",
+        details: { source: "extension" }
+      }).catch(() => {});
+    }
+    return res;
+  }
+
+  async function insertLead(fields) {
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    const payload = buildLeadPayload(fields, session.userId);
+    const res = await insertRow(config, session, "leads", payload);
+    if (res.ok) {
+      insertAuditLog({
+        action: "create",
+        entityType: "lead",
+        entityId: res.id,
+        entityLabel: (fields && fields.customerName) || "",
+        details: { source: "extension" }
+      }).catch(() => {});
+    }
+    return res;
+  }
+
+  async function insertContract(fields) {
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    const payload = buildContractPayload(fields, session.userId);
+    const res = await insertRow(config, session, "contracts", payload);
+    if (res.ok) {
+      insertAuditLog({
+        action: "create",
+        entityType: "contract",
+        entityId: res.id,
+        entityLabel: (fields && fields.customerName) || "",
+        details: { source: "extension" }
+      }).catch(() => {});
+    }
+    return res;
+  }
+
+  async function insertTariffChange(fields) {
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    const payload = buildTariffChangePayload(fields, session.userId);
+    const res = await insertRow(config, session, "tariff_changes", payload);
+    if (res.ok) {
+      insertAuditLog({
+        action: "create",
+        entityType: "tariff_change",
+        entityId: res.id,
+        entityLabel: (fields && fields.customerName) || "",
+        details: { source: "extension" }
+      }).catch(() => {});
+    }
+    return res;
+  }
+
+  // Produktkatalog + Provisions-Matrix — ändern sich selten (nur manuell im
+  // CRM-Einstellungsbildschirm), deshalb ein Modul-Cache ohne TTL statt bei
+  // jedem Öffnen des Abschluss-Panels neu zu laden.
+  let sharedSettingsCache = null; // { data }
+
+  async function fetchSharedSettings(opts) {
+    const forceRefresh = Boolean(opts && opts.forceRefresh);
+    if (sharedSettingsCache && !forceRefresh) {
+      return { ok: true, data: sharedSettingsCache.data, cached: true };
+    }
+
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    try {
+      const res = await fetch(`${config.url}/rest/v1/shared_settings?id=eq.1&select=products,tariff_commission`, {
+        method: "GET",
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${session.accessToken}`
+        }
+      });
+
+      if (res.status === 401) {
+        // Ein abgelaufenes Login ist ein Signal, das nicht durch einen
+        // vorhandenen Cache überdeckt werden darf.
+        clearSession();
+        return { ok: false, reason: "not-logged-in" };
+      }
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        const error = (errJson && errJson.message) || `HTTP ${res.status}`;
+        if (sharedSettingsCache) return { ok: true, data: sharedSettingsCache.data, cached: true, stale: true };
+        return { ok: false, reason: "error", error };
+      }
+
+      const rows = await res.json().catch(() => null);
+      const data = parseSharedSettingsResponse(Array.isArray(rows) && rows[0]);
+      if (!data) return { ok: false, reason: "error", error: "Keine Einstellungen gefunden." };
+      sharedSettingsCache = { data };
+      return { ok: true, data, cached: false };
+    } catch (error) {
+      // Kurzer Netzwerk-Hänger soll Vertrag/Tarifwechsel nicht blockieren,
+      // solange schon einmal erfolgreich geladen wurde.
+      if (sharedSettingsCache) return { ok: true, data: sharedSettingsCache.data, cached: true, stale: true };
+      return { ok: false, reason: "network", error: String((error && error.message) || error) };
+    }
+  }
+
   app.supabaseClient = {
     pinToPassword,
     nameToEmail,
     parseTokenResponse,
     isSessionExpired,
     parseCustomerCardResponse,
+    buildNotePayload,
+    buildLeadPayload,
+    buildContractPayload,
+    buildTariffChangePayload,
+    buildAuditLogPayload,
+    parseSharedSettingsResponse,
     loadSession,
     login,
     logout,
     ensureFreshSession,
     customerCard,
     startCall,
-    endCall
+    endCall,
+    insertNote,
+    insertLead,
+    insertContract,
+    insertTariffChange,
+    insertAuditLog,
+    fetchSharedSettings
   };
 })();
