@@ -90,7 +90,9 @@ const DEFAULT_SETTINGS: Settings = {
   products: DEFAULT_PRODUCTS,
   tariffCommission: DEFAULT_TARIFF_COMMISSION,
   monthlyTarget: 500,
-  jiraBaseUrl: 'https://jira.tng.de/browse/',
+  // Muss zur tatsächlich verlinkten Jira-Instanz passen (JiraLink nutzt
+  // diesen Wert; ennit ist der IT-Dienstleister hinter dem TNG-Jira).
+  jiraBaseUrl: 'https://jira.ennit.de/browse/',
   spClientId: '',
   spTenantId: '',
   spFilePath: '',
@@ -140,6 +142,12 @@ interface StoreState {
   setCustomerOwner: (customerNumber: string, ownerKey: string) => Promise<void>;
   shareCustomer: (customerNumber: string, withUserKey: string) => Promise<void>;
   unshareCustomer: (customerNumber: string, withUserKey: string) => Promise<void>;
+  /**
+   * Besitz an eine andere Person übertragen; die bisherige Besitzer:in bleibt
+   * als geteilte Nutzer:in eingetragen. Ein einzelner Schreibvorgang, damit
+   * RLS (nur aktuelle:r Besitzer:in/Chef:in darf ändern) nicht verletzt wird.
+   */
+  transferCustomer: (customerNumber: string, newOwnerKey: string) => Promise<void>;
 
   addIncentive: (i: Omit<Incentive, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateIncentive: (id: string, i: Partial<Incentive>) => Promise<void>;
@@ -237,6 +245,8 @@ export const useStore = create<StoreState>()((set, get) => ({
               monthlyTarget: settingsRes.user.monthlyTarget,
               spClientId: settingsRes.user.spClientId,
               spTenantId: settingsRes.user.spTenantId,
+              spFilePath: settingsRes.user.spFilePath,
+              spSheetName: settingsRes.user.spSheetName,
             }
           : {}),
       };
@@ -574,13 +584,17 @@ export const useStore = create<StoreState>()((set, get) => ({
 
   shareCustomer: async (kdnr, withUserKey) => {
     const prev = get().customerOwners;
-    const existing = prev[kdnr];
-    if (!existing) return;
-    if (existing.owner === withUserKey) return;
-    if (existing.sharedWith.includes(withUserKey)) return;
+    // Auch implizite Besitzverhältnisse (abgeleitet aus dem ältesten Vorgang)
+    // auflösen und in EINEM Upsert festschreiben — zwei getrennte Writes
+    // („erst Owner anlegen, dann teilen") können sich überholen.
+    const eff = getEffectiveOwnership(kdnr, prev, get().contracts, get().tariffChanges, get().notes);
+    const owner = eff.owner ?? currentUserKey();
+    if (!owner) return;
+    if (owner === withUserKey) return;
+    if (eff.sharedWith.includes(withUserKey)) return;
     const next: CustomerOwnership = {
-      ...existing,
-      sharedWith: [...existing.sharedWith, withUserKey],
+      owner,
+      sharedWith: [...eff.sharedWith.filter((k) => k !== owner), withUserKey],
     };
     set({ customerOwners: { ...prev, [kdnr]: next } });
     try {
@@ -606,6 +620,25 @@ export const useStore = create<StoreState>()((set, get) => ({
       toast.success('Freigabe entfernt.');
     } catch (e) {
       fail('Freigabe konnte nicht entfernt werden.', e);
+      set({ customerOwners: prev });
+    }
+  },
+
+  transferCustomer: async (kdnr, newOwnerKey) => {
+    const prev = get().customerOwners;
+    const eff = getEffectiveOwnership(kdnr, prev, get().contracts, get().tariffChanges, get().notes);
+    const prevOwner = eff.owner ?? currentUserKey();
+    if (!prevOwner || prevOwner === newOwnerKey) return;
+    const sharedWith = Array.from(
+      new Set([...eff.sharedWith, prevOwner]),
+    ).filter((k) => k !== newOwnerKey);
+    const next: CustomerOwnership = { owner: newOwnerKey, sharedWith };
+    set({ customerOwners: { ...prev, [kdnr]: next } });
+    try {
+      await upsertOwnership(kdnr, newOwnerKey, sharedWith);
+      toast.success('Besitz übertragen.');
+    } catch (e) {
+      fail('Besitz konnte nicht übertragen werden.', e);
       set({ customerOwners: prev });
     }
   },

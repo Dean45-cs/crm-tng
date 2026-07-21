@@ -27,13 +27,17 @@ export const parseLocalDate = (iso: string): Date => {
   return new Date(iso);
 };
 
-export const formatDate = (iso?: string): string => {
-  if (!iso) return '–';
-  return parseLocalDate(iso).toLocaleDateString('de-DE', {
+/** Formatiert ein lokales Date-Objekt als TT.MM.JJJJ — ohne UTC-Umweg. */
+export const formatDateObj = (d: Date): string =>
+  d.toLocaleDateString('de-DE', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
   });
+
+export const formatDate = (iso?: string): string => {
+  if (!iso) return '–';
+  return formatDateObj(parseLocalDate(iso));
 };
 
 /** Heutiges Datum als YYYY-MM-DD in lokaler Zeit (nicht UTC). */
@@ -277,7 +281,7 @@ export const buildContractJiraDoc = (
   if (contract.laufzeitMonate) {
     const end = contractEndDate(full);
     lines.push(
-      `Laufzeit: ${contract.laufzeitMonate} Monate${end ? ` (Ende: ${formatDate(end.toISOString().slice(0, 10))})` : ''}`,
+      `Laufzeit: ${contract.laufzeitMonate} Monate${end ? ` (Ende: ${formatDateObj(end)})` : ''}`,
     );
   } else {
     lines.push('Laufzeit: Unbefristet');

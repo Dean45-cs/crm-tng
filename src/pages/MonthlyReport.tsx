@@ -26,20 +26,25 @@ export function MonthlyReport() {
   const currentUser = useAuth((s) => s.getCurrentUser());
   const { navigate } = useRouter();
 
+  // Persönlicher Monatsabschluss: nur die eigenen Vorgänge. Der Bericht trägt
+  // den Namen der angemeldeten Person und misst gegen IHR Monatsziel — Team-
+  // Zahlen gehören in den Team-Bericht (Chef-Bereich).
+  const myKey = currentUser?.key;
+
   const monthContracts = useMemo(
     () =>
       contracts
-        .filter((c) => isSameMonth(c.contractDate))
+        .filter((c) => (!myKey || c.createdBy === myKey) && isSameMonth(c.contractDate))
         .sort((a, b) => a.contractDate.localeCompare(b.contractDate)),
-    [contracts],
+    [contracts, myKey],
   );
 
   const monthTariffs = useMemo(
     () =>
       tariffChanges
-        .filter((t) => isSameMonth(t.changeDate))
+        .filter((t) => (!myKey || t.createdBy === myKey) && isSameMonth(t.changeDate))
         .sort((a, b) => a.changeDate.localeCompare(b.changeDate)),
-    [tariffChanges],
+    [tariffChanges, myKey],
   );
 
   const contractsTotal = monthContracts.reduce(

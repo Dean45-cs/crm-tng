@@ -187,7 +187,7 @@ export function Leaderboard() {
                       </div>
                       <div className="row between" style={{ marginTop: 6 }}>
                         <span className="muted" style={{ fontSize: 11.5 }}>
-                          {r.deals} Abschluss{r.deals === 1 ? '' : 'e'}
+                          {r.deals} {r.deals === 1 ? 'Abschluss' : 'Abschlüsse'}
                         </span>
                         <span className="muted" style={{ fontSize: 11.5 }}>
                           Gesamt: {formatCurrency(r.totalCommission)}

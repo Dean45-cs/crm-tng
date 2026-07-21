@@ -227,10 +227,10 @@ export function CustomerDetail({ kdnr }: Props) {
                     <td>{formatDate(c.contractDate)}</td>
                     <td>
                       <div className="product-chips">
-                        {c.products.map((p) => {
+                        {c.products.map((p, i) => {
                           const cat = settings.products.find((x) => x.name === p)?.category;
                           return (
-                            <span key={p} className={`product-chip cat-${cat}`}>
+                            <span key={`${p}-${i}`} className={`product-chip cat-${cat}`}>
                               {p}
                             </span>
                           );

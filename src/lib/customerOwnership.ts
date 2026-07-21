@@ -29,7 +29,7 @@ export function getEffectiveOwnership(
   const candidates: { createdAt: string; createdBy?: string }[] = [
     ...contracts.filter((c) => c.customerNumber === kdnr).map((c) => ({ createdAt: c.createdAt, createdBy: c.createdBy })),
     ...tariffChanges.filter((t) => t.customerNumber === kdnr).map((t) => ({ createdAt: t.createdAt, createdBy: t.createdBy })),
-    ...notes.filter((n) => n.customerNumber === kdnr).map((n) => ({ createdAt: n.createdAt, createdBy: undefined })),
+    ...notes.filter((n) => n.customerNumber === kdnr).map((n) => ({ createdAt: n.createdAt, createdBy: n.createdBy })),
   ];
   const earliest = candidates
     .filter((x) => x.createdBy)

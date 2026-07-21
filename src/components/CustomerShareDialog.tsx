@@ -19,8 +19,9 @@ export function CustomerShareDialog({ customerNumber, customerName, onClose }: P
     setCustomerOwner,
     shareCustomer,
     unshareCustomer,
+    transferCustomer,
   } = useStore();
-  const { users, currentUserKey } = useAuth();
+  const { users, currentUserKey, isManager } = useAuth();
 
   const ownership = useMemo(
     () => getEffectiveOwnership(customerNumber, customerOwners, contracts, tariffChanges, notes),
@@ -32,33 +33,26 @@ export function CustomerShareDialog({ customerNumber, customerName, onClose }: P
   );
 
   const isOwner = ownership.owner === currentUserKey;
-  const canManage = isOwner || ownership.owner === null;
-
-  const ensureExplicitOwnership = () => {
-    if (!ownership.isImplicit) return;
-    const ownerKey = ownership.owner ?? currentUserKey;
-    if (!ownerKey) return;
-    setCustomerOwner(customerNumber, ownerKey);
-  };
+  // Chef:innen dürfen Freigaben fremder Kunden verwalten — die RLS erlaubt
+  // ihnen das ausdrücklich (siehe „ownership update owner or manager").
+  const canManage = isOwner || ownership.owner === null || isManager();
 
   const toggleShare = (userKey: string) => {
     if (!canManage) return;
-    ensureExplicitOwnership();
     const isShared = ownership.sharedWith.includes(userKey);
     if (isShared) {
       unshareCustomer(customerNumber, userKey);
     } else {
+      // shareCustomer löst implizite Besitzverhältnisse selbst auf und
+      // schreibt Owner + Freigabe in einem einzigen Upsert.
       shareCustomer(customerNumber, userKey);
     }
   };
 
   const transferOwnership = (newOwnerKey: string) => {
     if (!canManage) return;
-    if (!confirm(`Besitz an ${users[newOwnerKey]?.displayName} übertragen? Du wirst dann nur noch als geteilter Nutzer geführt.`)) return;
-    setCustomerOwner(customerNumber, newOwnerKey);
-    if (currentUserKey && currentUserKey !== newOwnerKey) {
-      shareCustomer(customerNumber, currentUserKey);
-    }
+    if (!confirm(`Besitz an ${users[newOwnerKey]?.displayName} übertragen? Die bisherige Besitzer:in wird dann als geteilte:r Nutzer:in geführt.`)) return;
+    transferCustomer(customerNumber, newOwnerKey);
   };
 
   const claimOwnership = () => {

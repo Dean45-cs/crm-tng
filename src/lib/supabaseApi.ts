@@ -238,6 +238,32 @@ export async function upsertUserProfile(
   if (error) throw error;
 }
 
+/**
+ * Login-Zeitstempel setzen, OHNE das bestehende Profil zu überschreiben.
+ * Der frühere Upsert beim Login hat display_name mit der gerade eingetippten
+ * Schreibweise überschrieben (Login als "max" → Anzeigename wurde "max").
+ * Fehlt das Profil noch (z.B. abgebrochene Erst-Registrierung), wird es
+ * angelegt.
+ */
+export async function touchUserLogin(
+  id: string,
+  key: string,
+  displayName: string,
+): Promise<void> {
+  const sb = getSupabase();
+  const { data, error } = await sb.from('users').select('id').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (data) {
+    const { error: ue } = await sb
+      .from('users')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('id', id);
+    if (ue) throw ue;
+  } else {
+    await upsertUserProfile(id, key, displayName);
+  }
+}
+
 export async function updateUserFlags(
   id: string,
   patch: { onboardingCompleted?: boolean; leaderboardOptIn?: boolean },
@@ -463,6 +489,8 @@ interface UserSettingsRow {
   monthly_target: number;
   sp_client_id: string;
   sp_tenant_id: string;
+  sp_file_path: string | null;
+  sp_sheet_name: string | null;
 }
 
 interface SharedSettingsRow {
@@ -472,7 +500,10 @@ interface SharedSettingsRow {
 }
 
 export async function fetchSettings(userId: string): Promise<{
-  user: Pick<Settings, 'monthlyTarget' | 'spClientId' | 'spTenantId'> | null;
+  user: Pick<
+    Settings,
+    'monthlyTarget' | 'spClientId' | 'spTenantId' | 'spFilePath' | 'spSheetName'
+  > | null;
   shared: Pick<Settings, 'products' | 'tariffCommission'> | null;
 }> {
   const sb = getSupabase();
@@ -493,6 +524,8 @@ export async function fetchSettings(userId: string): Promise<{
           monthlyTarget: Number(userRow.monthly_target),
           spClientId: userRow.sp_client_id ?? '',
           spTenantId: userRow.sp_tenant_id ?? '',
+          spFilePath: userRow.sp_file_path ?? '',
+          spSheetName: userRow.sp_sheet_name || 'Tabelle1',
         }
       : null,
     shared: sharedRow
@@ -506,7 +539,9 @@ export async function fetchSettings(userId: string): Promise<{
 
 export async function upsertUserSettings(
   userId: string,
-  patch: Partial<Pick<Settings, 'monthlyTarget' | 'spClientId' | 'spTenantId'>>,
+  patch: Partial<
+    Pick<Settings, 'monthlyTarget' | 'spClientId' | 'spTenantId' | 'spFilePath' | 'spSheetName'>
+  >,
 ): Promise<void> {
   const payload: Record<string, unknown> = {
     user_id: userId,
@@ -515,6 +550,8 @@ export async function upsertUserSettings(
   if (patch.monthlyTarget !== undefined) payload.monthly_target = patch.monthlyTarget;
   if (patch.spClientId !== undefined) payload.sp_client_id = patch.spClientId;
   if (patch.spTenantId !== undefined) payload.sp_tenant_id = patch.spTenantId;
+  if (patch.spFilePath !== undefined) payload.sp_file_path = patch.spFilePath;
+  if (patch.spSheetName !== undefined) payload.sp_sheet_name = patch.spSheetName;
   const { error } = await getSupabase()
     .from('user_settings')
     .upsert(payload, { onConflict: 'user_id' });

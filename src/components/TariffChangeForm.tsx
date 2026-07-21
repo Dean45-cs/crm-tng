@@ -262,8 +262,7 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
             style={{
               padding: '10px 14px',
               borderRadius: 10,
-              background:
-                'linear-gradient(135deg, rgba(0,102,179,0.08), rgba(0,163,224,0.08))',
+              background: 'var(--tng-gradient-soft)',
               border: '1px solid rgba(0,102,179,0.18)',
               display: 'flex',
               justifyContent: 'space-between',
@@ -314,7 +313,15 @@ export function TariffChangeForm({ open, editing, prefill, onClose }: Props) {
             <button
               className="btn btn-ghost btn-sm"
               type="button"
-              onClick={() => setShowProducts(true)}
+              onClick={() => {
+                setShowProducts(true);
+                // Angezeigte Vorauswahl auch in den Entwurf übernehmen — sonst
+                // zeigt der Picker "Fibrelight", gespeichert würde aber nichts.
+                update({
+                  oldProduct: draft.oldProduct ?? 'Fibrelight',
+                  newProduct: draft.newProduct ?? 'Fibrepro',
+                });
+              }}
               style={{ alignSelf: 'flex-start' }}
             >
               + Tarife angeben (optional)

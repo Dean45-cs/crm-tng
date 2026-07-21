@@ -183,9 +183,11 @@ export function Dashboard() {
       customer: c.customerName,
       customerNumber: c.customerNumber,
       product:
-        c.products.length === 1
-          ? c.products[0]
-          : `${c.products[0]} +${c.products.length - 1}`,
+        c.products.length === 0
+          ? '–'
+          : c.products.length === 1
+            ? c.products[0]
+            : `${c.products[0]} +${c.products.length - 1}`,
       jira: c.jiraTicket,
       commission: calcContractCommission(c, settings),
       status: c.status,
@@ -219,7 +221,7 @@ export function Dashboard() {
         <defs>
           <linearGradient id="tng-ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#0066b3" />
-            <stop offset="100%" stopColor="#00a3e0" />
+            <stop offset="100%" stopColor="#3a8dd1" />
           </linearGradient>
         </defs>
       </svg>
@@ -447,7 +449,7 @@ function TargetWidget({
               </span>
             </>
           ) : target > 0 ? (
-            <span style={{ color: '#2eb84e', fontWeight: 600 }}>
+            <span style={{ color: 'var(--green)', fontWeight: 600 }}>
               ✓ Ziel erreicht
             </span>
           ) : (
