@@ -233,6 +233,7 @@ export function CustomerDetail({ kdnr }: Props) {
         contracts={contractsList}
         tariffChanges={tariffList}
         notes={notesList}
+        calls={callsList}
       />
 
       <Section

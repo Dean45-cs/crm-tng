@@ -66,10 +66,16 @@
 
   const api = { getProductCommission, calcContractCommission, calcTariffCommission, groupProductsByCategory };
 
+  // Immer global registrieren — davon lesen die Chrome-Extension (klassisches
+  // Script) UND der Vite-Dev-Server/Vitest (natives ESM per Seiteneffekt-
+  // Import, siehe src/lib/utils.ts: dort funktioniert kein echter
+  // `export default`, weil dieselbe Datei auch als Nicht-Modul-Script laufen
+  // muss). Zusätzlich, falls vorhanden, auch module.exports setzen (Node
+  // `require()` in den Extension-Tests) — beide Zweige schließen sich nicht
+  // aus, unterschiedliche Umgebungen brauchen unterschiedliche der beiden Formen.
+  globalThis.StadtnetzCRM = globalThis.StadtnetzCRM || {};
+  globalThis.StadtnetzCRM.commission = api;
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
-  } else {
-    globalThis.StadtnetzCRM = globalThis.StadtnetzCRM || {};
-    globalThis.StadtnetzCRM.commission = api;
   }
 })();

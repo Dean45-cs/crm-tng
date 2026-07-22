@@ -9,11 +9,10 @@ import {
   formatCurrency,
   formatDate,
   isSameMonth,
-  monthKey,
-  monthLabel,
   TARIFF_TYPE_LABEL,
   TARIFF_CONTEXT_LABEL,
 } from '../lib/utils';
+import { monthlySeries, trendPct } from '../lib/teamStats';
 import { TngMark } from '../components/TngLogo';
 
 /**
@@ -56,7 +55,7 @@ export function MonthlyReport() {
     0,
   );
   const grandTotal = contractsTotal + tariffsTotal;
-  const target = settings.monthlyTarget || 0;
+  const target = currentUser?.monthlyTarget || 0;
   const targetReached = target > 0 ? Math.round((grandTotal / target) * 100) : 0;
 
   // ── Vormonat für den Vergleich ────────────────────────────────────────────
@@ -66,22 +65,17 @@ export function MonthlyReport() {
     d.setMonth(d.getMonth() - 1);
     return d;
   }, []);
-  const prevTotal = useMemo(
-    () =>
-      contracts
-        .filter((c) => isSameMonth(c.contractDate, prevRef))
-        .reduce((s, c) => s + calcContractCommission(c, settings), 0) +
-      tariffChanges
-        .filter((t) => isSameMonth(t.changeDate, prevRef))
-        .reduce((s, t) => s + calcTariffCommission(t, settings), 0),
-    [contracts, tariffChanges, settings, prevRef],
+  // Einzige Quelle für Vormonat-Vergleich und 6-Monats-Verlauf (teamStats.ts)
+  // — vorher verglich diese Seite versehentlich gegen die TEAM-Zahlen des
+  // Vormonats (kein myKey-Filter), obwohl der Bericht sich explizit als
+  // persönlicher Monatsabschluss versteht ("nur die eigenen Vorgänge", s.o.).
+  const series = useMemo(
+    () => monthlySeries(contracts, tariffChanges, settings, 6, myKey),
+    [contracts, tariffChanges, settings, myKey],
   );
-  const trendPct =
-    prevTotal > 0
-      ? Math.round(((grandTotal - prevTotal) / prevTotal) * 100)
-      : grandTotal > 0
-        ? 100
-        : 0;
+  const prevPoint = series[series.length - 2];
+  const prevTotal = prevPoint.contractCommission + prevPoint.tariffCommission;
+  const trend = trendPct(grandTotal, prevTotal);
 
   // ── Kennzahlen ────────────────────────────────────────────────────────────
   const activeContracts = monthContracts.filter((c) => c.status !== 'storniert');
@@ -137,25 +131,10 @@ export function MonthlyReport() {
       .slice(0, 5);
   }, [activeContracts, settings]);
 
-  // 6-Monats-Verlauf (inkl. aktuellem Monat)
+  // 6-Monats-Verlauf (inkl. aktuellem Monat) — aus derselben series wie oben.
   const history = useMemo(
-    () =>
-      Array.from({ length: 6 }, (_, i) => {
-        const offset = -5 + i;
-        const ref = new Date();
-        ref.setDate(1);
-        ref.setMonth(ref.getMonth() + offset);
-        const key = monthKey(ref.toISOString());
-        const sum =
-          contracts
-            .filter((c) => monthKey(c.contractDate) === key)
-            .reduce((s, c) => s + calcContractCommission(c, settings), 0) +
-          tariffChanges
-            .filter((t) => monthKey(t.changeDate) === key)
-            .reduce((s, t) => s + calcTariffCommission(t, settings), 0);
-        return { label: monthLabel(offset), sum };
-      }),
-    [contracts, tariffChanges, settings],
+    () => series.map((p) => ({ label: p.month, sum: p.contractCommission + p.tariffCommission })),
+    [series],
   );
 
   const monthName = new Date().toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
@@ -173,9 +152,9 @@ export function MonthlyReport() {
   );
   if (prevTotal > 0) {
     summaryParts.push(
-      trendPct >= 0
-        ? `Das entspricht einer Steigerung von ${trendPct} % gegenüber ${prevMonthName} (${formatCurrency(prevTotal)}).`
-        : `Das liegt ${Math.abs(trendPct)} % unter dem Ergebnis von ${prevMonthName} (${formatCurrency(prevTotal)}).`,
+      trend >= 0
+        ? `Das entspricht einer Steigerung von ${trend} % gegenüber ${prevMonthName} (${formatCurrency(prevTotal)}).`
+        : `Das liegt ${Math.abs(trend)} % unter dem Ergebnis von ${prevMonthName} (${formatCurrency(prevTotal)}).`,
     );
   }
   if (target > 0) {
@@ -243,9 +222,9 @@ export function MonthlyReport() {
           <div className="report-kpi">
             <div className="report-kpi-label">Provision gesamt</div>
             <div className="report-kpi-value">{formatCurrency(grandTotal)}</div>
-            <div className={`report-kpi-sub ${trendPct >= 0 ? 'pos' : 'neg'}`}>
+            <div className={`report-kpi-sub ${trend >= 0 ? 'pos' : 'neg'}`}>
               {prevTotal > 0
-                ? `${trendPct >= 0 ? '+' : ''}${trendPct} % vs. ${prevMonthName}`
+                ? `${trend >= 0 ? '+' : ''}${trend} % vs. ${prevMonthName}`
                 : 'kein Vormonatswert'}
             </div>
           </div>

@@ -3,12 +3,8 @@ import { Crown, Medal, Award, EyeOff, Sparkles, BarChart3 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { SkeletonTable } from '../components/Skeleton';
-import {
-  calcContractCommission,
-  calcTariffCommission,
-  formatCurrency,
-  isSameMonth,
-} from '../lib/utils';
+import { calcContractCommission, calcTariffCommission, formatCurrency, isSameMonth } from '../lib/utils';
+import { agentStats } from '../lib/teamStats';
 
 interface Row {
   key: string;
@@ -27,59 +23,58 @@ export function Leaderboard() {
   const me = currentUserKey ? users[currentUserKey] : null;
   const myOptIn = me?.leaderboardOptIn ?? true;
 
+  // Einzige Quelle für Pro-Mitarbeiter-Provision ist agentStats()
+  // (teamStats.ts) — vorher baute diese Seite dieselbe Aggregation ein
+  // drittes Mal eigenständig nach (TeamDashboard.tsx tat es ein zweites Mal).
+  // Ausnahme: Verträge/Tarifwechsel ohne bekannte:n Ersteller:in (z.B. eine
+  // gelöschte Mitarbeiter:in, created_by wird dann null) laufen weiterhin
+  // unter "Unbekannt", damit ihre Provision im Ranking nicht kommentarlos
+  // verschwindet — das deckt agentStats() nicht ab, da es einen bekannten
+  // agentKey braucht.
   const rows: Row[] = useMemo(() => {
-    const map = new Map<string, Row>();
-    const ensure = (key: string, displayName: string, optedIn: boolean): Row => {
-      let r = map.get(key);
-      if (!r) {
-        r = {
-          key,
-          displayName,
-          monthCommission: 0,
-          totalCommission: 0,
-          deals: 0,
-          isMe: key === currentUserKey,
-          optedIn,
-        };
-        map.set(key, r);
-      }
-      return r;
-    };
-
-    Object.values(users).forEach((u) =>
-      ensure(u.key, u.displayName, u.leaderboardOptIn),
-    );
-
-    contracts.forEach((c) => {
-      const key = c.createdBy ?? '__unknown__';
-      const user = users[key];
-      const row = ensure(
-        key,
-        user?.displayName ?? 'Unbekannt',
-        user?.leaderboardOptIn ?? false,
-      );
-      const com = calcContractCommission(c, settings);
-      row.totalCommission += com;
-      // Stornierte Verträge zählen nicht als Abschluss.
-      if (c.status !== 'storniert') row.deals += 1;
-      if (isSameMonth(c.contractDate)) row.monthCommission += com;
+    const known: Row[] = Object.values(users).map((u) => {
+      const stats = agentStats(u.key, contracts, tariffChanges, settings);
+      return {
+        key: u.key,
+        displayName: u.displayName,
+        monthCommission: stats.monthCommission,
+        totalCommission: stats.totalCommission,
+        deals: stats.totalDeals,
+        isMe: u.key === currentUserKey,
+        optedIn: u.leaderboardOptIn,
+      };
     });
 
-    tariffChanges.forEach((t) => {
-      const key = t.createdBy ?? '__unknown__';
-      const user = users[key];
-      const row = ensure(
-        key,
-        user?.displayName ?? 'Unbekannt',
-        user?.leaderboardOptIn ?? false,
-      );
-      const com = calcTariffCommission(t, settings);
-      row.totalCommission += com;
-      row.deals += 1;
-      if (isSameMonth(t.changeDate)) row.monthCommission += com;
-    });
+    const orphanContracts = contracts.filter((c) => !c.createdBy || !users[c.createdBy]);
+    const orphanTariffs = tariffChanges.filter((t) => !t.createdBy || !users[t.createdBy]);
+    if (orphanContracts.length || orphanTariffs.length) {
+      let monthCommission = 0;
+      let totalCommission = 0;
+      let deals = 0;
+      orphanContracts.forEach((c) => {
+        const com = calcContractCommission(c, settings);
+        totalCommission += com;
+        if (c.status !== 'storniert') deals += 1;
+        if (isSameMonth(c.contractDate)) monthCommission += com;
+      });
+      orphanTariffs.forEach((t) => {
+        const com = calcTariffCommission(t, settings);
+        totalCommission += com;
+        deals += 1;
+        if (isSameMonth(t.changeDate)) monthCommission += com;
+      });
+      known.push({
+        key: '__unknown__',
+        displayName: 'Unbekannt',
+        monthCommission,
+        totalCommission,
+        deals,
+        isMe: false,
+        optedIn: false,
+      });
+    }
 
-    return Array.from(map.values())
+    return known
       .filter((r) => r.optedIn || r.isMe)
       .filter((r) => r.deals > 0 || r.isMe)
       .sort((a, b) => b.monthCommission - a.monthCommission);

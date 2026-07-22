@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Plus, X, AlertTriangle, Coins, ClipboardCopy } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useAuth } from '../store/useAuth';
 import { Modal } from './Modal';
 import { ProductPicker } from './ProductPicker';
 import {
@@ -39,6 +40,10 @@ interface Props {
 
 export function ContractForm({ open, editing, prefill, onClose }: Props) {
   const { addContract, updateContract, settings, contracts, tariffChanges } = useStore();
+  // Provisions-Vorschau misst gegen das PERSÖNLICHE Monatsziel (AuthUser.monthlyTarget
+  // ist überall die Quelle der Wahrheit, siehe teamStats.ts), nicht gegen den
+  // globalen Settings-Wert.
+  const currentUser = useAuth((s) => s.getCurrentUser());
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showMore, setShowMore] = useState(false);
@@ -328,9 +333,9 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
               <span>Gesamt</span>
               <span>{formatCurrency(totalCommission)}</span>
             </div>
-            {settings.monthlyTarget > 0 && (
+            {(currentUser?.monthlyTarget ?? 0) > 0 && (
               <div className="commission-preview-target">
-                = {Math.round((totalCommission / settings.monthlyTarget) * 100)} % deines Monatsziels
+                = {Math.round((totalCommission / (currentUser?.monthlyTarget ?? 0)) * 100)} % deines Monatsziels
               </div>
             )}
           </div>

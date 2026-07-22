@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
-import { FileSignature, ArrowLeftRight, StickyNote, History } from 'lucide-react';
-import type { Contract, TariffChange, Note } from '../types';
+import { FileSignature, ArrowLeftRight, StickyNote, History, Phone } from 'lucide-react';
+import type { Contract, TariffChange, Note, Call } from '../types';
 import { formatDate, TARIFF_TYPE_LABEL } from '../lib/utils';
+import { formatDuration } from '../lib/statusBoard';
 
-type EventKind = 'contract' | 'tariff' | 'note';
+type EventKind = 'contract' | 'tariff' | 'note' | 'call';
 
 interface TimelineEvent {
   id: string;
@@ -17,21 +18,25 @@ const ICON: Record<EventKind, React.ReactNode> = {
   contract: <FileSignature size={13} />,
   tariff: <ArrowLeftRight size={13} />,
   note: <StickyNote size={13} />,
+  call: <Phone size={13} />,
 };
 
 const KIND_LABEL: Record<EventKind, string> = {
   contract: 'Vertrag',
   tariff: 'Tarifwechsel',
   note: 'Notiz',
+  call: 'Anruf',
 };
 
 interface Props {
   contracts: Contract[];
   tariffChanges: TariffChange[];
   notes: Note[];
+  /** Optional — Anrufe sind nicht überall verfügbar (Extension-Historie, Stufe 4). */
+  calls?: Call[];
 }
 
-export function ActivityTimeline({ contracts, tariffChanges, notes }: Props) {
+export function ActivityTimeline({ contracts, tariffChanges, notes, calls = [] }: Props) {
   const events: TimelineEvent[] = useMemo(() => {
     const list: TimelineEvent[] = [
       ...contracts.map((c) => ({
@@ -60,9 +65,18 @@ export function ActivityTimeline({ contracts, tariffChanges, notes }: Props) {
         title: n.title,
         detail: n.content,
       })),
+      ...calls.map((call) => ({
+        id: `call-${call.id}`,
+        kind: 'call' as const,
+        date: call.startedAt,
+        title: KIND_LABEL.call,
+        detail: `${call.direction === 'outbound' ? 'Ausgehend' : 'Eingehend'}${
+          call.durationS != null ? ` · ${formatDuration(call.durationS)}` : ''
+        }`,
+      })),
     ];
     return list.sort((a, b) => b.date.localeCompare(a.date));
-  }, [contracts, tariffChanges, notes]);
+  }, [contracts, tariffChanges, notes, calls]);
 
   if (events.length === 0) return null;
 

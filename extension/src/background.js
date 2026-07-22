@@ -142,7 +142,11 @@ try {
     }
 
     const stale = queueIsStale(queueStats, now);
-    const text = total > MAX_DISPLAY ? `${MAX_DISPLAY}+` : String(total);
+    // Bei veralteten Daten NICHT die letzte bekannte Zahl weiterzeigen – die
+    // sieht identisch zu einer frischen Zahl aus und suggeriert Aktualität,
+    // die nicht (mehr) da ist (z. B. timio-Tab discarded/im Hintergrund
+    // gethrottelt). Statt "3" also "–", dazu weiterhin die graue Farbe.
+    const text = stale ? "–" : (total > MAX_DISPLAY ? `${MAX_DISPLAY}+` : String(total));
     const color = stale ? COLOR_STALE : (total > 0 ? COLOR_WAITING : COLOR_CLEAR);
 
     const lines = [total > 0
@@ -276,6 +280,23 @@ try {
     }
   }
 
+  // Chrome darf lange im Hintergrund liegende Tabs zur Speicherentlastung
+  // "discarden" – das Content-Script (timio-content.js) läuft dann gar nicht
+  // mehr, bis der Tab wieder aktiviert wird, und das Wartefeld friert exakt
+  // beim letzten Stand ein. Der timio-Tab ist aber die einzige Quelle für die
+  // Wartefeld-Zahl, deshalb schließen wir ihn von der Discard-Kandidatur aus.
+  function protectTimioTab(tab) {
+    if (!tab || tab.autoDiscardable === false) return;
+    try {
+      chrome.tabs.update(tab.id, { autoDiscardable: false });
+    } catch (error) { /* Tab verschwunden oder API fehlt */ }
+  }
+
+  async function protectTimioTabs() {
+    const tabs = await queryTabs({ url: TIMIO_MATCH });
+    tabs.forEach(protectTimioTab);
+  }
+
   function ensureAlarm() {
     // Re-evaluiert regelmäßig die Veraltung, auch wenn keine Storage-Änderung
     // kommt (z. B. Portal-Tab geschlossen → Badge soll grau werden).
@@ -285,10 +306,10 @@ try {
   // --- Verdrahtung ---------------------------------------------------------
 
   if (chrome.runtime && chrome.runtime.onInstalled) {
-    chrome.runtime.onInstalled.addListener(() => { ensureAlarm(); refresh({ notify: false }); });
+    chrome.runtime.onInstalled.addListener(() => { ensureAlarm(); refresh({ notify: false }); protectTimioTabs(); });
   }
   if (chrome.runtime && chrome.runtime.onStartup) {
-    chrome.runtime.onStartup.addListener(() => { ensureAlarm(); refresh({ notify: false }); });
+    chrome.runtime.onStartup.addListener(() => { ensureAlarm(); refresh({ notify: false }); protectTimioTabs(); });
   }
 
   if (chrome.storage && chrome.storage.onChanged) {
@@ -319,7 +340,16 @@ try {
 
   if (chrome.alarms && chrome.alarms.onAlarm) {
     chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm && alarm.name === REFRESH_ALARM) refresh({ notify: false });
+      if (alarm && alarm.name === REFRESH_ALARM) { refresh({ notify: false }); protectTimioTabs(); }
+    });
+  }
+
+  // Sobald der timio-Tab neu entsteht oder navigiert (z. B. nach einem
+  // Neustart/Discard-Reload), sofort wieder als nicht-discardable markieren,
+  // statt bis zum nächsten 30s-Alarm zu warten.
+  if (chrome.tabs && chrome.tabs.onUpdated) {
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+      if (tab && tab.url && tab.url.indexOf("ccc.my-phone.cloud") !== -1) protectTimioTab(tab);
     });
   }
 
@@ -337,8 +367,10 @@ try {
 
   app.background.refresh = refresh;
   app.background.focusTimio = focusTimio;
+  app.background.protectTimioTabs = protectTimioTabs;
 
   // Beim ersten Laden sofort einen Stand setzen.
   ensureAlarm();
   refresh({ notify: false });
+  protectTimioTabs();
 })();

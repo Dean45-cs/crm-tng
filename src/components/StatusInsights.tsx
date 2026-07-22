@@ -21,6 +21,7 @@ import {
 } from '../lib/statusBoard';
 import { exportCsv } from '../lib/utils';
 import { logAudit } from '../lib/audit';
+import { KpiTile } from './KpiTile';
 
 type Window = 'today' | 'week' | 'month';
 
@@ -102,28 +103,28 @@ export function StatusInsights() {
       </div>
 
       <div className="team-kpis" style={{ marginBottom: 10 }}>
-        <MiniTile
+        <KpiTile
           icon={<Activity size={15} />}
           accent="green"
           label="Im Dienst"
           value={`${insights.onlineCount}`}
           sub="aktiv, nicht AFK"
         />
-        <MiniTile
+        <KpiTile
           icon={<Coffee size={15} />}
           accent="orange"
           label="AFK / kurz weg"
           value={`${insights.afkCount}`}
           sub="Status gesetzt, abwesend"
         />
-        <MiniTile
+        <KpiTile
           icon={<Users size={15} />}
           accent="blue"
           label="Mit Status"
           value={`${insights.activeCount}`}
           sub={`von ${Object.keys(users).length} im Team`}
         />
-        <MiniTile
+        <KpiTile
           icon={<Timer size={15} />}
           accent="purple"
           label={`Erfasste Zeit · ${STATUS_WINDOW_LABEL[win]}`}
@@ -226,27 +227,3 @@ export function StatusInsights() {
   );
 }
 
-function MiniTile({
-  icon,
-  accent,
-  label,
-  value,
-  sub,
-}: {
-  icon: React.ReactNode;
-  accent: 'blue' | 'orange' | 'purple' | 'green' | 'red';
-  label: string;
-  value: string;
-  sub: string;
-}) {
-  return (
-    <div className="widget team-kpi">
-      <div className="row between" style={{ alignItems: 'flex-start' }}>
-        <div className="team-kpi-label">{label}</div>
-        <span className={`team-kpi-icon accent-${accent}`}>{icon}</span>
-      </div>
-      <div className="team-kpi-value">{value}</div>
-      <div className="team-kpi-sub">{sub}</div>
-    </div>
-  );
-}

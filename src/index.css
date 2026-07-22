@@ -2683,6 +2683,7 @@ table.crm-table td[style*="text-align: right"] {
 .timeline-dot-contract { background: linear-gradient(135deg, var(--tng-blue), var(--tng-blue-light)); }
 .timeline-dot-tariff { background: linear-gradient(135deg, #ff9500, #ff7a00); }
 .timeline-dot-note { background: linear-gradient(135deg, #a855f7, #8b5cf6); }
+.timeline-dot-call { background: linear-gradient(135deg, #34c759, #22a548); }
 .timeline-body {
   flex: 1;
   min-width: 0;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   TrendingUp,
   FileSignature,
@@ -10,6 +10,8 @@ import {
   ArrowDownRight,
   User,
   Users,
+  Phone,
+  Percent,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -28,9 +30,11 @@ import {
   formatCurrency,
   formatDate,
   isSameMonth,
-  monthKey,
-  monthLabel,
 } from '../lib/utils';
+import { monthlySeries, trendPct } from '../lib/teamStats';
+import { fetchCallsSince } from '../lib/supabaseApi';
+import { callVolumeStats, linkCallsToOutcomes, conversionStats } from '../lib/callStats';
+import type { Call } from '../types';
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
 import { FollowUpInbox } from '../components/FollowUpInbox';
@@ -56,6 +60,33 @@ export function Dashboard() {
 
   const [scope, setScope] = useState<Scope>('mine');
   const userKey = currentUser?.key;
+
+  // Anrufe leben nicht im globalen Store (siehe useCalls.ts, Anrufvolumen
+  // kann deutlich höher sein als Verträge/Notizen) — eigener, einmaliger
+  // Fetch seit Monatsbeginn statt eines Realtime-Abos, analog zu
+  // TeamDashboard.tsx.
+  const [monthCalls, setMonthCalls] = useState<Call[] | null>(null);
+  useEffect(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    fetchCallsSince(monthStart)
+      .then(setMonthCalls)
+      .catch(() => setMonthCalls(null));
+  }, []);
+
+  // Abschlussquote Anruf → Vertrag/Tarifwechsel (Stufe 4, KONZEPT-INTEGRATION.md).
+  // Notizen/Leads werden hier bewusst per Store-Snapshot statt reaktivem
+  // Selektor gelesen (siehe Kommentar oben zu allContracts/allTariffChanges) —
+  // sonst würde jedes Notiz-/Lead-Realtime-Update diese Seite neu rendern.
+  const callConversion = useMemo(() => {
+    if (!monthCalls) return null;
+    const scoped = scope === 'mine' && userKey ? monthCalls.filter((c) => c.agentId === userKey) : monthCalls;
+    const { notes, leads } = useStore.getState();
+    const links = linkCallsToOutcomes(scoped, allContracts, allTariffChanges, leads, notes);
+    return conversionStats(links);
+  }, [monthCalls, allContracts, allTariffChanges, scope, userKey]);
+
+  const callVolume = monthCalls ? callVolumeStats(monthCalls, scope === 'mine' ? userKey : undefined) : null;
 
   const todayLabel = new Date().toLocaleDateString('de-DE', {
     weekday: 'long',
@@ -94,38 +125,19 @@ export function Dashboard() {
     contracts.reduce((sum, c) => sum + calcContractCommission(c, settings), 0) +
     tariffChanges.reduce((sum, t) => sum + calcTariffCommission(t, settings), 0);
 
-  const monthContracts = contracts.filter((c) => isSameMonth(c.contractDate));
   const monthTariff = tariffChanges.filter((t) => isSameMonth(t.changeDate));
 
-  const monthCommission =
-    monthContracts.reduce((s, c) => s + calcContractCommission(c, settings), 0) +
-    monthTariff.reduce((s, t) => s + calcTariffCommission(t, settings), 0);
+  // Einzige Quelle für Monats-/Vormonatsprovision und die 6-Monats-Reihe
+  // (siehe teamStats.ts) — vorher hatte diese Seite ihre eigene, leicht
+  // abweichende Kopie derselben Schleife.
+  const series = monthlySeries(contracts, tariffChanges, settings, 6);
+  const currentPoint = series[series.length - 1];
+  const prevPoint = series[series.length - 2];
+  const monthCommission = currentPoint.contractCommission + currentPoint.tariffCommission;
+  const prevMonthCommission = prevPoint.contractCommission + prevPoint.tariffCommission;
+  const trend = trendPct(monthCommission, prevMonthCommission);
 
-  // Vormonat-Vergleich
-  const prevMonthRef = (() => {
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() - 1);
-    return d;
-  })();
-  const prevMonthCommission =
-    contracts
-      .filter((c) => isSameMonth(c.contractDate, prevMonthRef))
-      .reduce((s, c) => s + calcContractCommission(c, settings), 0) +
-    tariffChanges
-      .filter((t) => isSameMonth(t.changeDate, prevMonthRef))
-      .reduce((s, t) => s + calcTariffCommission(t, settings), 0);
-
-  const trendPct =
-    prevMonthCommission > 0
-      ? Math.round(
-          ((monthCommission - prevMonthCommission) / prevMonthCommission) * 100,
-        )
-      : monthCommission > 0
-        ? 100
-        : 0;
-
-  const target = settings.monthlyTarget || 0;
+  const target = currentUser?.monthlyTarget || 0;
   const targetProgress = target > 0 ? Math.min(100, (monthCommission / target) * 100) : 0;
   const remainingToTarget = Math.max(0, target - monthCommission);
 
@@ -136,26 +148,11 @@ export function Dashboard() {
     return last - now.getDate();
   })();
 
-  const chartData = Array.from({ length: 6 }, (_, i) => {
-    const offset = -5 + i;
-    const refDate = new Date();
-    refDate.setDate(1);
-    refDate.setMonth(refDate.getMonth() + offset);
-    const key = monthKey(refDate.toISOString());
-
-    const cSum = contracts
-      .filter((c) => monthKey(c.contractDate) === key)
-      .reduce((s, c) => s + calcContractCommission(c, settings), 0);
-    const tSum = tariffChanges
-      .filter((t) => monthKey(t.changeDate) === key)
-      .reduce((s, t) => s + calcTariffCommission(t, settings), 0);
-
-    return {
-      month: monthLabel(offset),
-      Neuvertrag: Math.round(cSum * 100) / 100,
-      Tarifwechsel: Math.round(tSum * 100) / 100,
-    };
-  });
+  const chartData = series.map((p) => ({
+    month: p.month,
+    Neuvertrag: p.contractCommission,
+    Tarifwechsel: p.tariffCommission,
+  }));
 
   // Top-Produkte
   const productMap = new Map<string, number>();
@@ -303,9 +300,27 @@ export function Dashboard() {
             icon={<Sparkles size={14} />}
             accent="green"
             label="vs. Vormonat"
-            value={`${trendPct > 0 ? '+' : ''}${trendPct} %`}
+            value={`${trend > 0 ? '+' : ''}${trend} %`}
             delta={formatCurrency(prevMonthCommission) + ' im Vormonat'}
-            trend={trendPct > 0 ? 'positive' : trendPct < 0 ? 'negative' : undefined}
+            trend={trend > 0 ? 'positive' : trend < 0 ? 'negative' : undefined}
+          />
+          <KpiWidget
+            icon={<Phone size={14} />}
+            accent="blue"
+            label="Anrufe diesen Monat"
+            value={callVolume === null ? '–' : `${callVolume.count}`}
+            delta="von der Extension automatisch erfasst"
+          />
+          <KpiWidget
+            icon={<Percent size={14} />}
+            accent="orange"
+            label="Abschlussquote (Anruf → Vertrag/Tarifwechsel)"
+            value={callConversion?.conversionPct == null ? '–' : `${callConversion.conversionPct} %`}
+            delta={
+              callConversion?.linkedCount
+                ? `${callConversion.linkedCount} von ${callConversion.totalCount} Anrufen`
+                : 'noch keine Verknüpfung diesen Monat'
+            }
           />
         </div>
       </div>

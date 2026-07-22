@@ -957,6 +957,22 @@ export async function fetchCallCountSince(iso: string): Promise<number> {
   return count ?? 0;
 }
 
+/**
+ * Anrufzeilen seit einem Zeitpunkt — für die Anruf-Prozess-Kennzahlen
+ * (Stufe 4, KONZEPT-INTEGRATION.md: "Anruf → Abschluss"). Zeitlich begrenzt
+ * durch den Aufrufer (z.B. Start des 6-Monats-Fensters), keine unbegrenzte
+ * Historie — respektiert dieselbe Volumen-Entscheidung wie oben.
+ */
+export async function fetchCallsSince(iso: string): Promise<Call[]> {
+  const { data, error } = await getSupabase()
+    .from('calls')
+    .select('*')
+    .gte('started_at', iso)
+    .order('started_at', { ascending: false });
+  if (error) throw error;
+  return (data as CallRow[]).map(mapCall);
+}
+
 // ============================================================================
 // CUSTOMER PURGE — Recht auf Vergessenwerden (Art. 17 DSGVO)
 // ============================================================================

@@ -14,7 +14,34 @@ import type {
 // KONZEPT-INTEGRATION.md: "gemeinsames Paket für Typen und
 // Provisionslogik") — einzige Quelle für CRM und Chrome-Extension, damit
 // beide Seiten nie mehr manuell in Sync gehalten werden müssen.
-import commissionShared from '../../extension/src/commission.js';
+//
+// Reiner Seiteneffekt-Import statt `import commissionShared from ...`: die
+// Datei muss auch als klassisches (Nicht-Modul-)Content-Script der
+// Chrome-Extension per <script> geladen werden können, wo `export`-Syntax
+// einen SyntaxError auslösen würde. Sie registriert sich deshalb selbst
+// unter `globalThis.StadtnetzCRM.commission`, was hier ausgelesen wird —
+// funktioniert identisch im Vite-Dev-Server (natives ESM ohne Bundling) und
+// im Produktions-Build (Rollup/esbuild).
+import '../../extension/src/commission.js';
+
+interface CommissionShared {
+  getProductCommission: (settings: Settings, product: ProductType) => number;
+  calcContractCommission: (
+    contract: Pick<Contract, 'products' | 'status'>,
+    settings: Settings,
+  ) => number;
+  calcTariffCommission: (
+    change: Pick<TariffChange, 'changeType' | 'context'>,
+    settings: Settings,
+  ) => number;
+  groupProductsByCategory: (
+    products: Settings['products'],
+  ) => { category: string; products: Settings['products'] }[];
+}
+
+const commissionShared = (
+  globalThis as unknown as { StadtnetzCRM: { commission: CommissionShared } }
+).StadtnetzCRM.commission;
 
 export const formatCurrency = (value: number): string =>
   new Intl.NumberFormat('de-DE', {
@@ -66,12 +93,7 @@ export const TARIFF_CONTEXT_LABEL: Record<TariffContext, string> = {
 };
 
 export const { getProductCommission, calcContractCommission, calcTariffCommission, groupProductsByCategory } =
-  commissionShared as {
-    getProductCommission: (settings: Settings, product: ProductType) => number;
-    calcContractCommission: (contract: Pick<Contract, 'products' | 'status'>, settings: Settings) => number;
-    calcTariffCommission: (change: Pick<TariffChange, 'changeType' | 'context'>, settings: Settings) => number;
-    groupProductsByCategory: (products: Settings['products']) => { category: string; products: Settings['products'] }[];
-  };
+  commissionShared;
 
 export const isSameMonth = (iso: string, ref = new Date()): boolean => {
   const d = parseLocalDate(iso);

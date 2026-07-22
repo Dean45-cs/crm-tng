@@ -35,19 +35,14 @@ import {
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { useRouter } from '../router';
-import {
-  formatCurrency,
-  formatDate,
-  isSameMonth,
-  monthKey,
-  monthLabel,
-  calcContractCommission,
-  calcTariffCommission,
-} from '../lib/utils';
-import { attainmentPct, teamKpis } from '../lib/teamStats';
-import { fetchCallCountSince } from '../lib/supabaseApi';
+import { formatCurrency, formatDate } from '../lib/utils';
+import { agentStats, attainmentPct, teamKpis, monthlySeries, trendPct } from '../lib/teamStats';
+import { fetchCallsSince } from '../lib/supabaseApi';
+import { callVolumeStats, linkCallsToOutcomes, conversionStats } from '../lib/callStats';
 import { SkeletonTable } from '../components/Skeleton';
 import { StatusInsights } from '../components/StatusInsights';
+import { KpiTile } from '../components/KpiTile';
+import type { Call } from '../types';
 
 function initialsOf(name: string): string {
   return name
@@ -89,10 +84,12 @@ interface AgentRow {
   attainment: number | null;
   trendPct: number;
   lastActivity: string;
+  /** Anrufe diesen Monat — null solange der Fetch noch läuft. */
+  callCount: number | null;
 }
 
 export function TeamDashboard() {
-  const { contracts, tariffChanges, leads, settings, loaded } = useStore();
+  const { contracts, tariffChanges, leads, notes, settings, loaded } = useStore();
   const { users, isManager } = useAuth();
   const { navigate } = useRouter();
 
@@ -102,109 +99,74 @@ export function TeamDashboard() {
   );
 
   // Anrufe leben nicht im globalen Store (siehe useCalls.ts, Anrufvolumen
-  // kann deutlich höher sein als Verträge/Notizen) — hier reicht eine reine
-  // Zählung seit Monatsbeginn, ohne Zeilen zu übertragen.
-  const [callsThisMonth, setCallsThisMonth] = useState<number | null>(null);
+  // kann deutlich höher sein als Verträge/Notizen) — eigener, einmaliger
+  // Fetch seit Monatsbeginn statt eines Realtime-Abos. Volle Zeilen (nicht
+  // nur ein Zähler wie vorher), damit Pro-Agent-Aufschlüsselung und die
+  // Anruf-Abschlussquote (Stufe 4) berechnet werden können.
+  const [monthCalls, setMonthCalls] = useState<Call[] | null>(null);
   useEffect(() => {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    fetchCallCountSince(monthStart)
-      .then(setCallsThisMonth)
-      .catch(() => setCallsThisMonth(null));
+    fetchCallsSince(monthStart)
+      .then(setMonthCalls)
+      .catch(() => setMonthCalls(null));
   }, []);
 
+  const teamCallVolume = useMemo(() => (monthCalls ? callVolumeStats(monthCalls) : null), [monthCalls]);
+
+  const teamCallConversion = useMemo(() => {
+    if (!monthCalls) return null;
+    return conversionStats(linkCallsToOutcomes(monthCalls, contracts, tariffChanges, leads, notes));
+  }, [monthCalls, contracts, tariffChanges, leads, notes]);
+
+  // Einzige Quelle für Pro-Mitarbeiter-Provision/Abschlüsse ist agentStats()
+  // (teamStats.ts) — vorher baute diese Seite dieselbe Aggregation komplett
+  // eigenständig nach (mit eigenem Storno-/Monats-Handling), was bei
+  // künftigen Änderungen hätte auseinanderlaufen können. prevCommission wird
+  // durch einen zweiten agentStats()-Aufruf mit dem Vormonat als Referenz
+  // gewonnen, statt eine eigene Vormonats-Schleife zu pflegen.
   const rows = useMemo<AgentRow[]>(() => {
     const now = new Date();
     const prevRef = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-    interface Acc {
-      key: string;
-      displayName: string;
-      role: string;
-      isActive: boolean;
-      target: number;
-      monthContractCom: number;
-      monthTariffCom: number;
-      monthContracts: number;
-      monthTariffs: number;
-      totalCommission: number;
-      totalDeals: number;
-      prevCommission: number;
-      lastActivity: string;
-    }
+    // Letzte Aktivität pro Mitarbeiter:in — reine Anzeige-/Sortierhilfe für
+    // die Tabelle, kein Kennzahlenwert, deshalb hier belassen statt in
+    // teamStats.ts aufgenommen.
+    const lastActivity = new Map<string, string>();
+    const bump = (key: string | undefined, date: string) => {
+      if (!key) return;
+      if (!lastActivity.has(key) || date > (lastActivity.get(key) as string)) lastActivity.set(key, date);
+    };
+    contracts.forEach((c) => bump(c.createdBy, c.contractDate));
+    tariffChanges.forEach((t) => bump(t.createdBy, t.changeDate));
 
-    const map = new Map<string, Acc>();
-    Object.values(users).forEach((u) =>
-      map.set(u.key, {
-        key: u.key,
-        displayName: u.displayName,
-        role: u.role,
-        isActive: u.isActive,
-        target: u.monthlyTarget,
-        monthContractCom: 0,
-        monthTariffCom: 0,
-        monthContracts: 0,
-        monthTariffs: 0,
-        totalCommission: 0,
-        totalDeals: 0,
-        prevCommission: 0,
-        lastActivity: '',
-      }),
-    );
-
-    contracts.forEach((c) => {
-      const r = c.createdBy ? map.get(c.createdBy) : undefined;
-      if (!r) return;
-      const com = calcContractCommission(c, settings);
-      // Stornierte Verträge zählen nicht als Abschluss (konsistent mit agentStats/teamKpis).
-      const counts = c.status !== 'storniert';
-      r.totalCommission += com;
-      if (counts) r.totalDeals += 1;
-      if (c.contractDate > r.lastActivity) r.lastActivity = c.contractDate;
-      if (isSameMonth(c.contractDate, now)) {
-        r.monthContractCom += com;
-        if (counts) r.monthContracts += 1;
-      } else if (isSameMonth(c.contractDate, prevRef)) {
-        r.prevCommission += com;
-      }
-    });
-    tariffChanges.forEach((t) => {
-      const r = t.createdBy ? map.get(t.createdBy) : undefined;
-      if (!r) return;
-      const com = calcTariffCommission(t, settings);
-      r.totalCommission += com;
-      r.totalDeals += 1;
-      if (t.changeDate > r.lastActivity) r.lastActivity = t.changeDate;
-      if (isSameMonth(t.changeDate, now)) {
-        r.monthTariffCom += com;
-        r.monthTariffs += 1;
-      } else if (isSameMonth(t.changeDate, prevRef)) {
-        r.prevCommission += com;
-      }
-    });
-
-    return Array.from(map.values())
-      .map((r) => {
-        const monthCommission = r.monthContractCom + r.monthTariffCom;
-        const monthDeals = r.monthContracts + r.monthTariffs;
-        const trendPct =
-          r.prevCommission > 0
-            ? Math.round(
-                ((monthCommission - r.prevCommission) / r.prevCommission) * 100,
-              )
-            : monthCommission > 0
-              ? 100
-              : 0;
+    return Object.values(users)
+      .map((u) => {
+        const stats = agentStats(u.key, contracts, tariffChanges, settings, now);
+        const prevCommission = agentStats(u.key, contracts, tariffChanges, settings, prevRef).monthCommission;
         return {
-          ...r,
-          monthCommission,
-          monthDeals,
-          attainment: attainmentPct(monthCommission, r.target),
-          trendPct,
+          key: u.key,
+          displayName: u.displayName,
+          role: u.role,
+          isActive: u.isActive,
+          target: u.monthlyTarget,
+          monthContractCom: stats.monthContractCommission,
+          monthTariffCom: stats.monthTariffCommission,
+          monthContracts: stats.monthContracts,
+          monthTariffs: stats.monthTariffs,
+          monthCommission: stats.monthCommission,
+          monthDeals: stats.monthDeals,
+          totalCommission: stats.totalCommission,
+          totalDeals: stats.totalDeals,
+          prevCommission,
+          attainment: attainmentPct(stats.monthCommission, u.monthlyTarget),
+          trendPct: trendPct(stats.monthCommission, prevCommission),
+          lastActivity: lastActivity.get(u.key) ?? '',
+          callCount: monthCalls ? callVolumeStats(monthCalls, u.key).count : null,
         };
       })
       .sort((a, b) => b.monthCommission - a.monthCommission);
-  }, [users, contracts, tariffChanges, settings]);
+  }, [users, contracts, tariffChanges, settings, monthCalls]);
 
   const team = useMemo(() => {
     const monthCommission = rows.reduce((s, r) => s + r.monthCommission, 0);
@@ -216,12 +178,6 @@ export function TeamDashboard() {
     const activeContracts = contracts.filter((c) => c.status === 'aktiv').length;
     const openContracts = contracts.filter((c) => c.status === 'offen').length;
     const convBase = activeContracts + openContracts;
-    const trendPct =
-      prevCommission > 0
-        ? Math.round(((monthCommission - prevCommission) / prevCommission) * 100)
-        : monthCommission > 0
-          ? 100
-          : 0;
     return {
       monthCommission,
       prevCommission,
@@ -232,31 +188,18 @@ export function TeamDashboard() {
       targetSum,
       conversion: convBase > 0 ? Math.round((activeContracts / convBase) * 100) : null,
       activeAgents: rows.filter((r) => r.isActive).length,
-      trendPct,
+      trendPct: trendPct(monthCommission, prevCommission),
     };
   }, [rows, contracts]);
 
-  // Team-Provision der letzten 6 Monate
+  // Team-Provision der letzten 6 Monate (ungefiltert = ganzes Team)
   const trend6 = useMemo(
     () =>
-      Array.from({ length: 6 }, (_, i) => {
-        const offset = -5 + i;
-        const refDate = new Date();
-        refDate.setDate(1);
-        refDate.setMonth(refDate.getMonth() + offset);
-        const key = monthKey(refDate.toISOString());
-        const cSum = contracts
-          .filter((c) => monthKey(c.contractDate) === key)
-          .reduce((s, c) => s + calcContractCommission(c, settings), 0);
-        const tSum = tariffChanges
-          .filter((t) => monthKey(t.changeDate) === key)
-          .reduce((s, t) => s + calcTariffCommission(t, settings), 0);
-        return {
-          month: monthLabel(offset),
-          Verträge: Math.round(cSum * 100) / 100,
-          Tarifwechsel: Math.round(tSum * 100) / 100,
-        };
-      }),
+      monthlySeries(contracts, tariffChanges, settings, 6).map((p) => ({
+        month: p.month,
+        Verträge: p.contractCommission,
+        Tarifwechsel: p.tariffCommission,
+      })),
     [contracts, tariffChanges, settings],
   );
 
@@ -371,8 +314,19 @@ export function TeamDashboard() {
           icon={<Phone size={15} />}
           accent="orange"
           label="Anrufe (Monat)"
-          value={callsThisMonth === null ? '–' : `${callsThisMonth}`}
+          value={teamCallVolume === null ? '–' : `${teamCallVolume.count}`}
           sub="von der Extension automatisch erfasst"
+        />
+        <KpiTile
+          icon={<Percent size={15} />}
+          accent="blue"
+          label="Anruf-Abschlussquote"
+          value={teamCallConversion?.conversionPct == null ? '–' : `${teamCallConversion.conversionPct} %`}
+          sub={
+            teamCallConversion?.linkedCount
+              ? `${teamCallConversion.linkedCount} von ${teamCallConversion.totalCount} Anrufen → Vertrag/Tarifwechsel/Lead/Notiz`
+              : 'noch keine Verknüpfung diesen Monat'
+          }
         />
       </div>
 
@@ -552,6 +506,7 @@ export function TeamDashboard() {
                   <th>Mitarbeiter:in</th>
                   <th style={{ textAlign: 'right' }}>Verträge</th>
                   <th style={{ textAlign: 'right' }}>Tarifw.</th>
+                  <th style={{ textAlign: 'right' }}>Anrufe</th>
                   <th style={{ textAlign: 'right' }}>Provision (Monat)</th>
                   <th style={{ textAlign: 'right' }}>vs. VM</th>
                   <th style={{ textAlign: 'right' }}>Monatsziel</th>
@@ -592,6 +547,7 @@ export function TeamDashboard() {
                     </td>
                     <td style={{ textAlign: 'right' }}>{r.monthContracts}</td>
                     <td style={{ textAlign: 'right' }}>{r.monthTariffs}</td>
+                    <td style={{ textAlign: 'right' }}>{r.callCount ?? '–'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 600 }}>
                       {formatCurrency(r.monthCommission)}
                     </td>
@@ -652,31 +608,6 @@ export function TeamDashboard() {
       >
         <BarChart3 size={13} /> Klicke auf eine Zeile für die Mitarbeiter-Detailansicht.
       </div>
-    </div>
-  );
-}
-
-function KpiTile({
-  icon,
-  accent,
-  label,
-  value,
-  sub,
-}: {
-  icon: React.ReactNode;
-  accent: 'blue' | 'orange' | 'purple' | 'green' | 'red';
-  label: string;
-  value: string;
-  sub: string;
-}) {
-  return (
-    <div className="widget team-kpi">
-      <div className="row between" style={{ alignItems: 'flex-start' }}>
-        <div className="team-kpi-label">{label}</div>
-        <span className={`team-kpi-icon accent-${accent}`}>{icon}</span>
-      </div>
-      <div className="team-kpi-value">{value}</div>
-      <div className="team-kpi-sub">{sub}</div>
     </div>
   );
 }
