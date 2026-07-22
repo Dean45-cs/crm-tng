@@ -3,7 +3,7 @@
   "name": "Stadtnetz CRM Copilot – lokale KI für Jira",
   "version": "0.12.0",
   "description": "KI-gestützter Support-Assistent für klassische Jira-Vorgänge mit timio-Anruferkennung und Call-Cockpit (Anrufer, Gesprächsdauer, Wartefeld, Ticket-Abgleich) sowie Outbound-Modus (Gesprächsvorbereitung, Ergebnis-Erfassung, Rückrufliste). Zusammenfassung, Team-Doku, Einordnung, Antwort-Entwürfe und Qualitätscheck – automatisch, gecacht und vollständig lokal, ohne Cloud.",
-  "permissions": ["storage", "clipboardWrite", "notifications", "alarms", "scripting"],
+  "permissions": ["storage", "clipboardWrite", "notifications", "alarms"],
   "host_permissions": ["https://ccc.my-phone.cloud/*", "https://*.supabase.co/*"],
   "icons": {
     "16": "icons/icon16.png",

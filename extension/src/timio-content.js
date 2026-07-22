@@ -1532,6 +1532,21 @@
     // Chrome-Kontext nicht verfügbar – Script beendet sich beim nächsten Tick.
   }
 
+  // Sofort-Scrape auf Anfrage des Hintergrund-Workers (background.js,
+  // forceQueueScrape): der 1s-Poll-Timer unten wird von Chrome gedrosselt,
+  // sobald der Tab länger im Hintergrund liegt – Nachrichtenzustellung an
+  // Content-Scripts ist davon aber nicht betroffen, deshalb kommt diese
+  // Anfrage auch nach Minuten im Hintergrund sofort an.
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (stopped || !message || message.type !== "sc-scrape-queue") return;
+      const groups = parseQueueGroups(pageText());
+      if (groups.length) persistQueues(groups);
+    });
+  } catch (error) {
+    // Chrome-Kontext nicht verfügbar – Script beendet sich beim nächsten Tick.
+  }
+
   // Beim Schließen des timio-Tabs die Anruferdaten sofort aufräumen, statt sie
   // als verwaisten Eintrag im lokalen Storage liegen zu lassen (Datensparsamkeit).
   // Läuft parallel ein zweiter timio-Tab mit aktivem Call, stellt dessen

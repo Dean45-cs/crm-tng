@@ -297,47 +297,25 @@ try {
     tabs.forEach(protectTimioTab);
   }
 
-  // Läuft im timio-Tab selbst (isolierte Welt, dieselbe wie das Content-Script
-  // – shared.js hängt seine Helfer dort an window.StadtnetzCRM). Bewusst als
-  // benannte Top-Level-Funktion (nicht Closure), weil chrome.scripting sie
-  // serialisiert und im Ziel-Tab neu ausführt – Referenzen auf den
-  // umgebenden Worker-Scope funktionieren dort nicht.
-  function scrapeQueueInPage() {
-    try {
-      const shared = window.StadtnetzCRM && window.StadtnetzCRM.shared;
-      if (!shared || typeof shared.parseQueueGroups !== "function") return null;
-      const text = (document.body && document.body.innerText) || "";
-      return shared.parseQueueGroups(text);
-    } catch (error) {
-      return null;
-    }
-  }
-
-  // Liest das Wartefeld direkt aus dem timio-Tab, statt auf dessen eigenen
-  // (im Hintergrund von Chrome gethrottelten oder ganz stillgelegten)
-  // Poll-Timer zu warten. chrome.scripting.executeScript läuft unabhängig
-  // von Tab-Sichtbarkeit/Throttling – das ist der Unterschied zu
-  // timio-content.js' setInterval, der einschläft, sobald der Tab lange im
-  // Hintergrund liegt. So bleibt die Zahl auch dann aktuell, wenn niemand
-  // den timio-Tab gerade anschaut.
+  // Bittet den timio-Tab per Nachricht um einen Sofort-Scrape des Wartefelds,
+  // statt auf dessen eigenen (im Hintergrund von Chrome gethrottelten) 1s-
+  // Poll-Timer zu warten. chrome.runtime.onMessage-Zustellung läuft anders
+  // als setInterval NICHT unter Chromes Hintergrund-Timer-Drosselung – die
+  // Nachricht kommt also auch nach Minuten im Hintergrund sofort an.
+  //
+  // Bewusst per Message statt chrome.scripting.executeScript: Letzteres
+  // injiziert dynamisch generierten Code und scheitert auf manchen Seiten
+  // (strikte CSP/Trusted Types) mit "An unknown error occurred when fetching
+  // the script". Das deklarativ geladene Content-Script ist davon nicht
+  // betroffen, deshalb läuft die eigentliche Arbeit weiterhin dort
+  // (timio-content.js persistiert bei Bedarf selbst).
   async function forceQueueScrape() {
-    if (!chrome.scripting || !chrome.scripting.executeScript) return;
     const tabs = await queryTabs({ url: TIMIO_MATCH });
-    for (const tab of tabs) {
+    tabs.forEach((tab) => {
       try {
-        const results = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: scrapeQueueInPage
-        });
-        const groups = results && results[0] && results[0].result;
-        // Nur bei tatsächlich erkannten Gruppen schreiben – sonst würde eine
-        // Portal-Unteransicht ohne Wartefeld-Kacheln den letzten bekannten
-        // Stand grundlos auf "leer" zurücksetzen.
-        if (Array.isArray(groups) && groups.length) {
-          setLocal({ [KEYS.queueStats]: { updatedAt: Date.now(), groups } });
-        }
-      } catch (error) { /* Tab discarded/geschlossen/navigiert – nächster Alarm versucht es erneut */ }
-    }
+        chrome.tabs.sendMessage(tab.id, { type: "sc-scrape-queue" }, () => void chrome.runtime.lastError);
+      } catch (error) { /* Tab ohne (noch nicht geladenes) Content-Script – nächster Alarm versucht es erneut */ }
+    });
   }
 
   function ensureAlarm() {
