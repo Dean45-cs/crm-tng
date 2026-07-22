@@ -7,7 +7,7 @@
     escapeHtml, extensionAlive, queueTotalWaiting, queueStaleMinutes, groupsMatch,
     callStatusMeta, callTimerText, callModeMeta, isOutbound, customerSearchUrl,
     jiraTicketUrl, formatDateDE, calcContractCommission,
-    calcTariffCommission, groupProductsByCategory, todayIso
+    calcTariffCommission, groupProductsByCategory, todayIso, parseQueueGroups
   } = app.shared;
   const supabaseClient = app.supabaseClient;
   const CALL_CONFIG = CONFIG.call || {};
@@ -18,7 +18,6 @@
   const QUEUE_STALE_MS = CALL_CONFIG.queueStaleAfterMs || 30000;
   const ENDED_OVERLAY_MS = CALL_CONFIG.endedOverlayMs || 12000;
   const ENDED_OUTBOUND_OVERLAY_MS = CALL_CONFIG.endedOutboundOverlayMs || 45000;
-  const MAX_QUEUE_GROUPS = 8;
 
   const STATUS = { IDLE: "idle", RINGING: "ringing", CONNECTED: "connected", ENDED: "ended" };
 
@@ -276,77 +275,6 @@
   // ausgehenden Anruf. Die Oberfläche bietet daraufhin nur den Moduswechsel an.
   function looksOutbound(state) {
     return Boolean(state && state.status !== STATUS.IDLE && !cameFromRinging);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Wartefeld-Erkennung (Portal-Ansicht). Es werden ausschließlich
-  // Gruppennamen und Zähler gelesen – keine Namen oder Nummern anderer Personen.
-  // ---------------------------------------------------------------------------
-
-  const NOT_A_GROUP_NAME = /^(agenten|wartefeld|ansage|option|aus|an|kontakt|neue gruppe|gruppen|kacheln|sortieren|portal|willkommen|verbunden|im wartefeld|anrufe eingang.*|<keine>)$/i;
-
-  function isPlausibleGroupName(line) {
-    if (!line || line.length < 2 || line.length > 60) return false;
-    if (NOT_A_GROUP_NAME.test(line)) return false;
-    if (/^[\d\s:./+-]+$/.test(line)) return false; // nur Zahlen/Zeiten/Nummern
-    return /[a-zäöüß]/i.test(line);
-  }
-
-  function extractWaiting(block) {
-    // Bevorzugt die Kachel "Anrufe Eingang Aktuell / <Zahl> / Im Wartefeld".
-    for (let i = 0; i < block.length; i++) {
-      if (!/^anrufe eingang/i.test(block[i])) continue;
-      for (let j = i + 1; j <= i + 3 && j < block.length; j++) {
-        if (/^\d{1,3}$/.test(block[j])) return Number(block[j]);
-      }
-    }
-    // Fallback: erste alleinstehende Zahl nach dem "Wartefeld"-Label.
-    const idx = block.findIndex((line) => /^wartefeld$/i.test(line));
-    if (idx >= 0) {
-      for (let j = idx + 1; j <= idx + 4 && j < block.length; j++) {
-        if (/^\d{1,3}$/.test(block[j])) return Number(block[j]);
-      }
-    }
-    return null;
-  }
-
-  function extractWaitTimes(block) {
-    const idx = block.findIndex((line) => /^wartefeld$/i.test(line));
-    if (idx < 0) return [];
-    const times = [];
-    for (let j = idx + 1; j <= idx + 6 && j < block.length; j++) {
-      const match = block[j].match(/^\d{1,2}:\d{2}(?::\d{2})?$/);
-      if (match) times.push(match[0]);
-      if (times.length === 2) break;
-    }
-    return times;
-  }
-
-  function parseQueueGroups(text) {
-    const lines = pageLines(text);
-    const agentIdxs = [];
-    lines.forEach((line, i) => { if (/^agenten$/i.test(line)) agentIdxs.push(i); });
-
-    const groups = [];
-    for (let g = 0; g < agentIdxs.length && groups.length < MAX_QUEUE_GROUPS; g++) {
-      const start = agentIdxs[g];
-      const nextStart = g + 1 < agentIdxs.length ? agentIdxs[g + 1] : lines.length + 1;
-      // Die Zeile direkt vor dem nächsten "Agenten"-Label ist bereits der Name
-      // der nächsten Gruppe – daher -1.
-      const block = lines.slice(start, Math.max(start, nextStart - 1));
-      const nameCandidate = start > 0 ? lines[start - 1] : "";
-      const name = isPlausibleGroupName(nameCandidate) ? nameCandidate : `Warteschlange ${g + 1}`;
-      const waiting = extractWaiting(block);
-      if (waiting === null) continue; // Ohne Zähler kein verwertbarer Eintrag.
-      const times = extractWaitTimes(block);
-      groups.push({
-        name: name.slice(0, 60),
-        waiting,
-        currentWait: times[0] || "",
-        avgWait: times[1] || ""
-      });
-    }
-    return groups;
   }
 
   // ---------------------------------------------------------------------------

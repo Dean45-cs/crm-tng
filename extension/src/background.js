@@ -297,6 +297,49 @@ try {
     tabs.forEach(protectTimioTab);
   }
 
+  // Läuft im timio-Tab selbst (isolierte Welt, dieselbe wie das Content-Script
+  // – shared.js hängt seine Helfer dort an window.StadtnetzCRM). Bewusst als
+  // benannte Top-Level-Funktion (nicht Closure), weil chrome.scripting sie
+  // serialisiert und im Ziel-Tab neu ausführt – Referenzen auf den
+  // umgebenden Worker-Scope funktionieren dort nicht.
+  function scrapeQueueInPage() {
+    try {
+      const shared = window.StadtnetzCRM && window.StadtnetzCRM.shared;
+      if (!shared || typeof shared.parseQueueGroups !== "function") return null;
+      const text = (document.body && document.body.innerText) || "";
+      return shared.parseQueueGroups(text);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // Liest das Wartefeld direkt aus dem timio-Tab, statt auf dessen eigenen
+  // (im Hintergrund von Chrome gethrottelten oder ganz stillgelegten)
+  // Poll-Timer zu warten. chrome.scripting.executeScript läuft unabhängig
+  // von Tab-Sichtbarkeit/Throttling – das ist der Unterschied zu
+  // timio-content.js' setInterval, der einschläft, sobald der Tab lange im
+  // Hintergrund liegt. So bleibt die Zahl auch dann aktuell, wenn niemand
+  // den timio-Tab gerade anschaut.
+  async function forceQueueScrape() {
+    if (!chrome.scripting || !chrome.scripting.executeScript) return;
+    const tabs = await queryTabs({ url: TIMIO_MATCH });
+    for (const tab of tabs) {
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: scrapeQueueInPage
+        });
+        const groups = results && results[0] && results[0].result;
+        // Nur bei tatsächlich erkannten Gruppen schreiben – sonst würde eine
+        // Portal-Unteransicht ohne Wartefeld-Kacheln den letzten bekannten
+        // Stand grundlos auf "leer" zurücksetzen.
+        if (Array.isArray(groups) && groups.length) {
+          setLocal({ [KEYS.queueStats]: { updatedAt: Date.now(), groups } });
+        }
+      } catch (error) { /* Tab discarded/geschlossen/navigiert – nächster Alarm versucht es erneut */ }
+    }
+  }
+
   function ensureAlarm() {
     // Re-evaluiert regelmäßig die Veraltung, auch wenn keine Storage-Änderung
     // kommt (z. B. Portal-Tab geschlossen → Badge soll grau werden).
@@ -306,10 +349,10 @@ try {
   // --- Verdrahtung ---------------------------------------------------------
 
   if (chrome.runtime && chrome.runtime.onInstalled) {
-    chrome.runtime.onInstalled.addListener(() => { ensureAlarm(); refresh({ notify: false }); protectTimioTabs(); });
+    chrome.runtime.onInstalled.addListener(() => { ensureAlarm(); refresh({ notify: false }); protectTimioTabs(); forceQueueScrape(); });
   }
   if (chrome.runtime && chrome.runtime.onStartup) {
-    chrome.runtime.onStartup.addListener(() => { ensureAlarm(); refresh({ notify: false }); protectTimioTabs(); });
+    chrome.runtime.onStartup.addListener(() => { ensureAlarm(); refresh({ notify: false }); protectTimioTabs(); forceQueueScrape(); });
   }
 
   if (chrome.storage && chrome.storage.onChanged) {
@@ -340,7 +383,7 @@ try {
 
   if (chrome.alarms && chrome.alarms.onAlarm) {
     chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm && alarm.name === REFRESH_ALARM) { refresh({ notify: false }); protectTimioTabs(); }
+      if (alarm && alarm.name === REFRESH_ALARM) { refresh({ notify: false }); protectTimioTabs(); forceQueueScrape(); }
     });
   }
 
@@ -368,9 +411,11 @@ try {
   app.background.refresh = refresh;
   app.background.focusTimio = focusTimio;
   app.background.protectTimioTabs = protectTimioTabs;
+  app.background.forceQueueScrape = forceQueueScrape;
 
   // Beim ersten Laden sofort einen Stand setzen.
   ensureAlarm();
   refresh({ notify: false });
   protectTimioTabs();
+  forceQueueScrape();
 })();
