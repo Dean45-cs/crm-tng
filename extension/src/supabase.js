@@ -145,6 +145,59 @@
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Ticket-Zusammenfassung für die Kundenakte
+  //
+  // Wer im CRM eine Kundenakte öffnet, soll den Stand aus Jira dort vorfinden,
+  // ohne selbst nach dem Ticket zu suchen: die KI-Zusammenfassung als Notiz,
+  // mit der Angabe, ob das Ticket noch offen oder schon geschlossen ist.
+  //
+  // Bewusst EINE Notiz je Ticket (nicht je Zusammenfassung): beim erneuten
+  // Zusammenfassen — und genau das passiert, wenn sich am Ticket etwas
+  // geändert hat — wird dieselbe Zeile aktualisiert. Sonst würde die Akte bei
+  // jedem Ticket-Aufruf zuwachsen, statt den aktuellen Stand zu zeigen.
+  // Erkennungsmerkmal für "dieselbe Zeile" ist jira_ticket + dieser Titel.
+  // ---------------------------------------------------------------------------
+
+  const TICKET_SUMMARY_TITLE_PREFIX = "Ticket-Zusammenfassung";
+
+  function ticketSummaryNoteTitle(ticketKey) {
+    const key = String(ticketKey || "").trim();
+    return key ? `${TICKET_SUMMARY_TITLE_PREFIX} ${key}` : TICKET_SUMMARY_TITLE_PREFIX;
+  }
+
+  // Statuszeile der Notiz: die Ableitung (Offen/Geschlossen) zuerst, weil sie
+  // in der Akte die eigentliche Frage beantwortet; der Original-Jira-Status
+  // steht in Klammern dahinter, damit die Ableitung nachvollziehbar bleibt.
+  function ticketSummaryStatusLine(resolution) {
+    const res = resolution || {};
+    const label = res.label || "Unbekannt";
+    return res.raw && res.raw !== label ? `Status: ${label} (${res.raw})` : `Status: ${label}`;
+  }
+
+  function ticketSummaryNoteContent(input, nowIso) {
+    const i = input || {};
+    const stamp = new Date(nowIso || Date.now()).toLocaleString("de-DE");
+    const lines = [ticketSummaryStatusLine(i.resolution)];
+    if (i.ticketTitle) lines.push(`Anliegen: ${i.ticketTitle}`);
+    lines.push("", String(i.summary || "").trim(), "");
+    lines.push(`Automatisch aus Jira übernommen (${i.ticketKey || "ohne Ticket"}), Stand ${stamp}.`);
+    return lines.join("\n");
+  }
+
+  // Reiner Builder: aus Ticket + Zusammenfassung die Felder, die insertNote()
+  // ohnehin erwartet (siehe buildNotePayload oben).
+  function buildTicketSummaryNoteFields(input, nowIso) {
+    const i = input || {};
+    return {
+      customerNumber: String(i.customerNumber || "").trim(),
+      customerName: String(i.customerName || "").trim(),
+      title: ticketSummaryNoteTitle(i.ticketKey),
+      content: ticketSummaryNoteContent(i, nowIso),
+      jiraTicket: String(i.ticketKey || "").trim()
+    };
+  }
+
   // Gleiche Form wie insertAuditLog() in src/lib/supabaseApi.ts (CRM-Repo).
   // created_at bewusst nicht gesetzt — die Tabelle hat einen DB-Default.
   function buildAuditLogPayload(entry, actorId, actorName) {
@@ -495,6 +548,132 @@
     return res;
   }
 
+  // Gegenstück zu insertRow für die Aktualisierung einer bekannten Zeile.
+  // Liefert reason "no-row", wenn PostgREST nichts zurückgibt: die Zeile
+  // existiert zwar, darf aber laut RLS ("notes update own", Migration 001)
+  // von diesem Login nicht geändert werden — der Aufrufer legt dann eine
+  // eigene an, statt den Eintrag einer Kollegin zu überschreiben.
+  async function updateRow(config, session, table, id, payload) {
+    try {
+      const res = await fetch(`${config.url}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: config.anonKey,
+          Authorization: `Bearer ${session.accessToken}`,
+          Prefer: "return=representation"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.status === 401) {
+        clearSession();
+        return { ok: false, reason: "not-logged-in" };
+      }
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
+      }
+
+      const rows = await res.json().catch(() => null);
+      const row = Array.isArray(rows) && rows[0];
+      if (!row) return { ok: false, reason: "no-row" };
+      return { ok: true, id: row.id, row };
+    } catch (error) {
+      return { ok: false, reason: "network", error: String((error && error.message) || error) };
+    }
+  }
+
+  // Sucht die eigene Zusammenfassungs-Notiz zu diesem Ticket. created_by wird
+  // mitgefiltert, damit gar nicht erst versucht wird, die Notiz einer anderen
+  // Person zu aktualisieren (die RLS würde das ohnehin ablehnen).
+  async function findOwnTicketSummaryNote(config, session, ticketKey, title) {
+    const query = [
+      `jira_ticket=eq.${encodeURIComponent(ticketKey)}`,
+      `title=eq.${encodeURIComponent(title)}`,
+      `created_by=eq.${encodeURIComponent(session.userId || "")}`,
+      "select=id",
+      "order=created_at.asc",
+      "limit=1"
+    ].join("&");
+
+    try {
+      const res = await fetch(`${config.url}/rest/v1/notes?${query}`, {
+        method: "GET",
+        headers: { apikey: config.anonKey, Authorization: `Bearer ${session.accessToken}` }
+      });
+      if (res.status === 401) {
+        clearSession();
+        return { ok: false, reason: "not-logged-in" };
+      }
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
+      }
+      const rows = await res.json().catch(() => null);
+      const row = Array.isArray(rows) && rows[0];
+      return { ok: true, id: (row && row.id) || null };
+    } catch (error) {
+      return { ok: false, reason: "network", error: String((error && error.message) || error) };
+    }
+  }
+
+  // Schreibt die Zusammenfassung des gerade gelesenen Jira-Tickets in die
+  // Kundenakte — als neue Notiz oder, wenn für dieses Ticket schon eine eigene
+  // existiert, als Aktualisierung derselben Zeile. Ohne Kundennummer wird
+  // nichts geschrieben: eine Notiz ohne Kundenbezug taucht in keiner Akte auf
+  // und wäre nur ein Datensatz ohne Zweck.
+  async function upsertTicketSummaryNote(input) {
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    const fields = buildTicketSummaryNoteFields(input);
+    if (!fields.customerNumber) return { ok: false, reason: "no-customer" };
+    if (!fields.jiraTicket) return { ok: false, reason: "no-ticket" };
+
+    const found = await findOwnTicketSummaryNote(config, session, fields.jiraTicket, fields.title);
+    if (!found.ok && found.reason === "not-logged-in") return found;
+
+    if (found.ok && found.id) {
+      const patched = await updateRow(config, session, "notes", found.id, {
+        customer_number: fields.customerNumber,
+        customer_name: fields.customerName || null,
+        title: fields.title,
+        content: fields.content,
+        updated_at: new Date().toISOString()
+      });
+      if (patched.ok) {
+        insertAuditLog({
+          action: "update",
+          entityType: "note",
+          entityId: patched.id,
+          entityLabel: fields.customerName || fields.title,
+          details: { source: "extension", origin: "jira-summary", ticket: fields.jiraTicket, resolution: (input && input.resolution && input.resolution.id) || "" }
+        }).catch(() => {});
+        return { ok: true, id: patched.id, created: false };
+      }
+      // "no-row" (fremde Notiz) fällt bewusst auf den Insert unten durch,
+      // jeder andere Fehler wird gemeldet.
+      if (patched.reason !== "no-row") return patched;
+    }
+
+    const payload = buildNotePayload(fields, session.userId);
+    const res = await insertRow(config, session, "notes", payload);
+    if (res.ok) {
+      insertAuditLog({
+        action: "create",
+        entityType: "note",
+        entityId: res.id,
+        entityLabel: fields.customerName || fields.title,
+        details: { source: "extension", origin: "jira-summary", ticket: fields.jiraTicket, resolution: (input && input.resolution && input.resolution.id) || "" }
+      }).catch(() => {});
+      return { ok: true, id: res.id, created: true };
+    }
+    return res;
+  }
+
   async function insertLead(fields) {
     const config = await getEffectiveSupabaseConfig();
     if (!config) return { ok: false, reason: "not-configured" };
@@ -746,6 +925,8 @@
     buildContractPayload,
     buildTariffChangePayload,
     buildAuditLogPayload,
+    buildTicketSummaryNoteFields,
+    ticketSummaryNoteTitle,
     parseSharedSettingsResponse,
     loadSession,
     login,
@@ -755,6 +936,7 @@
     startCall,
     endCall,
     insertNote,
+    upsertTicketSummaryNote,
     insertLead,
     insertContract,
     insertTariffChange,

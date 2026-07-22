@@ -193,6 +193,11 @@
       // Lokale Meldung, sobald ein vereinbarter Rückruf fällig wird. Je
       // Eintrag genau einmal.
       notifyCallbacks: true,
+      // Schreibt jede fertige Ticket-Zusammenfassung als Notiz in die
+      // Kundenakte des CRM (eine Notiz je Ticket, inkl. offen/geschlossen).
+      // Standardmäßig an – sonst bliebe der Stand im Browser-Tab hängen.
+      // Greift nur bei erkannter Kundennummer und bestehender CRM-Anmeldung.
+      syncTicketSummaryToCrm: true,
       // Überschreibt CONFIG.jira.customerSearchJql, falls im eigenen Jira ein
       // passenderes Feld existiert (z. B. "Oikonomikos-ID" ~ "{q}").
       customerSearchJql: "",

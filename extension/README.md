@@ -14,7 +14,7 @@ Das Panel gliedert sich in drei Bereiche: **Übersicht**, **Antwort** und **Call
 - **KI-Einordnung** – automatische Analyse von Stimmung, Dringlichkeit, Kategorie und Kundenwunsch inkl. empfohlenem nächsten Schritt. Läuft automatisch, sobald das Modell bereit ist.
 - **Eskalations-Erkennung** – bei verärgerter Stimmung oder hoher Dringlichkeit erscheint ein Hinweis mit Ein-Klick-Button **„Deeskalierend antworten"**, der direkt einen passenden E-Mail-Entwurf startet.
 - **Nächster Schritt** – eine Karte mit sofortiger, deterministischer Schnellregel (ein Klick übernimmt die passende Notiz-Vorlage in den Antwort-Tab) plus KI-Handlungsempfehlung mit 2–4 konkreten Schritten aus Status, Beschreibung und Kommentaren.
-- **Ticket-Zusammenfassung** – vier klare Punkte (Anliegen, Stand, Kundenergebnis, nächster Schritt), live gestreamt.
+- **Ticket-Zusammenfassung** – vier klare Punkte (Anliegen, Stand, Kundenergebnis, nächster Schritt), live gestreamt. Sie wandert zusätzlich als Notiz in die **Kundenakte des CRM**, zusammen mit dem Vermerk, ob das Ticket **offen oder geschlossen** ist – eine Notiz je Ticket, beim erneuten Zusammenfassen aktualisiert statt verdoppelt. Nur bei erkannter Kundennummer (Oikonomikos-Feld) und bestehender CRM-Anmeldung; abschaltbar in den Einstellungen.
 - **Team-Doku** – vollständiger Übergabetext (Anliegen, Verlauf, aktueller Stand, wichtige Fakten, offene Punkte, empfohlener nächster Schritt), damit jeder Kollege das Ticket ohne Rückfrage übernehmen kann. Lässt sich kopieren oder direkt als Kommentar-Entwurf übernehmen. Zeigt bei einer erneuten Doku zusätzlich einen Abschnitt „Neu seit letztem Mal", falls sich das Ticket seitdem verändert hat.
 - **Übersetzung** – erkennt fremdsprachige Kundentexte und übersetzt die Beschreibung ins Deutsche.
 - **Automatisch & gecacht** – Einordnung, Zusammenfassung und Team-Doku laufen automatisch im Hintergrund, sobald das Modell bereit ist, und werden lokal pro Ticket gespeichert. Ein bereits besuchtes Ticket zeigt seinen letzten Stand sofort, ohne erneut auf die KI zu warten. Hat sich der Ticketinhalt seither geändert, markiert ein Hinweis „Ticket aktualisiert" die betroffene Karte.
@@ -30,6 +30,7 @@ Das Panel gliedert sich in drei Bereiche: **Übersicht**, **Antwort** und **Call
 
 **Einstellungen** (Zahnrad oben im Panel)
 - Name, Team und E-Mail-Signatur hinterlegen. Diese Angaben fließen in die KI-Entwürfe ein, sodass Kommentare und E-Mails ohne `[Name]`-Platzhalter fertig sind. Sie bleiben ausschließlich im Chrome-Profil.
+- **Ticket-Zusammenfassung in die Kundenakte schreiben** – standardmäßig an; steuert die oben beschriebene Übernahme ins CRM. Abgeschaltet bleibt der Button „In die Kundenakte schreiben" an der Zusammenfassungs-Karte für den Einzelfall erhalten.
 
 Das Panel unterstützt automatisch **hellen und dunklen Modus** (folgt der Systemeinstellung).
 
@@ -117,6 +118,7 @@ Ist die KI nicht verfügbar, zeigt die Extension einen klaren Hinweis und nutzt 
 
 - **Keine API, kein Server, kein Tracking.** Es verlässt nichts den Browser – Datenverarbeitung findet ausschließlich lokal auf dem Gerät statt. Der einzige Hintergrundprozess ist der Service-Worker fürs Symbolleisten-Badge und die Rückruf-Erinnerung; er liest ausschließlich den lokalen `chrome.storage` und spricht mit keinem Netzwerk (siehe unten).
 - Alle KI-Aufgaben (Zusammenfassung, Einordnung, Entwürfe, Umschreiben, Korrektur, Übersetzung) laufen **on-device**.
+- **Ausnahme mit Anmeldung: das eigene CRM.** Ist die Extension am CRM angemeldet (Einstellungen), spricht sie mit dessen Supabase-Projekt – für die Kundenakte beim Anruf, die Erfassung am Gesprächsende und die Übernahme der Ticket-Zusammenfassung. Das sind Daten, die ohnehin ins CRM gehören, gehen an keinen Dritten, und jeder Schreibvorgang steht im `audit_log`. Ohne Anmeldung entfällt das vollständig, die KI-Funktionen bleiben unverändert nutzbar.
 - Ticketinhalte, die an die KI gehen, sind als Daten deklariert; Anweisungen aus Tickettexten werden ignoriert (Schutz vor Prompt-Injection).
 - **Was lokal gespeichert wird** (Chrome Storage, nur im eigenen Chrome-Profil):
   - UI-Zustand (offen/Tab/Ton), Cockpit-Position/-Modus,

@@ -102,6 +102,29 @@ function run() {
   assert.strictEqual(grouped[0].products.length, 2);
   assert.strictEqual(grouped[1].category, "Business");
 
+  // ticketResolution — Grundlage für "offen/geschlossen" in der Kundenakte.
+  // Jira-Workflows benennen Status frei, deshalb wird auf Wortbestandteile
+  // geprüft und im Zweifel "offen" gemeldet.
+  [["Erledigt", "geschlossen"],
+   ["Geschlossen", "geschlossen"],
+   ["Abgeschlossen", "geschlossen"],
+   ["Gelöst", "geschlossen"],
+   ["Done", "geschlossen"],
+   ["Closed", "geschlossen"],
+   ["Storniert", "geschlossen"],
+   ["Offen", "offen"],
+   ["In Bearbeitung", "offen"],
+   ["Warten auf Kunde", "offen"],
+   ["Wiedereröffnet", "offen"]].forEach(([status, expected]) => {
+    assert.strictEqual(shared.ticketResolution(status).id, expected, `Status "${status}"`);
+  });
+  assert.strictEqual(shared.ticketResolution("Erledigt").label, "Geschlossen");
+  assert.strictEqual(shared.ticketResolution("Erledigt").raw, "Erledigt", "Originalstatus bleibt für die Notiz erhalten");
+  assert.strictEqual(shared.ticketResolution("Phantasiestatus").id, "offen", "unbekannter Status gilt als offen, nicht als erledigt");
+  assert.strictEqual(shared.ticketResolution("").id, "unbekannt", "ohne Status keine Behauptung");
+  assert.strictEqual(shared.ticketResolution("Nicht sichtbar").id, "unbekannt", "Platzhalter des Jira-Readers zählt nicht als Status");
+  assert.strictEqual(shared.ticketResolution(null).id, "unbekannt");
+
   // todayIso — Format YYYY-MM-DD.
   assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(shared.todayIso()), "todayIso liefert YYYY-MM-DD");
 

@@ -322,6 +322,9 @@ function makePanelSandbox(options) {
     removeEventListener() {},
     open(url) { openedUrls.push(url); return null; },
     confirm: () => true,
+    // Jede KI-Aufgabe in ui.js läuft an einem AbortController (Ticketwechsel
+    // bricht sie ab). Ein vm-Kontext erbt die Globals des Realms nicht.
+    AbortController,
     chrome: makeChromeStub(sharedBus),
     console
   };

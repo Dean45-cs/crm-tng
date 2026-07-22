@@ -6,7 +6,7 @@
   const {
     escapeHtml, extensionAlive, formatDuration, callTimerText,
     callModeMeta, isOutbound, normalizePhone, nextRetryAt, pruneCallbacks, customerSearchUrl,
-    jiraTicketUrl, formatDateDE, calcContractCommission, calcTariffCommission,
+    jiraTicketUrl, ticketResolution, formatDateDE, calcContractCommission, calcTariffCommission,
     groupProductsByCategory, todayIso
   } = shared;
   const AI = CONFIG.ai;
@@ -57,6 +57,12 @@
     // Produktkatalog + Provisions-Matrix für Vertrag/Tarifwechsel im
     // Abschluss-Panel.
     sharedSettings: { status: "idle", data: null, error: "" },
+    // Übernahme der Ticket-Zusammenfassung in die Kundenakte:
+    // { status: "idle"|"saving"|"ok"|"no-customer"|"error", error, signature,
+    //   customerNumber, resolution, created }. signature ist der Fingerabdruck
+    //  dessen, was zuletzt geschrieben wurde – gleicher Stand, kein zweiter
+    // Schreibvorgang.
+    crmNote: { status: "idle", error: "", signature: "", customerNumber: "", resolution: "", created: false },
     // Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md): ⌘K-Schnellsuche,
     // eigener DOM-Root unabhängig vom Panel. { open, query, groups, status,
     // error, activeIdx } oder null. Eigene Instanz, unabhängig vom Gegenstück
@@ -1071,6 +1077,7 @@
           <span class="sc-local-label">lokale KI</span>
         </div>
         ${body}
+        ${hasText && !running ? renderSummaryCrmStatus() : ""}
         <button class="sc-primary-button" type="button" data-action="generate-summary" ${canRun ? "" : "disabled"}>${regenerateLabel(s, running, hasText, "Zusammenfassung erstellen", "Zusammenfassung erneuern")}</button>
       </section>`;
   }
@@ -2053,6 +2060,10 @@
           <input type="checkbox" data-role="set-notify-callbacks" ${s.notifyCallbacks !== false ? "checked" : ""}>
           <span>Benachrichtigen, wenn ein Rückruf fällig wird<small>Lokale Desktop-Meldung je Eintrag genau einmal, sobald der vereinbarte Zeitpunkt erreicht ist.</small></span>
         </label>
+        <label class="sc-check-label">
+          <input type="checkbox" data-role="set-sync-summary" ${s.syncTicketSummaryToCrm !== false ? "checked" : ""}>
+          <span>Ticket-Zusammenfassung in die Kundenakte schreiben<small>Jede fertige Zusammenfassung landet als Notiz in der Kundenakte des CRM – eine je Ticket, beim erneuten Zusammenfassen aktualisiert, mit dem Vermerk, ob das Ticket offen oder geschlossen ist. Nur bei erkannter Kundennummer und bestehender CRM-Anmeldung.</small></span>
+        </label>
         <label class="sc-input-label">Jira-Suche nach Kundennummer (JQL)
           <input class="sc-text-input" data-role="set-customer-jql" value="${escapeHtml(s.customerSearchJql || "")}" placeholder='${escapeHtml((CONFIG.jira && CONFIG.jira.customerSearchJql) || "")}'>
           <small class="sc-input-hint">Für den Sprung von der Kundennummer zum Ticket. <code>{q}</code> wird durch die Kundennummer ersetzt. Leer lassen nutzt den voreingestellten Abgleich auf dem Oikonomikos-Feld; hier nur überschreiben, falls sich der Feldname mal ändert.</small>
@@ -2099,6 +2110,7 @@
     state.customerCard = null;
     state.closeout = null;
     state.sharedSettings = { status: "idle", data: null, error: "" };
+    state.crmNote = { status: "idle", error: "", signature: "", customerNumber: "", resolution: "", created: false };
     if (state.ticket) hydrateAiFromCache(state.ticket);
     render();
     toast("Alle lokalen Daten wurden gelöscht.");
@@ -2144,6 +2156,126 @@
         <footer class="sc-panel-footer">Verarbeitet Ticketdaten ausschließlich lokal – On-Device-KI, kein Cloud-Dienst.</footer>
         <div class="sc-toast" role="status" aria-live="polite"></div>
       </aside>`;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ticket-Zusammenfassung in die Kundenakte
+  //
+  // Eine Zusammenfassung, die nur im Panel steht, ist nach dem Schließen des
+  // Tabs weg. Sie gehört dorthin, wo später jemand ohne Jira-Zugang nachsieht:
+  // in die Kundenakte des CRM — zusammen mit der Angabe, ob das Ticket noch
+  // offen oder schon geschlossen ist. Geschrieben wird eine einzige Notiz je
+  // Ticket; beim erneuten Zusammenfassen aktualisiert
+  // supabase.upsertTicketSummaryNote() dieselbe Zeile.
+  //
+  // Drei Voraussetzungen, die bewusst nicht umgangen werden: eine Kundennummer
+  // aus dem Oikonomikos-Feld (ohne sie hätte die Notiz keine Akte), eine
+  // CRM-Anmeldung und der Schalter in den Einstellungen. Fehlt eine davon,
+  // bleibt es bei der Anzeige im Panel – die Zusammenfassung selbst
+  // funktioniert unverändert.
+  // ---------------------------------------------------------------------------
+
+  function summaryCrmPayload() {
+    const t = state.ticket;
+    const summaryText = state.ai.summary.status === "ok" ? (state.ai.summary.text || "").trim() : "";
+    if (!t || !known(t.key) || !summaryText) return null;
+    // Kundennummer ausschließlich aus dem Ticket: die zuletzt geladene
+    // Kundenakte im Speicher kann von einem parallelen Anruf stammen und würde
+    // die Notiz sonst in die falsche Akte schreiben. Deren Name wird nur
+    // übernommen, wenn beide Kundennummern übereinstimmen.
+    const customerNumber = known(t.customerReference) ? t.customerReference : "";
+    const card = state.customerCard && state.customerCard.status === "ok" ? state.customerCard.data : null;
+    const cardMatches = Boolean(card && card.customerNumber && card.customerNumber === customerNumber);
+    return {
+      ticketKey: t.key,
+      ticketTitle: known(t.summary) ? t.summary : "",
+      customerNumber,
+      customerName: (known(t.customerName) ? t.customerName : "") || (cardMatches ? card.name : "") || "",
+      resolution: ticketResolution(known(t.status) ? t.status : ""),
+      summary: summaryText
+    };
+  }
+
+  // Fingerabdruck des Stands, der in der Akte landen würde. Ändert er sich
+  // nicht, wird auch nicht erneut geschrieben.
+  function crmNoteSignature(payload) {
+    return JSON.stringify([payload.ticketKey, payload.customerNumber, payload.resolution.id, payload.summary]);
+  }
+
+  function crmNoteErrorText(res) {
+    if (res.reason === "not-logged-in") return "Nicht am CRM angemeldet (Einstellungen ⚙).";
+    if (res.reason === "not-configured") return "Keine CRM-Verbindung hinterlegt (Einstellungen ⚙).";
+    if (res.reason === "network") return "CRM gerade nicht erreichbar.";
+    return res.error || "Speichern in der Kundenakte fehlgeschlagen.";
+  }
+
+  async function syncSummaryToCrm(opts) {
+    const manual = Boolean(opts && opts.manual);
+    if (!supabaseClient) {
+      if (manual) toast("Kundenakte nicht verfügbar – keine CRM-Verbindung konfiguriert.");
+      return;
+    }
+    if (!manual && state.settings.syncTicketSummaryToCrm === false) return;
+
+    const payload = summaryCrmPayload();
+    if (!payload) {
+      if (manual) toast("Erst eine Zusammenfassung erstellen.");
+      return;
+    }
+    if (!payload.customerNumber) {
+      state.crmNote = { status: "no-customer", error: "", signature: "", customerNumber: "", resolution: payload.resolution.id, created: false };
+      if (manual) toast("Keine Kundennummer im Ticket – die Notiz hätte keine Akte.");
+      render();
+      return;
+    }
+
+    const signature = crmNoteSignature(payload);
+    // Automatisch nur einmal je Stand: nicht doppelt schreiben und nach einem
+    // Fehler nicht in einer Schleife erneut versuchen (dafür gibt es den
+    // Button). Ein manueller Klick darf dagegen jederzeit erneut schreiben.
+    if (!manual && state.crmNote.signature === signature && state.crmNote.status !== "idle") return;
+    if (state.crmNote.status === "saving" && state.crmNote.signature === signature) return;
+
+    state.crmNote = { status: "saving", error: "", signature, customerNumber: payload.customerNumber, resolution: payload.resolution.id, created: false };
+    render();
+
+    const res = await supabaseClient.upsertTicketSummaryNote(payload);
+    // Zwischenzeitlich anderes Ticket oder neue Zusammenfassung: das Ergebnis
+    // gehört dann nicht mehr zum aktuell angezeigten Stand.
+    if (state.crmNote.signature !== signature) return;
+
+    if (res.ok) {
+      state.crmNote = { status: "ok", error: "", signature, customerNumber: payload.customerNumber, resolution: payload.resolution.id, created: Boolean(res.created) };
+      if (manual) toast(res.created ? "In der Kundenakte gespeichert." : "Kundenakte aktualisiert.");
+    } else {
+      state.crmNote = { status: "error", error: crmNoteErrorText(res), signature, customerNumber: payload.customerNumber, resolution: payload.resolution.id, created: false };
+    }
+    render();
+  }
+
+  const CRM_RESOLUTION_LABEL = {
+    offen: "Ticket offen",
+    geschlossen: "Ticket geschlossen",
+    unbekannt: "Ticketstand unbekannt"
+  };
+
+  function renderSummaryCrmStatus() {
+    if (!supabaseClient) return "";
+    const n = state.crmNote;
+    const button = (label) => `<button class="sc-text-button" type="button" data-action="save-summary-to-crm">${label}</button>`;
+
+    if (n.status === "saving") return `<p class="sc-cockpit-hint">Kundenakte wird aktualisiert …</p>`;
+    if (n.status === "ok") {
+      const stand = CRM_RESOLUTION_LABEL[n.resolution] || CRM_RESOLUTION_LABEL.unbekannt;
+      return `<p class="sc-cockpit-hint">✓ Kundenakte ${escapeHtml(n.customerNumber)} ${n.created ? "ergänzt" : "aktualisiert"} · ${escapeHtml(stand)}. ${button("Erneut schreiben")}</p>`;
+    }
+    if (n.status === "no-customer") {
+      return `<p class="sc-cockpit-hint">Keine Kundennummer im Ticket – nichts in der Kundenakte gespeichert.</p>`;
+    }
+    if (n.status === "error") {
+      return `<p class="sc-cockpit-hint">Kundenakte: ${escapeHtml(n.error)} ${button("Erneut versuchen")}</p>`;
+    }
+    return `<p class="sc-cockpit-hint">${button("In die Kundenakte schreiben")}</p>`;
   }
 
   // ---------------------------------------------------------------------------
@@ -2546,8 +2678,16 @@
         onDownload,
         onChunk: (acc) => { const out = el("summary-out"); if (out) out.textContent = acc; }
       });
-      if (result.status === S.AVAILABLE) cacheField("summary", { status: "ok", text: result.text });
-      else state.ai.summary = { status: "error", text: "" };
+      if (result.status === S.AVAILABLE) {
+        cacheField("summary", { status: "ok", text: result.text });
+        // Frisch zusammengefasst heißt: der Stand in der Kundenakte ist alt.
+        // Bewusst nicht abgewartet – die Zusammenfassung steht ja schon da;
+        // ein Fehler beim Schreiben zeigt sich an der Karte, nicht als
+        // unbehandelte Rejection.
+        syncSummaryToCrm().catch(() => {});
+      } else {
+        state.ai.summary = { status: "error", text: "" };
+      }
     } catch (error) {
       state.ai.summary = isAbort(error) ? previous : { status: "error", text: "" };
     } finally {
@@ -3097,6 +3237,7 @@
       signature: value("set-signature"),
       notifyWaiting: checked("set-notify-waiting"),
       notifyCallbacks: checked("set-notify-callbacks"),
+      syncTicketSummaryToCrm: checked("set-sync-summary"),
       customerSearchJql: value("set-customer-jql"),
       supabaseUrl: value("set-supabase-url"),
       supabaseAnonKey: value("set-supabase-anon-key")
@@ -3160,6 +3301,7 @@
       case "enable-ai": enableAi(); return;
       case "run-triage": runTriage(); return;
       case "generate-summary": generateSummary(); return;
+      case "save-summary-to-crm": await syncSummaryToCrm({ manual: true }); return;
       case "generate-documentation": generateDocumentation(); return;
       case "copy-documentation": copyText(state.ai.documentation.text, "Doku kopiert."); return;
       case "use-documentation": useDocumentationAsComment(); return;
@@ -3323,6 +3465,10 @@
     state.ai.download = 0;
     state.ai.error = "";
     hydrateAiFromCache(nextTicket);
+    // Der Aktenstand gehört zum vorherigen Ticket – für das neue ist noch
+    // nichts geschrieben (die zwischengespeicherte Zusammenfassung wurde beim
+    // damaligen Erstellen bereits übernommen).
+    state.crmNote = { status: "idle", error: "", signature: "", customerNumber: "", resolution: "", created: false };
     state.ai.review = { status: "idle", checks: [], improved: "" };
     state.ai.translation = { status: "idle", text: "", language: "" };
     state.ai.note = "";

@@ -284,6 +284,37 @@
     return `${base}/browse/${encodeURIComponent(key)}`;
   }
 
+  // ---------------------------------------------------------------------------
+  // Ticketstand für die Kundenakte
+  //
+  // In der Kundenakte soll auf einen Blick stehen, ob das Anliegen hinter einer
+  // Ticket-Zusammenfassung noch läuft. Jira-Statusnamen sind pro Projekt frei
+  // konfigurierbar – gespeichert wird deshalb nicht der Status selbst, sondern
+  // nur die Frage "erledigt oder nicht", abgeleitet aus dem sichtbaren
+  // Statustext (der Originaltext wandert zusätzlich in Klammern mit, damit die
+  // Ableitung nachvollziehbar bleibt).
+  //
+  // Ein unbekannter oder unbekannt benannter Status gilt bewusst als offen:
+  // ein fälschlich als erledigt vermerktes Anliegen fällt in der Akte hinten
+  // runter, ein fälschlich offenes fällt spätestens beim Lesen auf.
+  // ---------------------------------------------------------------------------
+
+  const CLOSED_STATUS = /erledigt|gel(ö|oe)st|geschlossen|abgeschlossen|fertig|behoben|abgebrochen|storniert|abgelehnt|verworfen|done|closed|resolved|complete|cancel|reject/;
+  // Wiedereröffnet enthält "eröffnet", nicht "erledigt" – wird aber vorab
+  // geprüft, falls ein Workflow "Erledigt (wiedereröffnet)" o. Ä. anzeigt.
+  const REOPENED_STATUS = /wieder\s*er(ö|oe)ffnet|erneut\s+ge(ö|oe)ffnet|reopened/;
+
+  function ticketResolution(status) {
+    const raw = String(status == null ? "" : status).trim();
+    const value = raw.toLocaleLowerCase("de-DE");
+    // "Nicht sichtbar" ist der Platzhalter des Jira-Readers (jiraReader.UNKNOWN)
+    // für ein Feld, das im Ticket gar nicht auslesbar war.
+    if (!value || value === "nicht sichtbar") return { id: "unbekannt", label: "Unbekannt", raw: "" };
+    if (REOPENED_STATUS.test(value)) return { id: "offen", label: "Offen", raw };
+    if (CLOSED_STATUS.test(value)) return { id: "geschlossen", label: "Geschlossen", raw };
+    return { id: "offen", label: "Offen", raw };
+  }
+
   // Kurzes deutsches Datum ("21.7.2026") für die Kundenakte – ohne Uhrzeit,
   // da first_seen_at/last_contact_at hier nur zur groben Einordnung dienen.
   function formatDateDE(iso) {
@@ -351,6 +382,7 @@
     dueCallbacks,
     customerSearchUrl,
     jiraTicketUrl,
+    ticketResolution,
     formatDateDE,
     getProductCommission,
     calcContractCommission,

@@ -169,6 +169,53 @@ function run() {
   assert.deepStrictEqual(auditPayload.details, { source: "extension" });
   assert.strictEqual(auditPayload.created_at, undefined, "created_at wird nicht gesetzt, die Tabelle hat einen DB-Default");
 
+  // Ticket-Zusammenfassung für die Kundenakte: ein Titel je Ticket (das ist
+  // das Erkennungsmerkmal beim Aktualisieren) und eine Statuszeile, die die
+  // Frage "erledigt oder nicht" zuerst beantwortet.
+  assert.strictEqual(sb.ticketSummaryNoteTitle("TNG-42"), "Ticket-Zusammenfassung TNG-42");
+  assert.strictEqual(
+    sb.ticketSummaryNoteTitle("TNG-42"),
+    sb.ticketSummaryNoteTitle(" TNG-42 "),
+    "Whitespace darf nicht zu einer zweiten Notiz für dasselbe Ticket führen"
+  );
+
+  const summaryNote = sb.buildTicketSummaryNoteFields({
+    ticketKey: "TNG-42",
+    ticketTitle: "Kein Internet seit Montag",
+    customerNumber: "287246",
+    customerName: "Kevin Carlsson",
+    resolution: { id: "geschlossen", label: "Geschlossen", raw: "Erledigt" },
+    summary: "Anliegen geklärt, Router getauscht."
+  }, "2026-07-22T10:00:00.000Z");
+  assert.strictEqual(summaryNote.customerNumber, "287246");
+  assert.strictEqual(summaryNote.customerName, "Kevin Carlsson");
+  assert.strictEqual(summaryNote.jiraTicket, "TNG-42");
+  assert.strictEqual(summaryNote.title, "Ticket-Zusammenfassung TNG-42");
+  assert.ok(
+    summaryNote.content.startsWith("Status: Geschlossen (Erledigt)"),
+    "der Stand des Tickets steht in der ersten Zeile der Notiz"
+  );
+  assert.ok(summaryNote.content.includes("Anliegen: Kein Internet seit Montag"));
+  assert.ok(summaryNote.content.includes("Anliegen geklärt, Router getauscht."), "die Zusammenfassung selbst steht in der Notiz");
+  assert.ok(summaryNote.content.includes("TNG-42"), "Herkunft der Notiz bleibt im Text nachvollziehbar");
+
+  const openNote = sb.buildTicketSummaryNoteFields({
+    ticketKey: "TNG-43",
+    customerNumber: "287246",
+    resolution: { id: "offen", label: "Offen", raw: "In Bearbeitung" },
+    summary: "Rückruf vereinbart."
+  }, "2026-07-22T10:00:00.000Z");
+  assert.ok(openNote.content.startsWith("Status: Offen (In Bearbeitung)"));
+  assert.ok(!openNote.content.includes("Anliegen:"), "ohne Tickettitel keine leere Anliegen-Zeile");
+
+  const unknownNote = sb.buildTicketSummaryNoteFields({
+    ticketKey: "TNG-44",
+    customerNumber: "287246",
+    resolution: { id: "unbekannt", label: "Unbekannt", raw: "" },
+    summary: "Text"
+  }, "2026-07-22T10:00:00.000Z");
+  assert.ok(unknownNote.content.startsWith("Status: Unbekannt\n"), "ohne Originalstatus keine leere Klammer");
+
   // shared_settings-Antwort normalisieren.
   const settings = sb.parseSharedSettingsResponse({
     products: [{ name: "Fibrelight", category: "Privat", commission: 7.5 }],
@@ -245,5 +292,115 @@ async function runSearchWorkspace() {
   console.log("supabase.test.js (searchWorkspace): alle Szenarien bestanden.");
 }
 
+// upsertTicketSummaryNote() — die Zusammenfassung des gelesenen Jira-Tickets
+// in der Kundenakte. Getestet wird das Kernversprechen: eine Notiz je Ticket
+// (kein Zuwachsen der Akte beim erneuten Zusammenfassen).
+async function runTicketSummaryNote() {
+  function setup(handler) {
+    const env = makeSandbox();
+    loadScripts(env.sandbox, ["src/config.js", "src/shared.js", "src/supabase.js"]);
+    const CONFIG = env.sandbox.StadtnetzCRM.CONFIG;
+    env.storage[CONFIG.storageKeys.settings] = { supabaseUrl: "https://x.supabase.co", supabaseAnonKey: "anon-key" };
+    env.storage[CONFIG.storageKeys.supabaseSession] = {
+      accessToken: "at-1", refreshToken: "rt-1", expiresAt: Date.now() + 3600000, userId: "u1", displayName: "Max"
+    };
+    const calls = [];
+    env.sandbox.fetch = async (url, options) => {
+      calls.push({ url, method: (options && options.method) || "GET", body: options && options.body ? JSON.parse(options.body) : null });
+      return handler(url, options) || { ok: true, status: 200, json: async () => [{ id: "audit-1" }] };
+    };
+    return { env, sb: env.sandbox.StadtnetzCRM.supabaseClient, calls, CONFIG };
+  }
+
+  // insertAuditLog() läuft bewusst fire-and-forget (ein Fehler dort darf die
+  // Erfassung nicht blockieren) – für die Prüfung muss die Ereignisschleife
+  // deshalb einmal durchlaufen.
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  const input = {
+    ticketKey: "TNG-42",
+    ticketTitle: "Kein Internet",
+    customerNumber: "287246",
+    customerName: "Kevin Carlsson",
+    resolution: { id: "offen", label: "Offen", raw: "In Bearbeitung" },
+    summary: "Techniker kommt Freitag."
+  };
+
+  // --- Noch keine Notiz zu diesem Ticket -> anlegen ---------------------------
+  {
+    const { sb, calls } = setup((url, options) => {
+      const method = (options && options.method) || "GET";
+      if (url.includes("/notes?") && method === "GET") return { ok: true, status: 200, json: async () => [] };
+      if (url.includes("/notes") && method === "POST") return { ok: true, status: 201, json: async () => [{ id: "note-neu" }] };
+      return null; // audit_log
+    });
+
+    const res = await sb.upsertTicketSummaryNote(input);
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.created, true, "ohne vorhandene Notiz wird eine neue angelegt");
+    const lookup = calls.find((c) => c.method === "GET");
+    assert.ok(lookup.url.includes("jira_ticket=eq.TNG-42"), "gesucht wird über das Ticket …");
+    assert.ok(lookup.url.includes("created_by=eq.u1"), "… und nur unter den eigenen Notizen (RLS: notes update own)");
+    const insert = calls.find((c) => c.method === "POST" && c.url.includes("/notes"));
+    assert.strictEqual(insert.body.customer_number, "287246", "die Notiz hängt an der Kundenakte");
+    assert.strictEqual(insert.body.jira_ticket, "TNG-42");
+    assert.ok(insert.body.content.startsWith("Status: Offen (In Bearbeitung)"));
+    await flush();
+    const audit = calls.find((c) => c.url.includes("/audit_log"));
+    assert.strictEqual(audit.body.action, "create", "Erfassung über die Extension bleibt im Audit-Trail");
+    assert.strictEqual(audit.body.details.origin, "jira-summary");
+  }
+
+  // --- Notiz existiert schon -> aktualisieren statt zweite anlegen ------------
+  {
+    const { sb, calls } = setup((url, options) => {
+      const method = (options && options.method) || "GET";
+      if (url.includes("/notes?") && method === "GET") return { ok: true, status: 200, json: async () => [{ id: "note-alt" }] };
+      if (url.includes("/notes?") && method === "PATCH") return { ok: true, status: 200, json: async () => [{ id: "note-alt" }] };
+      return null;
+    });
+
+    const res = await sb.upsertTicketSummaryNote(
+      Object.assign({}, input, { resolution: { id: "geschlossen", label: "Geschlossen", raw: "Erledigt" } })
+    );
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.created, false, "dieselbe Zeile wird aktualisiert");
+    assert.strictEqual(res.id, "note-alt");
+    assert.strictEqual(calls.filter((c) => c.method === "POST" && c.url.includes("/notes")).length, 0, "kein zweiter Eintrag in der Akte");
+    const patch = calls.find((c) => c.method === "PATCH");
+    assert.ok(patch.url.includes("id=eq.note-alt"));
+    assert.ok(patch.body.content.startsWith("Status: Geschlossen (Erledigt)"), "der neue Ticketstand steht in der Akte");
+    assert.ok(patch.body.updated_at, "updated_at wird mitgeschrieben – danach sortiert die Kundenakte");
+  }
+
+  // --- Fremde Notiz (RLS lässt das PATCH ins Leere laufen) -> eigene anlegen --
+  {
+    const { sb, calls } = setup((url, options) => {
+      const method = (options && options.method) || "GET";
+      if (url.includes("/notes?") && method === "GET") return { ok: true, status: 200, json: async () => [{ id: "note-fremd" }] };
+      if (url.includes("/notes?") && method === "PATCH") return { ok: true, status: 200, json: async () => [] };
+      if (url.includes("/notes") && method === "POST") return { ok: true, status: 201, json: async () => [{ id: "note-eigen" }] };
+      return null;
+    });
+
+    const res = await sb.upsertTicketSummaryNote(input);
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.created, true, "eine nicht änderbare fremde Notiz wird nicht überschrieben, sondern ergänzt");
+    assert.strictEqual(res.id, "note-eigen");
+  }
+
+  // --- Ohne Kundennummer gar nichts schreiben --------------------------------
+  {
+    const { sb, calls } = setup(() => ({ ok: true, status: 200, json: async () => [] }));
+    const res = await sb.upsertTicketSummaryNote(Object.assign({}, input, { customerNumber: "" }));
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(res.reason, "no-customer");
+    assert.strictEqual(calls.length, 0, "eine Notiz ohne Akte wird erst gar nicht angelegt");
+  }
+
+  console.log("supabase.test.js (upsertTicketSummaryNote): alle Szenarien bestanden.");
+}
+
 run();
 runSearchWorkspace();
+runTicketSummaryNote();

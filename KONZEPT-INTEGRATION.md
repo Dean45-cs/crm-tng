@@ -210,6 +210,34 @@ macOS verlangt für eine reibungslose Installation eine Notarisierung,
 Windows im Idealfall ein Code-Signing-Zertifikat — sonst Warnmeldungen beim
 ersten Start. Siehe „Offene Punkte" unten.
 
+## Der Rückweg: Der Ticketstand steht in der Akte *(umgesetzt)*
+
+Stufe 1 und 2 tragen Wissen aus dem CRM in den Anruf. Der Rückweg fehlte:
+was in Jira passiert, blieb in Jira. Wer im CRM eine Kundenakte öffnet — die
+Kollegin am nächsten Tag, der Chef beim Draufschauen —, sah den Anruf, aber
+nicht, was aus dem Anliegen geworden ist.
+
+Deshalb wandert jede fertige **Ticket-Zusammenfassung** als Notiz in die
+Kundenakte, mit dem Vermerk, ob das Ticket **offen oder geschlossen** ist.
+Die Zusammenfassung entsteht ohnehin (lokale KI, automatisch beim Öffnen des
+Tickets) — sie wird nur nicht mehr weggeworfen, wenn der Tab zugeht.
+
+Zwei Entscheidungen, die das Ganze tragfähig machen:
+
+- **Eine Notiz je Ticket, nicht je Zusammenfassung.** Erkannt über
+  `jira_ticket` + Titel; beim erneuten Zusammenfassen wird dieselbe Zeile
+  aktualisiert (`upsertTicketSummaryNote()`). Sonst würde die Akte bei jedem
+  Ticket-Aufruf zuwachsen, statt den aktuellen Stand zu zeigen.
+- **Offen/geschlossen wird abgeleitet, nicht übernommen.** Jira-Workflows
+  benennen ihre Status frei, also entscheidet `shared.ticketResolution()`
+  anhand des Statustexts und schreibt den Originalstatus in Klammern dazu.
+  Ein unbekannter Status gilt als offen — ein fälschlich als erledigt
+  vermerktes Anliegen fällt hinten runter, ein fälschlich offenes nicht.
+
+Geschrieben wird nur bei erkannter Kundennummer (Oikonomikos-Feld), bestehender
+CRM-Anmeldung und aktivem Schalter in den Einstellungen; wie jede Erfassung
+über die Extension landet der Vorgang im `audit_log`.
+
 ## Der Jira-Baustein: Text statt API
 
 Ein Knopf „Jira-Text kopieren" im CRM und im Cockpit erzeugt einen fertig
