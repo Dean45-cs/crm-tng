@@ -15,7 +15,11 @@
   }
 
   function syncWithJiraView() {
-    if (!isIssueView()) {
+    // Läuft die Desktop-App, gehört das Cockpit dorthin (siehe hud-agent.js).
+    // Das Panel wird dann nicht nur ausgeblendet, sondern gar nicht erst
+    // aufgebaut – sonst liefen beide Fassungen parallel und würden dieselben
+    // KI-Aufgaben doppelt starten.
+    if (!isIssueView() || app.hudTakeover) {
       removePanel();
       return;
     }
@@ -35,6 +39,10 @@
       syncWithJiraView();
     }, 800);
   }
+
+  // hud-agent.js meldet über diesen Weg, dass die App gestartet oder beendet
+  // wurde – das Panel verschwindet bzw. kommt zurück, ohne die Seite neu zu laden.
+  app.content = { sync: syncWithJiraView };
 
   syncWithJiraView();
   observeNavigation();

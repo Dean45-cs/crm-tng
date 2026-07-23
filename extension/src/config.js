@@ -54,7 +54,16 @@
       // von timio-content.js bei eingehendem Anruf, gelesen von
       // timio-content.js selbst UND von ui.js fürs Jira-Cockpit — analog zu
       // ticketContext, nur in die andere Richtung.
-      customerCard: "stadtnetzCrm.customerCard"
+      customerCard: "stadtnetzCrm.customerCard",
+      // Netz-Auskunft (aktive Abfrage interner Dashboards). Live-Status +
+      // Ergebnis des letzten Lookups: { requestId, kind, status, steps, data,
+      // error, customerNumber, updatedAt }. Geschrieben vom Hintergrund-Worker
+      // (lookup.js), gelesen vom Jira-Panel (ui.js). Bleibt lokal.
+      lookupResult: "stadtnetzCrm.lookupResult",
+      // Zustand der WebSocket-Bridge zur Desktop-/Kundenanbindung:
+      // { connected, active, updatedAt }. Geschrieben von bridge.js, gelesen
+      // von ui.js für das „Bridge aktiv"-Banner. Bleibt lokal.
+      bridgeState: "stadtnetzCrm.bridgeState"
     },
 
     // Cache der KI-Ergebnisse pro Ticket, damit ein bereits besuchtes Ticket
@@ -133,6 +142,75 @@
       baseUrl: "https://crm-tng.vercel.app"
     },
 
+    // Desktop-App (desktop/). Sie öffnet auf diesem Port einen lokalen
+    // WebSocket-Server, der Hintergrund-Worker verbindet sich dorthin (siehe
+    // src/hud-bridge.js). Nur 127.0.0.1 — nichts davon verlässt den Rechner.
+    // Läuft die App nicht, bleibt die Extension einfach für sich.
+    hud: {
+      port: 8777
+    },
+
+    // Netz-Auskunft: aktive Abfrage interner TNG-Dashboards (Baustatus/FTTX über
+    // fttx-dash, Kündiger/Churn über gfiz-dash). ANDERS als der Rest der
+    // Extension liest das nicht nur die sichtbare Seite, sondern automatisiert
+    // ein fremdes Dashboard – deshalb kritisch: standardmäßig AUS (siehe
+    // settingsDefaults.enableLookups) und vor jedem Lauf eine Bestätigung im
+    // Panel. Der Hintergrund-Worker (lookup.js) öffnet/findet den passenden Tab,
+    // die deklarativen Content-Scripts (baustatus-content.js/churn-content.js)
+    // führen die Navigation aus und melden Fortschritt zurück.
+    lookups: {
+      // Öffnet der Worker das Dashboard neu, landet der Tab hier. Nur die
+      // Origin muss zu host_permissions/content_scripts im Manifest passen.
+      baustatus: {
+        kind: "baustatus",
+        label: "Baustatus (FTTX)",
+        urlMatch: "https://fttx-dash.tng.de/*",
+        openUrl: "https://fttx-dash.tng.de/",
+        // Schrittkette – die Labels erscheinen 1:1 als Fortschritts-Checkliste
+        // im Panel (ui.js), die ids melden die Content-Scripts über sc-lookup-step.
+        steps: [
+          { id: "search", label: "Vertrag suchen" },
+          { id: "confirm", label: "Suche bestätigen" },
+          { id: "hammer", label: "Bauabschnitt öffnen" },
+          { id: "dismiss", label: "Seitenpanel schließen" },
+          { id: "kundenliste", label: "Kundenliste öffnen" },
+          { id: "klsearch", label: "Kundennummer eingeben" },
+          { id: "filter", label: "Gebäudetyp-Filter setzen" },
+          { id: "extract", label: "Daten auslesen" }
+        ]
+      },
+      churn: {
+        kind: "churn",
+        label: "Kündiger-Status (GFIZ)",
+        urlMatch: "https://gfiz-dash.tng.de/*",
+        openUrl: "https://gfiz-dash.tng.de/",
+        steps: [
+          { id: "search", label: "Kundennummer eingeben" },
+          { id: "settle", label: "Treffer abwarten" },
+          { id: "extract", label: "Daten auslesen" }
+        ]
+      },
+      // Wie lange der Worker auf das vollständige Laden eines frisch geöffneten
+      // Dashboard-Tabs wartet, bevor er das Content-Script anspricht.
+      tabLoadTimeoutMs: 20000,
+      // Obergrenze für einen kompletten Lookup (Navigation + Extraktion), damit
+      // ein hängendes Dashboard den Vorgang nicht ewig „läuft" anzeigt.
+      lookupTimeoutMs: 45000
+    },
+
+    // WebSocket-Bridge (server/baustatus_bridge.py): erlaubt einem externen
+    // Frontend, einen Lookup über die Extension auszulösen. Eigener, kritischer
+    // Schalter (settingsDefaults.enableBridge, standardmäßig AUS). Der Worker
+    // (bridge.js) verbindet sich nur bei aktivem Schalter. Port bewusst ≠ HUD
+    // (8777), reines 127.0.0.1 – nichts davon verlässt ohne laufenden Server den
+    // Rechner.
+    bridge: {
+      port: 8766,
+      // Backoff-Grenzen für den Reconnect-Versuch, analog hud-bridge.js.
+      reconnectMinMs: 2000,
+      reconnectMaxMs: 30000
+    },
+
     // Ausgehende Gespräche. Anders als eingehend gibt es keine Vorlaufzeit:
     // stellt sich der Bearbeiter in timio auf "bereit", wählt timio selbst
     // aus seiner Anrufliste. Deshalb liegt der Fokus auf sofort verfügbarem
@@ -204,7 +282,22 @@
       // Überschreiben CONFIG.supabase.url/anonKey bei einem Projektwechsel,
       // analog zu customerSearchJql oben.
       supabaseUrl: "",
-      supabaseAnonKey: ""
+      supabaseAnonKey: "",
+      // Netz-Auskunft freischalten (aktive Abfrage interner Dashboards). KRITISCH:
+      // standardmäßig AUS, weil dies – anders als der Rest der Extension – ein
+      // fremdes System automatisiert statt nur die sichtbare Seite zu lesen. Ist
+      // der Schalter an, wird zusätzlich vor JEDEM Lookup im Panel bestätigt.
+      enableLookups: false,
+      // WebSocket-Bridge zulassen (externes Frontend darf Lookups auslösen).
+      // KRITISCH und separat: standardmäßig AUS. Ein automatischer Bridge-Aufruf
+      // hat keinen Menschen für die Einzel-Bestätigung – dieser Schalter IST die
+      // Freigabe; solange er an ist, zeigt das Panel ein „Bridge aktiv"-Banner.
+      enableBridge: false,
+      // Gemeinsames Geheimnis für den Bridge-Handshake. Muss identisch mit dem
+      // BRIDGE_TOKEN des lokalen Servers (server/baustatus_bridge.py) sein. Ohne
+      // passendes Token lehnt der Server die Verbindung ab – schützt davor, dass
+      // eine beliebige lokale Seite die Bridge anspricht.
+      bridgeToken: ""
     },
     // Drei Bereiche: Übersicht (inkl. nächster Schritt), Antwort, Call-Hilfe.
     // Ein früher separates "Nächster Schritt"-Tab wurde in die Übersicht

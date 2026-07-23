@@ -2003,3 +2003,104 @@
   color: #5e6c84;
   font-size: 13px;
 }
+
+/* ── Netz-Auskunft (aktive Dashboard-Abfrage) ─────────────────────────────── */
+
+#stadtnetzcrm-root .sc-local-label--warn {
+  background: var(--sc-amber-soft);
+  color: var(--sc-amber);
+}
+
+#stadtnetzcrm-root .sc-netzauskunft {
+  border-left: 3px solid var(--sc-amber);
+}
+
+#stadtnetzcrm-root .sc-bridge-banner {
+  margin: 8px 14px 0;
+  padding: 7px 10px;
+  border: 1px solid var(--sc-amber);
+  border-radius: 6px;
+  background: var(--sc-amber-soft);
+  color: var(--sc-amber);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Bestätigung vor jedem aktiven Lauf (kritische Aktion). */
+#stadtnetzcrm-root .sc-lookup-confirm {
+  padding: 10px;
+  border: 1px solid var(--sc-amber);
+  border-radius: 8px;
+  background: var(--sc-amber-soft);
+}
+#stadtnetzcrm-root .sc-lookup-confirm p { margin: 0 0 10px; }
+
+/* Fortschritts-Checkliste. */
+#stadtnetzcrm-root .sc-lookup-steps {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+#stadtnetzcrm-root .sc-lookup-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--sc-muted);
+  font-size: 13px;
+}
+#stadtnetzcrm-root .sc-lookup-steps li.is-active {
+  color: var(--sc-ink);
+  font-weight: 600;
+}
+#stadtnetzcrm-root .sc-lookup-steps li.is-done { color: var(--sc-success); }
+#stadtnetzcrm-root .sc-lookup-step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: inherit;
+}
+
+#stadtnetzcrm-root .sc-lookup-error { color: var(--sc-danger); }
+#stadtnetzcrm-root .sc-lookup-ok { color: var(--sc-success); }
+
+#stadtnetzcrm-root .sc-lookup-card {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--sc-line);
+  border-radius: 8px;
+  background: var(--sc-soft);
+}
+#stadtnetzcrm-root .sc-lookup-note {
+  margin: 8px 0;
+  color: var(--sc-ink);
+  font-size: 13px;
+  white-space: pre-line;
+}
+#stadtnetzcrm-root .sc-lookup-contacts { margin-top: 10px; }
+
+#stadtnetzcrm-root .sc-lookup-churn {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+#stadtnetzcrm-root .sc-lookup-churn > li {
+  padding: 8px 0;
+  border-top: 1px solid var(--sc-line);
+}
+#stadtnetzcrm-root .sc-lookup-churn > li:first-child { border-top: none; }
+#stadtnetzcrm-root .sc-lookup-churn-head {
+  color: var(--sc-ink);
+  font-weight: 600;
+}
+#stadtnetzcrm-root .sc-lookup-churn-sub {
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+#stadtnetzcrm-root .sc-lookup-churn-comment {
+  margin-top: 4px;
+  color: var(--sc-ink);
+  font-size: 13px;
+  white-space: pre-line;
+}

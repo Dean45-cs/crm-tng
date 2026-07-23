@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <!-- Kein Netzwerkzugriff außer zu Supabase: das Fenster lädt ausschließlich
+       eigene Dateien, Skripte von außen sind ausgeschlossen. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src https://*.supabase.co;">
+  <title>Stadtnetz CRM Copilot</title>
+
+  <!-- Unverändert dieselben Styles wie im Jira-Tab. Die Anpassungen fürs
+       eigene Fenster stehen ausschließlich in hud.css. -->
+  <link rel="stylesheet" href="../../extension/styles/content.css">
+  <link rel="stylesheet" href="hud.css">
+</head>
+<body>
+  <header class="hud-titlebar">
+    <div class="hud-drag">
+      <span class="hud-dot" data-role="hud-dot" title="Verbindung zu Chrome"></span>
+      <span class="hud-title">Stadtnetz CRM Copilot</span>
+      <span class="hud-context" data-role="hud-context"></span>
+    </div>
+    <div class="hud-actions">
+      <button type="button" class="hud-button" data-hud="notes" title="Notizen (Strg/Cmd+N)" aria-label="Notizen">✎</button>
+      <button type="button" class="hud-button" data-hud="pin" title="Immer im Vordergrund" aria-label="Immer im Vordergrund">⇧</button>
+      <button type="button" class="hud-button" data-hud="minimize" title="Minimieren" aria-label="Minimieren">–</button>
+      <button type="button" class="hud-button hud-button--close" data-hud="hide" title="Ins Tray legen" aria-label="Ins Tray legen">×</button>
+    </div>
+  </header>
+
+  <div class="hud-offline" data-role="hud-offline" hidden>
+    <strong>Chrome ist nicht verbunden.</strong>
+    <span>Ticketdaten und die lokale KI kommen aus der Extension – bitte Chrome mit einem Jira-Tab öffnen. Notizen funktionieren auch so.</span>
+  </div>
+
+  <!-- Genau die Reihenfolge aus manifest.json – die Dateien bauen beim Laden
+       aufeinander auf (rules.js greift zum Beispiel sofort auf jiraReader zu).
+       An zwei Stellen steht statt der Originaldatei ein Shim: für das, was es
+       nur im Browser gibt (Seiten-DOM und Chromes eingebaute KI). Davor der
+       Chrome-Ersatz, dahinter das, was nur die App hat. -->
+  <script src="shim-chrome.js"></script>
+  <script src="../../extension/src/config.js"></script>
+  <script src="../../extension/src/commission.js"></script>
+  <script src="../../extension/src/shared.js"></script>
+  <script src="../../extension/src/supabase.js"></script>
+  <script src="../../extension/src/ai-cache.js"></script>
+  <script src="shim-jira-reader.js"></script>
+  <script src="../../extension/src/rules.js"></script>
+  <script src="shim-local-ai.js"></script>
+  <script src="../../extension/src/ui.js"></script>
+  <script src="notes.js"></script>
+  <script src="boot.js"></script>
+</body>
+</html>

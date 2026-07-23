@@ -363,6 +363,167 @@
     return `${d.getFullYear()}-${month}-${day}`;
   }
 
+  // ---------------------------------------------------------------------------
+  // Netz-Auskunft: DOM-Automatisierungs-Helfer (Baustatus/FTTX + Churn/GFIZ)
+  //
+  // Diese Helfer fassen das DOM erst zur LAUFZEIT an (in den Scraper-Content-
+  // Scripts), nicht beim Laden – deshalb ist ihre Definition auch im Worker
+  // (importScripts) unkritisch, obwohl er kein `document`/`window` hat. Sie
+  // ersetzen die je Datei duplizierten Helfer aus dem ursprünglichen Scraper
+  // (content_fttx.js/content_gfiz.js) durch eine gemeinsame, getestete Quelle.
+  //
+  // Die eigentliche Extraktion bleibt in den Content-Scripts; die REINEN Parser
+  // (parseChurn/parseBaustatus) darunter sind DOM-frei und damit unit-testbar
+  // (Muster wie parseQueueGroups oben).
+  // ---------------------------------------------------------------------------
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // Pollt condition() bis truthy oder Timeout. Gibt den Rückgabewert von
+  // condition() zurück (z. B. das gefundene Element) bzw. null bei Timeout.
+  function waitForCondition(condition, timeoutMs, intervalMs) {
+    const timeout = typeof timeoutMs === "number" ? timeoutMs : 5000;
+    const interval = typeof intervalMs === "number" ? intervalMs : 150;
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const check = () => {
+        let result = null;
+        try { result = condition(); } catch (error) { result = null; }
+        if (result) return resolve(result);
+        if (Date.now() - start >= timeout) return resolve(null);
+        setTimeout(check, interval);
+      };
+      check();
+    });
+  }
+
+  // Setzt den Wert eines von React kontrollierten Inputs so, dass React die
+  // Änderung mitbekommt: über den nativen Value-Setter des Prototyps plus
+  // input/change-Events. Ant Design reagiert zusätzlich auf Tastaturereignisse,
+  // deshalb werden diese für jeden Buchstaben nachgereicht.
+  function reactSetValue(input, value) {
+    if (!input) return;
+    const proto = (typeof window !== "undefined" && window.HTMLInputElement && window.HTMLInputElement.prototype) || null;
+    const descriptor = proto && Object.getOwnPropertyDescriptor(proto, "value");
+    const nativeSetter = descriptor && descriptor.set;
+    const text = value == null ? "" : String(value);
+    if (nativeSetter) nativeSetter.call(input, text);
+    else input.value = text;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    if (text) {
+      try { input.focus(); } catch (error) { /* nicht fokussierbar */ }
+      for (const char of text) {
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: char, bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true }));
+      }
+    }
+  }
+
+  // Wartet, bis die von getCount() gelieferte Zeilenzahl für quietMs stabil
+  // bleibt (Tabelle „fertig geladen"), spätestens bis timeoutMs. Gibt die
+  // letzte bekannte Zahl zurück. getCount() kann eine reine Zählfunktion sein –
+  // dadurch ohne echtes DOM testbar.
+  function waitForStableRows(getCount, options) {
+    const opts = options || {};
+    const intervalMs = typeof opts.intervalMs === "number" ? opts.intervalMs : 250;
+    const quietMs = typeof opts.quietMs === "number" ? opts.quietMs : 500;
+    const timeoutMs = typeof opts.timeoutMs === "number" ? opts.timeoutMs : 2500;
+    return new Promise((resolve) => {
+      const start = Date.now();
+      let prev = -1;
+      let stableSince = 0;
+      const tick = () => {
+        let n = prev;
+        try { n = getCount(); } catch (error) { n = prev; }
+        const now = Date.now();
+        if (n === prev) {
+          if (stableSince && now - stableSince >= quietMs) return resolve(n);
+        } else {
+          prev = n;
+          stableSince = now;
+        }
+        if (now - start >= timeoutMs) return resolve(prev < 0 ? 0 : prev);
+        setTimeout(tick, intervalMs);
+      };
+      tick();
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reine Parser (DOM-frei, testbar)
+  // ---------------------------------------------------------------------------
+
+  function cleanText(value) {
+    return String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+  }
+
+  // Normalisiert das Churn-Ergebnis (gfiz-dash). Eingabe ist das rohe Objekt des
+  // Content-Scripts: { found, kundennummer, rows:[{vertrag, geschaeftsfall,
+  // ursache, eingang, jiraTicket, jiraHref, kommentar}] }. Ausgabe ist eine
+  // aufgeräumte Anzeigeform mit Fallzähler.
+  function parseChurn(raw) {
+    const input = raw || {};
+    const rows = Array.isArray(input.rows) ? input.rows : [];
+    const cases = rows
+      .map((row) => ({
+        vertrag: cleanText(row && row.vertrag),
+        geschaeftsfall: cleanText(row && row.geschaeftsfall),
+        ursache: cleanText(row && row.ursache),
+        eingang: cleanText(row && row.eingang),
+        jiraTicket: cleanText(row && row.jiraTicket),
+        jiraHref: (row && row.jiraHref) || "",
+        kommentar: cleanText(row && row.kommentar)
+      }))
+      // Ein Eintrag zählt nur, wenn wenigstens Vertrag oder Geschäftsfall dranstehen.
+      .filter((row) => row.vertrag || row.geschaeftsfall || row.ursache);
+    return {
+      found: cases.length > 0,
+      customerNumber: cleanText(input.kundennummer),
+      count: cases.length,
+      cases
+    };
+  }
+
+  // Normalisiert die FTTX/Baustatus-Rohfelder (fttx-dash) in ein Anzeigemodell.
+  // Eingabe ist das Feld-Objekt des Content-Scripts (Schlüssel wie "Vertrag",
+  // "Vertragsstatus", "Line Status", "Ausbauphas", "KVZ"/"KVZ_COLOR",
+  // "Building Type", "Adresse", "BG Firma"/"HAB Firma"/"LWL Firma",
+  // "Tiefbau Timeline"/"LWL Timeline", "Phase Predictions").
+  function parseBaustatus(raw) {
+    const f = raw || {};
+    const val = (key) => cleanText(f[key]);
+    const model = {
+      contract: val("Vertrag"),
+      contractStatus: val("Vertragsstatus"),
+      lineStatus: val("Line Status"),
+      buildingPhase: val("Ausbauphas") || val("Ausbauphase"),
+      buildingType: val("Building Type"),
+      address: cleanText(f["Adresse"]),
+      kvz: {
+        value: val("KVZ"),
+        color: ["red", "yellow", "green"].includes(f["KVZ_COLOR"]) ? f["KVZ_COLOR"] : ""
+      },
+      contacts: {
+        begehung: val("BG Firma"),
+        hausanschluss: val("HAB Firma"),
+        lwl: val("LWL Firma")
+      },
+      timelines: {
+        tiefbau: cleanText(f["Tiefbau Timeline"]),
+        lwl: cleanText(f["LWL Timeline"])
+      },
+      phasePredictions: cleanText(f["Phase Predictions"])
+    };
+    const found = Boolean(
+      model.contract || model.contractStatus || model.lineStatus ||
+      model.buildingPhase || model.address
+    );
+    return { found, ...model };
+  }
+
   app.shared = {
     escapeHtml,
     extensionAlive,
@@ -388,6 +549,13 @@
     calcContractCommission,
     calcTariffCommission,
     groupProductsByCategory,
-    todayIso
+    todayIso,
+    // Netz-Auskunft: DOM-Helfer + reine Parser
+    sleep,
+    waitForCondition,
+    reactSetValue,
+    waitForStableRows,
+    parseChurn,
+    parseBaustatus
   };
 })();

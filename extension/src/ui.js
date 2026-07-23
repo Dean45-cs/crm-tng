@@ -50,6 +50,14 @@
     // Zuletzt nachgeschlagene Kundenakte, geschrieben von timio-content.js bei
     // eingehendem Anruf (siehe CONFIG.storageKeys.customerCard).
     customerCard: null,
+    // Netz-Auskunft (aktive Dashboard-Abfrage). `result` wird aus
+    // storageKeys.lookupResult gespiegelt (vom Worker/lookup.js geschrieben),
+    // `confirm` hält die ausstehende Bestätigung { kind, customerNumber } – die
+    // kritische Aktion wird VOR jedem Lauf im Panel bestätigt.
+    lookup: { result: null, confirm: null },
+    // Zustand der WebSocket-Bridge (aus storageKeys.bridgeState) für das
+    // „Bridge aktiv"-Banner.
+    bridgeState: null,
     // Abschluss-Panel (Stufe 3, KONZEPT-INTEGRATION.md): { callId, entryType,
     // fields, status, error }. Eigene Instanz, unabhängig vom Gegenstück in
     // timio-content.js — siehe dortige Kommentare für die Feld-Semantik.
@@ -1178,6 +1186,147 @@
       </section>`;
   }
 
+  // ---------------------------------------------------------------------------
+  // Netz-Auskunft (aktive Dashboard-Abfrage: Baustatus/FTTX + Kündiger/GFIZ)
+  //
+  // Kritisch, weil hier – anders als sonst – ein fremdes System AUTOMATISIERT
+  // statt nur gelesen wird. Deshalb: Master-Schalter (state.settings.enableLookups,
+  // Standard AUS) UND eine Bestätigung vor JEDEM Lauf. Ausgelöst wird der Lauf
+  // im Hintergrund-Worker (lookup.js) per sc-run-lookup; Fortschritt/Ergebnis
+  // kommen über storageKeys.lookupResult zurück.
+  // ---------------------------------------------------------------------------
+
+  // Kundennummer für die Abfrage: bevorzugt aus einem aktiven Anruf, sonst aus
+  // der Kundenreferenz des offenen Tickets (Oikonomikos-Feld).
+  function lookupCustomerNumber() {
+    const call = currentActiveCall();
+    const fromCall = call && (call.customerNumber || "").trim();
+    if (fromCall) return fromCall;
+    const ref = state.ticket && state.ticket.customerReference;
+    return known(ref) ? ref.trim() : "";
+  }
+
+  function renderLookupSteps(result) {
+    const dash = (CONFIG.lookups && CONFIG.lookups[result.kind]) || {};
+    const defs = dash.steps || [];
+    const byId = {};
+    (result.steps || []).forEach((step) => { byId[step.id] = step.state; });
+    const icon = (st) => (st === "done" ? "✓" : st === "active" ? "…" : "·");
+    return `<ul class="sc-lookup-steps">${defs.map((d) => {
+      const st = byId[d.id] || "pending";
+      return `<li class="is-${st}"><span class="sc-lookup-step-icon">${icon(st)}</span>${escapeHtml(d.label)}</li>`;
+    }).join("")}</ul>`;
+  }
+
+  function renderBaustatusCard(data) {
+    if (!data || !data.found) return `<p class="sc-ai-message">Kein Baustatus-Treffer zu dieser Kundennummer gefunden.</p>`;
+    const rows = [
+      ["Vertrag", data.contract],
+      ["Vertragsstatus", data.contractStatus],
+      ["Line Status", data.lineStatus],
+      ["Ausbauphase", data.buildingPhase],
+      ["Gebäudetyp", data.buildingType],
+      ["KVZ", data.kvz && data.kvz.value],
+      ["Adresse", data.address]
+    ].filter((entry) => entry[1]);
+    const timelines = data.timelines || {};
+    const hasTime = (v) => v && v !== "Keine Zeiten vorhanden";
+    const timeRows = [
+      ["Tiefbau", hasTime(timelines.tiefbau) ? timelines.tiefbau : ""],
+      ["LWL", hasTime(timelines.lwl) ? timelines.lwl : ""]
+    ].filter((entry) => entry[1]);
+    const contacts = data.contacts || {};
+    const contactRows = [
+      ["Begehung", contacts.begehung],
+      ["Hausanschluss", contacts.hausanschluss],
+      ["LWL-Installation", contacts.lwl]
+    ].filter((entry) => entry[1]);
+    return `
+      <div class="sc-ticket-grid">${rows.map((entry) => ticketRow(entry[0], entry[1])).join("")}</div>
+      ${hasTime(data.phasePredictions) ? `<p class="sc-lookup-note">${escapeWithBreaks(data.phasePredictions)}</p>` : ""}
+      ${timeRows.length ? `<div class="sc-ticket-grid">${timeRows.map((entry) => ticketRow(entry[0], entry[1])).join("")}</div>` : ""}
+      ${contactRows.length ? `<div class="sc-lookup-contacts"><span class="sc-eyebrow">Externe Firmen</span><div class="sc-ticket-grid">${contactRows.map((entry) => ticketRow(entry[0], entry[1])).join("")}</div></div>` : ""}`;
+  }
+
+  function renderChurnCard(data) {
+    if (!data || !data.found) return `<p class="sc-ai-message sc-lookup-ok">Kein Kündiger-/Churn-Vorgang zu dieser Kundennummer gefunden.</p>`;
+    return `
+      <p class="sc-lookup-note">${data.count} ${data.count === 1 ? "Vorgang" : "Vorgänge"} gefunden.</p>
+      <ul class="sc-lookup-churn">${data.cases.map((c) => `
+        <li>
+          <div class="sc-lookup-churn-head">${escapeHtml(c.vertrag || "—")}${c.geschaeftsfall ? ` · ${escapeHtml(c.geschaeftsfall)}` : ""}</div>
+          ${c.ursache ? `<div class="sc-lookup-churn-sub">${escapeHtml(c.ursache)}${c.eingang ? ` · ${escapeHtml(c.eingang)}` : ""}</div>` : ""}
+          ${c.jiraTicket ? `<a class="sc-text-button" href="${escapeHtml(c.jiraHref || jiraTicketUrl(c.jiraTicket))}" target="_blank" rel="noopener">${escapeHtml(c.jiraTicket)} öffnen</a>` : ""}
+          ${c.kommentar ? `<div class="sc-lookup-churn-comment">${escapeWithBreaks(c.kommentar)}</div>` : ""}
+        </li>`).join("")}</ul>`;
+  }
+
+  function renderLookupResult(result) {
+    if (!result) return "";
+    const dash = (CONFIG.lookups && CONFIG.lookups[result.kind]) || {};
+    if (result.status === "running") {
+      return `<div class="sc-lookup-progress"><p class="sc-eyebrow">${escapeHtml(dash.label || "Abfrage")} · läuft …</p>${renderLookupSteps(result)}</div>`;
+    }
+    if (result.status === "error") {
+      return `<div class="sc-lookup-progress">${renderLookupSteps(result)}<p class="sc-ai-message sc-lookup-error">${escapeHtml(result.error || "Abfrage fehlgeschlagen.")}</p></div>`;
+    }
+    if (result.status === "ok") {
+      const data = result.data || {};
+      return `<div class="sc-lookup-card"><span class="sc-eyebrow">${escapeHtml(dash.label || "Ergebnis")}${result.customerNumber ? ` · ${escapeHtml(result.customerNumber)}` : ""}</span>${result.kind === "baustatus" ? renderBaustatusCard(data) : renderChurnCard(data)}</div>`;
+    }
+    return "";
+  }
+
+  function renderLookupConfirm(confirm) {
+    const dash = (CONFIG.lookups && CONFIG.lookups[confirm.kind]) || {};
+    return `
+      <div class="sc-lookup-confirm">
+        <p><strong>Aktive Abfrage bestätigen.</strong> Dies öffnet und automatisiert das Dashboard <em>${escapeHtml(dash.label || confirm.kind)}</em> und liest Daten zu Kundennummer <strong>${escapeHtml(confirm.customerNumber)}</strong>. Das verlässt bewusst das „liest nur"-Prinzip der Extension.</p>
+        <div class="sc-inline-actions">
+          <button class="sc-primary-button" type="button" data-action="lookup-confirm">Ja, nachschlagen</button>
+          <button class="sc-secondary-button" type="button" data-action="lookup-cancel">Abbrechen</button>
+        </div>
+      </div>`;
+  }
+
+  // Dauerhaftes Banner, solange die Bridge verbunden ist – die Extension kann
+  // dann von außen zu Abfragen veranlasst werden, das soll sichtbar bleiben.
+  function renderBridgeBanner() {
+    const bs = state.bridgeState;
+    if (!bs || !bs.connected) return "";
+    return `<div class="sc-bridge-banner" role="status">🔌 Bridge aktiv – ein externes Frontend kann über diese Extension Abfragen auslösen.</div>`;
+  }
+
+  function renderNetzauskunft() {
+    const enabled = state.settings.enableLookups === true;
+    let body;
+    if (!enabled) {
+      body = `<p class="sc-ai-message">Aktive Abfragen der internen Dashboards (Baustatus, Kündiger-Status) sind ausgeschaltet. <button class="sc-text-button" type="button" data-action="open-lookup-settings">In den Einstellungen aktivieren</button></p>`;
+    } else if (state.lookup.confirm) {
+      body = renderLookupConfirm(state.lookup.confirm);
+    } else {
+      const number = lookupCustomerNumber();
+      const running = state.lookup.result && state.lookup.result.status === "running";
+      const actions = number
+        ? `
+          <p class="sc-section-intro">Schlägt zu Kundennummer <strong>${escapeHtml(number)}</strong> nach – öffnet und automatisiert dafür das jeweilige Dashboard. Vor jeder Abfrage wird bestätigt.</p>
+          <div class="sc-inline-actions">
+            <button class="sc-primary-button" type="button" data-action="lookup-baustatus" ${running ? "disabled" : ""}>Baustatus nachschlagen</button>
+            <button class="sc-secondary-button" type="button" data-action="lookup-churn" ${running ? "disabled" : ""}>Kündiger-Status prüfen</button>
+          </div>`
+        : `<p class="sc-ai-message">Keine Kundennummer erkannt – weder aus dem Ticket (Kunden-ID) noch aus einem aktiven Anruf. Ohne Kundennummer ist keine Abfrage möglich.</p>`;
+      body = actions + renderLookupResult(state.lookup.result);
+    }
+    return `
+      <section class="sc-section sc-netzauskunft">
+        <div class="sc-section-title-row">
+          <h3>Netz-Auskunft</h3>
+          <span class="sc-local-label sc-local-label--warn">aktive Abfrage</span>
+        </div>
+        ${body}
+      </section>`;
+  }
+
   function renderOverview() {
     const ticket = state.ticket;
     const warnings = rules.ticketWarnings(ticket);
@@ -1206,6 +1355,7 @@
       ${renderSummary()}
       ${renderDocumentation()}
       ${renderTranslation()}
+      ${renderNetzauskunft()}
       <section class="sc-section">
         <h3>Hinweise vor der Bearbeitung</h3>
         ${renderChecks(warnings.map((text) => ({ level: "warning", text })), "Alle sichtbaren Basisinformationen sind vorhanden.")}
@@ -2082,6 +2232,25 @@
       </section>
       <section class="sc-section">
         <div class="sc-section-title-row">
+          <h3>Netz-Auskunft (aktive Abfragen)</h3>
+          <span class="sc-local-label sc-local-label--warn">kritisch</span>
+        </div>
+        <p class="sc-section-intro">Anders als der Rest der Extension liest die Netz-Auskunft nicht nur die sichtbare Seite, sondern <strong>öffnet und automatisiert interne Dashboards</strong> (Baustatus/FTTX, Kündiger/GFIZ), um Daten zu einer Kundennummer zu holen. Standardmäßig aus. Ist sie an, wird vor jeder einzelnen Abfrage zusätzlich im Panel bestätigt. Bitte nur mit entsprechender Freigabe nutzen.</p>
+        <label class="sc-check-label">
+          <input type="checkbox" data-role="set-enable-lookups" ${s.enableLookups === true ? "checked" : ""}>
+          <span>Baustatus- und Kündiger-Abfrage erlauben<small>Schaltet die Buttons „Baustatus nachschlagen" / „Kündiger-Status prüfen" in der Übersicht frei. Jede Abfrage öffnet den passenden Dashboard-Tab und automatisiert ihn.</small></span>
+        </label>
+        <label class="sc-check-label">
+          <input type="checkbox" data-role="set-enable-bridge" ${s.enableBridge === true ? "checked" : ""}>
+          <span>WebSocket-Bridge für externe Abfragen erlauben<small>Lässt ein externes Frontend (server/baustatus_bridge.py, nur 127.0.0.1) Abfragen über diese Extension auslösen. Benötigt zusätzlich die Freigabe oben. Solange aktiv, zeigt das Panel ein „Bridge aktiv"-Banner.</small></span>
+        </label>
+        <label class="sc-input-label">Bridge-Token
+          <input class="sc-text-input" data-role="set-bridge-token" value="${escapeHtml(s.bridgeToken || "")}" placeholder="dasselbe wie BRIDGE_TOKEN des Servers">
+          <small class="sc-input-hint">Muss mit dem <code>BRIDGE_TOKEN</code> übereinstimmen, mit dem der lokale Server gestartet wurde. Ohne passendes Token wird die Verbindung abgelehnt.</small>
+        </label>
+      </section>
+      <section class="sc-section">
+        <div class="sc-section-title-row">
           <h3>Daten &amp; Datenschutz</h3>
           <span class="sc-local-label">nur lokal</span>
         </div>
@@ -2108,6 +2277,8 @@
     state.supabaseSession = null;
     state.supabaseAuth = { name: "", pin: "", busy: false, error: "" };
     state.customerCard = null;
+    state.lookup = { result: null, confirm: null };
+    state.bridgeState = null;
     state.closeout = null;
     state.sharedSettings = { status: "idle", data: null, error: "" };
     state.crmNote = { status: "idle", error: "", signature: "", customerNumber: "", resolution: "", created: false };
@@ -2150,6 +2321,7 @@
           </div>
         </header>
         ${renderModeSwitch()}
+        ${renderBridgeBanner()}
         ${renderActiveCallBanner()}
         ${state.settingsOpen ? "" : `<nav class="sc-tabs" role="tablist" aria-label="Bereiche">${tabs}</nav>`}
         <main class="sc-panel-content">${state.settingsOpen ? renderSettings() : activeContent()}</main>
@@ -3228,6 +3400,12 @@
       const node = container && container.querySelector(`[data-role='${role}']`);
       return node ? Boolean(node.checked) : true;
     };
+    // Wie checked(), aber Fallback FALSE – für Freigabe-Flags, bei denen ein
+    // fehlendes Feld niemals „an" bedeuten darf (Netz-Auskunft/Bridge).
+    const checkedStrict = (role) => {
+      const node = container && container.querySelector(`[data-role='${role}']`);
+      return node ? Boolean(node.checked) : false;
+    };
     // Achtung: hier wird komplett neu aufgebaut, nicht gemerged. Jedes neue
     // Einstellungsfeld muss also auch hier auftauchen, sonst ist es nach dem
     // nächsten Speichern weg.
@@ -3240,7 +3418,12 @@
       syncTicketSummaryToCrm: checked("set-sync-summary"),
       customerSearchJql: value("set-customer-jql"),
       supabaseUrl: value("set-supabase-url"),
-      supabaseAnonKey: value("set-supabase-anon-key")
+      supabaseAnonKey: value("set-supabase-anon-key"),
+      // Kritische Schalter: bewusst mit Fallback false, falls das Feld mal fehlt
+      // (checked() defaultet auf true – für ein Freigabe-Flag wäre das falsch).
+      enableLookups: checkedStrict("set-enable-lookups"),
+      enableBridge: checkedStrict("set-enable-bridge"),
+      bridgeToken: value("set-bridge-token")
     };
     persistSettings();
     state.settingsOpen = false;
@@ -3255,6 +3438,54 @@
     persistUiState();
     const intent = intentId && AI.intents.find((entry) => entry.id === intentId);
     if (intent) state.ai.note = intent.seed;
+    render();
+  }
+
+  // Netz-Auskunft: Schritt 1 – Bestätigung anfordern (kritische Aktion). Der
+  // eigentliche Lauf startet erst nach „Ja" in confirmLookup().
+  function promptLookup(kind) {
+    if (state.settings.enableLookups !== true) {
+      toast("Netz-Auskunft ist ausgeschaltet – erst in den Einstellungen aktivieren.");
+      return;
+    }
+    const number = lookupCustomerNumber();
+    if (!number) { toast("Keine Kundennummer erkannt."); return; }
+    state.lookup.confirm = { kind, customerNumber: number };
+    render();
+  }
+
+  // Schritt 2 – bestätigt: Auftrag an den Hintergrund-Worker (lookup.js) und
+  // optimistisch einen „läuft"-Zustand anzeigen; Fortschritt/Ergebnis kommen
+  // über storageKeys.lookupResult zurück.
+  function confirmLookup() {
+    const confirm = state.lookup.confirm;
+    if (!confirm) return;
+    state.lookup.confirm = null;
+    const dash = (CONFIG.lookups && CONFIG.lookups[confirm.kind]) || {};
+    const requestId = `lk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    state.lookup.result = {
+      requestId,
+      kind: confirm.kind,
+      customerNumber: confirm.customerNumber,
+      status: "running",
+      steps: (dash.steps || []).map((step) => ({ id: step.id, state: "pending" })),
+      data: null,
+      error: ""
+    };
+    try {
+      if (chrome.runtime && chrome.runtime.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: "sc-run-lookup",
+          request: { kind: confirm.kind, customerNumber: confirm.customerNumber, source: "panel", requestId }
+        }, () => void chrome.runtime.lastError);
+      }
+    } catch (error) { /* Worker nicht erreichbar – Ergebnis bleibt bei „läuft" */ }
+    render();
+    toast("Abfrage gestartet …");
+  }
+
+  function cancelLookup() {
+    state.lookup.confirm = null;
     render();
   }
 
@@ -3395,6 +3626,14 @@
         return;
       case "closeout-refresh-settings": maybeLoadSharedSettings({ forceRefresh: true }); return;
       case "closeout-submit": await submitCloseout(); return;
+      case "lookup-baustatus": promptLookup("baustatus"); return;
+      case "lookup-churn": promptLookup("churn"); return;
+      case "lookup-confirm": confirmLookup(); return;
+      case "lookup-cancel": cancelLookup(); return;
+      case "open-lookup-settings":
+        state.settingsOpen = true;
+        render();
+        return;
       case "add-callback": addCurrentTicketToCallbacks(); return;
       case "dial-callback": dialCallback(control.dataset.callbackId); return;
       case "snooze-callback": snoozeCallback(control.dataset.callbackId, Number(control.dataset.snooze) || 3600000); return;
@@ -3519,7 +3758,9 @@
       CONFIG.storageKeys.callMode,
       CONFIG.storageKeys.callbacks,
       CONFIG.storageKeys.supabaseSession,
-      CONFIG.storageKeys.customerCard
+      CONFIG.storageKeys.customerCard,
+      CONFIG.storageKeys.lookupResult,
+      CONFIG.storageKeys.bridgeState
     ]);
     if (typeof saved[CONFIG.storageKeys.isOpen] === "boolean") state.isOpen = saved[CONFIG.storageKeys.isOpen];
     if (CONFIG.tabs.some((tab) => tab.id === saved[CONFIG.storageKeys.activeTab])) state.activeTab = saved[CONFIG.storageKeys.activeTab];
@@ -3547,6 +3788,8 @@
     }
     state.supabaseSession = saved[CONFIG.storageKeys.supabaseSession] || null;
     state.customerCard = saved[CONFIG.storageKeys.customerCard] || null;
+    state.lookup.result = saved[CONFIG.storageKeys.lookupResult] || null;
+    state.bridgeState = saved[CONFIG.storageKeys.bridgeState] || null;
 
     state.ticket = jiraReader.read();
     hydrateAiFromCache(state.ticket);
@@ -3602,6 +3845,23 @@
         // hier nur zum Anzeigen im Jira-Cockpit übernommen.
         if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.customerCard)) {
           state.customerCard = changes[CONFIG.storageKeys.customerCard].newValue || null;
+          render();
+        }
+        // Netz-Auskunft: Fortschritt/Ergebnis der aktiven Abfrage, geschrieben
+        // vom Hintergrund-Worker (lookup.js). Nur übernehmen, wenn es zur gerade
+        // laufenden Anfrage gehört (oder keine läuft), damit ein alter Eintrag
+        // eines anderen Tabs die aktuelle Anzeige nicht überschreibt.
+        if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.lookupResult)) {
+          const next = changes[CONFIG.storageKeys.lookupResult].newValue || null;
+          const current = state.lookup.result;
+          if (!next || !current || !current.requestId || next.requestId === current.requestId) {
+            state.lookup.result = next;
+            render();
+          }
+        }
+        // WebSocket-Bridge: an/aus für das „Bridge aktiv"-Banner.
+        if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.bridgeState)) {
+          state.bridgeState = changes[CONFIG.storageKeys.bridgeState].newValue || null;
           render();
         }
         // Supabase-Session kann auch im anderen Cockpit (timio-Seite hat

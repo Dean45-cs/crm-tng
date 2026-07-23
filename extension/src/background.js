@@ -18,7 +18,14 @@
 // CONFIG + gemeinsame Helfer aus denselben Dateien laden wie die Content-
 // Scripts, damit Storage-Schlüssel/Schwellen nicht dupliziert werden.
 try {
-  importScripts(chrome.runtime.getURL("src/config.js"), chrome.runtime.getURL("src/shared.js"));
+  importScripts(
+    chrome.runtime.getURL("src/config.js"),
+    chrome.runtime.getURL("src/shared.js"),
+    // Netz-Auskunft: Orchestrierung der aktiven Dashboard-Abfragen. Registriert
+    // eigene onMessage-Listener (sc-run-lookup vom Panel, sc-lookup-step von den
+    // Content-Scripts) und exportiert app.lookup.
+    chrome.runtime.getURL("src/lookup.js")
+  );
 } catch (error) {
   // Im Node-Test sind config.js/shared.js bereits in den Kontext geladen.
 }
@@ -390,6 +397,24 @@ try {
   app.background.focusTimio = focusTimio;
   app.background.protectTimioTabs = protectTimioTabs;
   app.background.forceQueueScrape = forceQueueScrape;
+
+  // Verbindung zur Desktop-App (desktop/), falls sie läuft. Muss nach dem
+  // Setzen von app.background stehen – die Brücke ruft focusTimio() darüber
+  // auf, wenn das Fenster den timio-Tab nach vorn holen soll.
+  try {
+    importScripts(chrome.runtime.getURL("src/hud-bridge.js"));
+  } catch (error) {
+    // Im Node-Test ist hud-bridge.js nicht geladen; ohne App fehlt nichts.
+  }
+
+  // WebSocket-Bridge zur externen Anbindung (server/baustatus_bridge.py).
+  // Verbindet sich nur bei aktivem Schalter (settings.enableBridge) und nutzt
+  // app.lookup.runLookup – muss deshalb nach dem lookup.js-Import stehen.
+  try {
+    importScripts(chrome.runtime.getURL("src/bridge.js"));
+  } catch (error) {
+    // Im Node-Test ist bridge.js nicht geladen; ohne Server fehlt nichts.
+  }
 
   // Beim ersten Laden sofort einen Stand setzen.
   ensureAlarm();

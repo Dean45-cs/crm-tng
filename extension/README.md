@@ -95,6 +95,47 @@ Die Erkennung ist textbasiert (keine festen HTML-Selektoren, da kein Entwicklerz
 - Erkennt Tickets über `/browse/PROJEKT-123`.
 - Liest Ticketnummer, Titel, Priorität, Status, Typ, Bearbeiter, Autor, Kunden-/Referenzfelder, Beschreibung und sichtbare Kommentare – ausschließlich aus den klassischen Jira-Bereichen.
 
+## Netz-Auskunft (optional, aktive Dashboard-Abfrage)
+
+Anders als der Rest der Extension **liest** die Netz-Auskunft nicht nur die
+sichtbare Seite, sondern **öffnet und automatisiert** ein internes Dashboard, um
+zu einer Kundennummer nachzuschlagen:
+
+- **Baustatus (FTTX)** über `fttx-dash.tng.de` – Ausbauphase, Vertrag, Line
+  Status, KVZ, Gebäudetyp, Adresse, externe Firmen und Zeitschienen.
+- **Kündiger-Status (GFIZ)** über `gfiz-dash.tng.de` – offene Churn-Vorgänge zur
+  Kundennummer (Vertrag, Geschäftsfall, Ursache, Jira-Ticket, Kommentar).
+
+Der Orchestrierung liegt eine bewusste Architekturentscheidung zugrunde: der
+Hintergrund-Worker (`src/lookup.js`) öffnet/findet den Dashboard-Tab und spricht
+ein **deklaratives Content-Script** (`src/baustatus-content.js` /
+`src/churn-content.js`) per Nachricht an – kein `chrome.scripting.executeScript`,
+das auf strikten CSP-/Trusted-Types-Seiten scheitert. Die reine Auswertung
+liegt in testbaren Parsern (`shared.parseBaustatus` / `shared.parseChurn`).
+
+**Weil das ein fremdes System automatisiert, ist es doppelt abgesichert:**
+
+- **Master-Schalter** in den Einstellungen (**Standard AUS**). Ohne ihn erscheinen
+  keine Abfrage-Buttons, sondern nur ein Hinweis zum Aktivieren.
+- **Bestätigung vor jedem einzelnen Lauf** direkt im Panel (kein Blindstart).
+
+Ergebnis und Fortschritt erscheinen in der Übersicht in der bestehenden
+Panel-Optik. Kundennummer wird aus dem Ticket (Kunden-ID) bzw. einem aktiven
+Anruf übernommen.
+
+### WebSocket-Bridge (optional)
+
+Ein lokaler Server (`server/baustatus_bridge.py`) kann ein externes Frontend mit
+der Extension verbinden, sodass dieses eine Netz-Auskunft auslösen und Ergebnis
++ Fortschritt live erhält. Eigener **Schalter (Standard AUS)** plus
+**Token-Handshake**; solange verbunden, zeigt das Panel ein Banner „Bridge
+aktiv". Nur `127.0.0.1`. Ein Bridge-Aufruf benötigt **beide** Schalter
+(Bridge *und* Netz-Auskunft). Details in [`../server/README.md`](../server/README.md).
+
+> **Freigabe/Compliance:** Aktives Automatisieren interner Dashboards sollte
+> abgestimmt sein (mit dem/der Verantwortlichen und bzgl. der Nutzungsregeln der
+> Dashboards). Die Schalter stehen deshalb bewusst auf AUS.
+
 ## Lokal laden
 
 1. Chrome öffnen und `chrome://extensions` aufrufen.
@@ -104,6 +145,12 @@ Die Erkennung ist textbasiert (keine festen HTML-Selektoren, da kein Entwicklerz
 5. Eine Jira-Ticketseite wie `https://jira.ennit.de/browse/TNG-1592568` neu laden.
 
 Falls sich die Jira-Domain ändert, in `manifest.json` den Eintrag unter `content_scripts[0].matches` anpassen und die Erweiterung neu laden.
+
+## Als Desktop-App (Mac & Windows)
+
+Dasselbe Cockpit gibt es auch als eigenes Fenster, das immer im Vordergrund bleibt – unabhängig davon, welcher Tab gerade offen ist, und mit Notizen als zusätzlicher Funktion. Siehe [`desktop/`](../desktop/README.md).
+
+Die Extension bleibt dabei bestehen: sie liefert weiterhin den Vorgang und die lokale KI, denn beides gibt es nur in Chrome. Läuft die App, baut die Extension ihr Panel in der Jira-Seite nicht zusätzlich auf (`src/hud-agent.js`, `src/hud-bridge.js`) – sonst liefen beide Fassungen parallel.
 
 ## Voraussetzungen für die lokale KI
 

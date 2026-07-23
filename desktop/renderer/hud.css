@@ -1,0 +1,337 @@
+/* Fenster-Anpassungen.
+ *
+ * extension/styles/content.css bleibt unangetastet – es beschreibt ein Overlay,
+ * das in einer fremden Seite schwebt. Hier bekommt dasselbe Panel stattdessen
+ * das ganze Fenster: keine Ein-/Ausblende-Animation, kein Startknopf, kein
+ * Freischweben. Positioniert wird ab jetzt durch Verschieben des Fensters.
+ */
+
+:root {
+  --hud-titlebar: 38px;
+  --hud-bg: #ffffff;
+  --hud-bar: #0b2540;
+  --hud-bar-ink: #e8eefc;
+  --hud-line: #dfe1e6;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--hud-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* --- Titelleiste ---------------------------------------------------------- */
+
+.hud-titlebar {
+  position: fixed;
+  z-index: 20000;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  height: var(--hud-titlebar);
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px 0 10px;
+  background: var(--hud-bar);
+  color: var(--hud-bar-ink);
+  user-select: none;
+}
+
+/* Der linke Teil zieht das Fenster – das Fenster hat ja keinen Systemrahmen
+   mehr, über den man es sonst anfassen würde. */
+.hud-drag {
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: drag;
+}
+
+.hud-title {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-context {
+  overflow: hidden;
+  color: rgba(232, 238, 252, 0.62);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: #9aa0a6;
+  transition: background 200ms ease;
+}
+
+.hud-dot.is-connected { background: #2e7d46; }
+.hud-dot.is-offline { background: #d93f3c; }
+
+.hud-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.hud-button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--hud-bar-ink);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  place-items: center;
+}
+
+.hud-button:hover { background: rgba(255, 255, 255, 0.14); }
+.hud-button.is-active { background: rgba(255, 255, 255, 0.26); }
+.hud-button--close:hover { background: #c9372c; }
+
+/* --- Hinweis ohne Chrome -------------------------------------------------- */
+
+.hud-offline {
+  position: fixed;
+  z-index: 19000;
+  top: var(--hud-titlebar);
+  right: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0d3a0;
+  background: #fff7e6;
+  color: #7a4a06;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hud-offline[hidden] { display: none; }
+.hud-offline strong { font-size: 12px; }
+
+/* Ab wo das Panel beginnt: unter der Titelleiste und, falls sichtbar, unter
+ * dem Offline-Hinweis. Dessen Höhe hängt vom Zeilenumbruch und damit von der
+ * Fensterbreite ab – sie wird deshalb in boot.js gemessen und hier gesetzt. */
+body { --hud-offset: var(--hud-titlebar); }
+
+/* --- Das Panel füllt das Fenster ------------------------------------------ */
+
+#stadtnetzcrm-root .sc-panel {
+  position: fixed;
+  top: var(--hud-offset);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: auto;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  /* Im Fenster gibt es nichts ein- und auszublenden: das Panel ist das Fenster.
+     Die Klasse is-open aus ui.js bleibt damit ohne Wirkung. */
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  transition: none;
+}
+
+/* Startknopf und Minimieren-Kreuz des Panels führen hier ins Leere – das
+   Fenster hat dafür seine eigene Titelleiste. */
+#stadtnetzcrm-root .sc-launcher,
+#stadtnetzcrm-root [data-action="close-panel"] {
+  display: none !important;
+}
+
+#stadtnetzcrm-root .sc-panel-header { min-height: 0; padding: 10px 14px; }
+
+/* --- Call-Cockpit --------------------------------------------------------- */
+
+/* In der Jira-Seite schwebt das Cockpit frei neben dem Panel und lässt sich
+   ziehen. Im schmalen Fenster wäre das nur im Weg: es legt sich stattdessen
+   fest über das Panel, solange ein Gespräch läuft. !important, weil ui.js beim
+   Ziehen Inline-Positionen setzt. */
+#stadtnetzcrm-root .sc-cockpit {
+  position: fixed !important;
+  z-index: 10002;
+  top: calc(var(--hud-offset) + 6px) !important;
+  right: 6px !important;
+  bottom: auto !important;
+  left: 6px !important;
+  width: auto !important;
+  max-width: none !important;
+  max-height: calc(100vh - var(--hud-offset) - 12px);
+}
+
+#stadtnetzcrm-root .sc-cockpit-header { cursor: default; }
+
+/* --- Befehlspalette ------------------------------------------------------- */
+
+#sc-jira-palette { z-index: 20001; }
+#sc-jira-palette .sc-palette-backdrop { top: var(--hud-titlebar); }
+
+/* --- Notizen -------------------------------------------------------------- */
+
+.hud-notes {
+  position: fixed;
+  z-index: 19500;
+  top: var(--hud-offset);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--hud-bg);
+  color: #172b4d;
+  font-size: 13px;
+}
+
+.hud-notes[hidden] { display: none; }
+
+.hud-notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hud-line);
+}
+
+.hud-notes-head strong { font-size: 13px; }
+
+.hud-notes-context {
+  overflow: hidden;
+  color: #5e6c84;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-notes-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hud-line);
+}
+
+.hud-notes-editor textarea {
+  min-height: 84px;
+  padding: 8px 10px;
+  border: 1px solid var(--hud-line);
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}
+
+.hud-notes-editor textarea:focus {
+  border-color: #0c66e4;
+  outline: 2px solid rgba(12, 102, 228, 0.24);
+  outline-offset: 0;
+}
+
+.hud-notes-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-notes-row input[type="text"] {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--hud-line);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.hud-notes-hint {
+  color: #5e6c84;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hud-notes-hint.is-error { color: #ae2e24; }
+.hud-notes-hint.is-ok { color: #216e4e; }
+
+.hud-notes-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 8px 12px 16px;
+}
+
+.hud-note {
+  padding: 8px 0;
+  border-bottom: 1px solid #eef0f3;
+}
+
+.hud-note-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: #5e6c84;
+  font-size: 10px;
+}
+
+.hud-note-text {
+  margin-top: 3px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.hud-note-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.hud-empty {
+  padding: 18px 0;
+  color: #5e6c84;
+  text-align: center;
+}
+
+/* Kleine Schaltflächen im Notizbereich – bewusst dieselbe Formensprache wie
+   die Chips im Panel, damit es nicht nach zwei Programmen aussieht. */
+.hud-chip {
+  padding: 5px 10px;
+  border: 1px solid var(--hud-line);
+  border-radius: 999px;
+  background: #fff;
+  color: #172b4d;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.hud-chip:hover { background: #f4f5f7; }
+.hud-chip--primary { border-color: #0055cc; background: #0c66e4; color: #fff; }
+.hud-chip--primary:hover { background: #0055cc; }
+.hud-chip--primary:disabled { border-color: #c7d3e6; background: #a9bfe0; cursor: default; }
+.hud-chip--danger { color: #ae2e24; }
+
+/* Kein dunkles Thema: content.css ist durchgehend hell aufgebaut (viele Farben
+ * stehen dort fest im Regelwerk, nicht in Variablen). Nur die Notizen
+ * umzufärben, ergäbe ein halb dunkles Fenster – deshalb bleibt hier alles auf
+ * derselben hellen Palette wie im Jira-Tab. Ein echtes dunkles Thema gehört in
+ * content.css und käme dann automatisch auch hier an. */
