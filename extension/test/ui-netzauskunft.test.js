@@ -65,11 +65,16 @@ async function run() {
     assert.strictEqual(saved.enableLookups, false, "ein fehlendes Feld darf niemals „an“ bedeuten (checkedStrict)");
   }
 
-  // --- Freigegeben, aber keine Kundennummer → keine Buttons -----------------
+  // --- Freigegeben ohne erkannte Nummer: manuelles Feld, kein Blindstart ----
   {
     const { env } = await mountWith((KEYS) => ({ [KEYS.settings]: { enableLookups: true } }));
-    assert.ok(env.html().includes("Keine Kundennummer erkannt"), "ohne Kundennummer ist keine Abfrage möglich");
-    assert.ok(!env.html().includes('data-action="lookup-baustatus"'), "und es erscheinen keine Buttons");
+    assert.ok(env.html().includes('data-role="lookup-customer"'), "es gibt ein manuelles Kundennummer-Feld");
+    assert.ok(env.html().includes("keine Kundennummer automatisch erkannt"), "mit Hinweis, dass nichts erkannt wurde");
+    assert.ok(env.html().includes('data-action="lookup-baustatus"'), "die Buttons stehen trotzdem bereit (manuelle Eingabe möglich)");
+    // Klick ohne eingetragene Nummer löst keine Bestätigung/Abfrage aus.
+    env.click("lookup-baustatus");
+    assert.ok(!env.html().includes('data-action="lookup-confirm"'), "ohne Nummer keine Bestätigung");
+    assert.strictEqual(env.messages.filter((m) => m.type === "sc-run-lookup").length, 0, "und kein Auftrag");
   }
 
   // --- Freigegeben + Kundennummer: Confirm-Flow -----------------------------

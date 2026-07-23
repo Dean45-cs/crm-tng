@@ -34,10 +34,6 @@ function loadWorker() {
   return { env, bg: app.background, KEYS: app.CONFIG.storageKeys, BADGE: app.CONFIG.badge };
 }
 
-function freshQueue(groups, now) {
-  return { updatedAt: now, groups };
-}
-
 async function run() {
   // --- Arbeitsrichtung normalisieren ---------------------------------------
   {
@@ -141,35 +137,30 @@ async function run() {
     assert.strictEqual(shared.customerSearchUrl(""), "", "ohne Kundennummer gibt es keinen Link");
   }
 
-  // --- Badge: Modus entscheidet, welche Zahl drängt -------------------------
+  // --- Badge: fällige Rückrufe drängen -------------------------------------
   {
     const { bg, BADGE } = loadWorker();
     const now = Date.now();
-    const queue = freshQueue([{ name: "Bestellhotline", waiting: 3 }], now);
     const callbacks = { items: [
       { id: "a", dueAt: now - 1000, ticketKey: "TNG-1", reason: "Nicht erreicht" },
       { id: "b", dueAt: now + 600000, ticketKey: "TNG-2" }
     ] };
 
-    // Eingehend bleibt alles wie gehabt: das Wartefeld zählt.
-    const inbound = bg.computeBadge(queue, null, now, { mode: "inbound", callbacks });
-    assert.strictEqual(inbound.text, "3", "eingehend zeigt das Badge das Wartefeld");
-    assert.strictEqual(inbound.color, BADGE.colorWaiting, "eingehend bleibt die Wartefeld-Farbe");
-    assert.ok(inbound.title.includes("1 Rückruf fällig"), "der Tooltip erwähnt fällige Rückrufe trotzdem");
+    // Im reinen Outbound-Betrieb bedient der Bearbeiter kein Wartefeld – die
+    // drängende Zahl sind die fälligen Wiedervorlagen.
+    const due = bg.computeBadge(null, now, { callbacks });
+    assert.strictEqual(due.text, "1", "das Badge zählt die fälligen Rückrufe");
+    assert.strictEqual(due.color, BADGE.colorDue, "das Badge ist bernsteinfarben");
+    assert.ok(due.title.includes("TNG-1"), "der Tooltip nennt den fälligen Vorgang");
 
-    // Ausgehend bedient der Bearbeiter kein Wartefeld – dort drängen Rückrufe.
-    const outbound = bg.computeBadge(queue, null, now, { mode: "outbound", callbacks });
-    assert.strictEqual(outbound.text, "1", "ausgehend zählt das Badge die fälligen Rückrufe");
-    assert.strictEqual(outbound.color, BADGE.colorDue, "ausgehend ist das Badge bernsteinfarben");
-    assert.ok(outbound.title.includes("TNG-1"), "der Tooltip nennt den fälligen Vorgang");
+    // Kein fälliger Rückruf: leeres Badge.
+    const none = bg.computeBadge(null, now, { callbacks: { items: [] } });
+    assert.strictEqual(none.text, "", "ohne fällige Rückrufe bleibt das Badge leer");
+    assert.strictEqual(none.color, BADGE.colorDue, "die Badge-Farbe bleibt bernstein");
 
-    // Steht kein Rückruf an, geht die Wartefeld-Information nicht verloren.
-    const nothingDue = bg.computeBadge(queue, null, now, { mode: "outbound", callbacks: { items: [] } });
-    assert.strictEqual(nothingDue.text, "3", "ohne fällige Rückrufe zeigt auch outbound das Wartefeld");
-    assert.strictEqual(nothingDue.color, BADGE.colorWaiting, "und wieder in der Wartefeld-Farbe");
-
-    // Ohne Optionen (Altaufrufe) muss sich nichts ändern.
-    assert.strictEqual(bg.computeBadge(queue, null, now).text, "3", "ohne Optionen bleibt das bisherige Verhalten");
+    // Ein aktiver Anruf erscheint im Tooltip.
+    const onCall = bg.computeBadge({ status: "connected", callerName: "Anna", updatedAt: now }, now, { callbacks });
+    assert.ok(onCall.title.includes("Im Gespräch: Anna"), "der aktive Anruf steht im Tooltip");
   }
 
   // --- Erinnerung je Rückruf genau einmal -----------------------------------

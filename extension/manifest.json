@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Stadtnetz CRM Copilot – lokale KI für Jira",
-  "version": "0.13.0",
-  "description": "KI-gestützter Support-Assistent für klassische Jira-Vorgänge mit timio-Anruferkennung und Call-Cockpit (Anrufer, Gesprächsdauer, Wartefeld, Ticket-Abgleich) sowie Outbound-Modus (Gesprächsvorbereitung, Ergebnis-Erfassung, Rückrufliste). Zusammenfassung, Team-Doku, Einordnung, Antwort-Entwürfe und Qualitätscheck – automatisch, gecacht und vollständig lokal, ohne Cloud.",
+  "name": "Stadtnetz CRM Outbound – lokale KI fürs Vertriebstelefonat",
+  "version": "0.14.0",
+  "description": "KI-gestützter Outbound-Assistent: liest den Jira-Vorgang als Kontext, bereitet ausgehende Anrufe vor (Ziel, Gesprächspunkte, Einwände), führt durch Leitfaden und Ergebnis-Erfassung, schließt Notiz/Lead/Vertrag/Tarifwechsel direkt ins CRM ab und pflegt die Rückrufliste. Mit timio-Anrufkontext und Call-Cockpit – vollständig lokal, ohne Cloud.",
   "permissions": ["storage", "clipboardWrite", "notifications", "alarms", "tabs"],
   "host_permissions": ["https://jira.ennit.de/*", "https://ccc.my-phone.cloud/*", "https://*.supabase.co/*", "https://fttx-dash.tng.de/*", "https://gfiz-dash.tng.de/*"],
   "icons": {
@@ -12,7 +12,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Stadtnetz CRM Copilot – Wartefeld (klicken für timio)",
+    "default_title": "Stadtnetz CRM Outbound – Rückrufe (klicken für timio)",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

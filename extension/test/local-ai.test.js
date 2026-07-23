@@ -1,23 +1,22 @@
 "use strict";
 
-// Test für die KI-Schicht (src/local-ai.js) – konkret die Nano-Optimierungen:
-// (1) Kontext-Priorisierung (neueste Kommentare überleben das Budget, alte
-// werden ausgelassen), (2) Few-Shot-Beispiele in den Entwurfs-Prompts,
-// (3) niedriger topK für Analyse-Aufgaben. Ein Fake-LanguageModel fängt den
-// tatsächlich an das Modell übergebenen Prompt/Optionen ab – so lässt sich das
-// Prompt-Engineering ohne echtes Modell prüfen.
+// Test für die KI-Schicht (src/local-ai.js) im Outbound-Betrieb. Geprüft werden
+// die beiden verbliebenen Funktionen und ihr Prompt-Engineering:
+// (1) prepareCall – Kontext-Priorisierung (neueste Kommentare überleben das
+//     Budget), deterministischer topK=1 und strukturierte JSON-Rückgabe,
+// (2) draftCallNote – Few-Shot-Beispiel im Prompt und mehr Varianz (topK ≠ 1).
+// Ein Fake-LanguageModel fängt den an das Modell übergebenen Prompt/Optionen ab.
 //
 // Ausführen mit: node test/local-ai.test.js
 
 const assert = require("assert");
 const { makeSandbox, loadScripts } = require("./support/stub-env");
 
-const TRIAGE_JSON = JSON.stringify({
-  stimmung: "neutral",
-  dringlichkeit: "mittel",
-  kategorie: "Frage",
-  kundenwunsch: "Kunde möchte eine Rückmeldung zum Stand.",
-  naechsterSchritt: "Status prüfen und zurückmelden."
+const PREP_JSON = JSON.stringify({
+  ziel: "Kunden über den Ausbaustand informieren und Tarifwechsel anbieten.",
+  punkte: ["Ausbau abgeschlossen", "Upgrade-Optionen erläutern"],
+  fragen: ["Ist Interesse an einem schnelleren Tarif vorhanden?"],
+  einwaende: [{ einwand: "Ich habe gerade keine Zeit", antwort: "Kein Problem, wann darf ich zurückrufen?" }]
 });
 
 function setup(jsonResponse) {
@@ -62,8 +61,8 @@ async function run() {
   // 1) Kontext-Priorisierung: bei zu vielen langen Kommentaren bleibt der
   //    neueste erhalten, der älteste wird ausgelassen.
   {
-    const { localAi, captured } = setup();
-    await localAi.summarize(ticketWithManyComments(20));
+    const { localAi, captured } = setup(PREP_JSON);
+    await localAi.prepareCall({ ticket: ticketWithManyComments(20) });
     const prompt = captured.join("\n");
     assert.ok(prompt.includes("MARKER_NEWEST"), "neuester Kommentar bleibt im Kontext erhalten");
     assert.ok(!prompt.includes("MARKER_OLDEST"), "ältester Kommentar wird bei Budgetüberschreitung ausgelassen");
@@ -72,52 +71,44 @@ async function run() {
 
   // 2) Kleines Ticket: nichts wird ausgelassen, alle Kommentare sind da.
   {
-    const { localAi, captured } = setup();
-    await localAi.summarize({
+    const { localAi, captured } = setup(PREP_JSON);
+    await localAi.prepareCall({ ticket: {
       key: "SUP-2", summary: "Klein", status: "Offen", priority: "Niedrig", issueType: "Frage",
       customerReference: "K-2", customerName: "K", assignee: "B",
       description: "Kurz.", comments: ["MARKER_OLDEST kurz", "MARKER_NEWEST kurz"]
-    });
+    } });
     const prompt = captured.join("\n");
     assert.ok(prompt.includes("MARKER_OLDEST") && prompt.includes("MARKER_NEWEST"), "kleines Ticket: alle Kommentare bleiben");
     assert.ok(!prompt.includes("ausgelassen"), "kleines Ticket: kein Auslassen-Hinweis");
   }
 
-  // 3) Few-Shot-Beispiel im Kommentar-Entwurf.
+  // 3) prepareCall liefert aus gültigem JSON strukturierte Daten und läuft
+  //    deterministisch (topK=1).
   {
-    const { localAi, captured } = setup();
-    await localAi.draftComment({ ticket: ticketWithManyComments(2), note: "Rückruf erledigt", tone: "professionell" });
+    const { localAi, createdOptions } = setup(PREP_JSON);
+    const result = await localAi.prepareCall({ ticket: ticketWithManyComments(2) });
+    assert.strictEqual(result.status, "ok", "prepareCall-Status ok");
+    assert.strictEqual(result.data.ziel, "Kunden über den Ausbaustand informieren und Tarifwechsel anbieten.", "prepareCall liefert das Ziel zurück");
+    assert.ok(Array.isArray(result.data.punkte) && result.data.punkte.length >= 2, "prepareCall liefert Gesprächspunkte");
+    assert.ok(createdOptions.some((o) => o.topK === 1), "Gesprächsvorbereitung läuft mit topK=1");
+  }
+
+  // 4) draftCallNote enthält ein Form-Beispiel und läuft mit mehr Varianz.
+  {
+    const { localAi, captured, createdOptions } = setup();
+    await localAi.draftCallNote({ ticket: ticketWithManyComments(2), note: "Kunde interessiert, Angebot per Mail" });
     const prompt = captured.join("\n");
-    assert.ok(prompt.includes("Beispiel NUR für die Form"), "Kommentar-Entwurf enthält ein Form-Beispiel");
-    assert.ok(prompt.includes("doppelte Abbuchung"), "das konkrete Beispiel ist im Prompt");
+    assert.ok(prompt.includes("Beispiel NUR für die Form"), "Notiz-Entwurf enthält ein Form-Beispiel");
+    assert.ok(prompt.includes("Ausbau im Gebiet abgeschlossen"), "das konkrete Beispiel ist im Prompt");
+    assert.ok(createdOptions.every((o) => o.topK !== 1), "Notiz-Entwurf läuft NICHT mit topK=1 (mehr Varianz erlaubt)");
   }
 
-  // 4) Few-Shot-Beispiel im E-Mail-Entwurf.
+  // 5) capabilities meldet Verfügbarkeit ohne Companion-API-Flags.
   {
-    const { localAi, captured } = setup();
-    await localAi.draftEmail({ ticket: ticketWithManyComments(2), note: "Zwischenstand", tone: "freundlich", language: "de" });
-    const prompt = captured.join("\n");
-    assert.ok(prompt.includes("Beispiel NUR für die Form"), "E-Mail-Entwurf enthält ein Form-Beispiel");
-    assert.ok(prompt.includes("Update zu Ihrem Anliegen"), "das E-Mail-Beispiel ist im Prompt");
-  }
-
-  // 5) Analyse-Aufgabe nutzt topK=1 (deterministisch), Entwurf nicht.
-  {
-    const analysis = setup();
-    await analysis.localAi.summarize(ticketWithManyComments(2));
-    assert.ok(analysis.createdOptions.some((o) => o.topK === 1), "Zusammenfassung läuft mit topK=1");
-
-    const draft = setup();
-    await draft.localAi.draftComment({ ticket: ticketWithManyComments(2), note: "x", tone: "professionell" });
-    assert.ok(draft.createdOptions.every((o) => o.topK !== 1), "Entwurf läuft NICHT mit topK=1 (mehr Varianz erlaubt)");
-  }
-
-  // 6) Triage liefert aus gültigem JSON strukturierte Daten.
-  {
-    const { localAi } = setup(TRIAGE_JSON);
-    const result = await localAi.triage(ticketWithManyComments(2));
-    assert.strictEqual(result.status, "ok", "Triage-Status ok");
-    assert.strictEqual(result.data.kategorie, "Frage", "Triage liefert die Kategorie zurück");
+    const { localAi } = setup();
+    const caps = await localAi.capabilities();
+    assert.strictEqual(caps.usable, true, "capabilities meldet nutzbar");
+    assert.ok(!("hasRewriter" in caps), "keine Companion-API-Flags mehr");
   }
 
   console.log("local-ai.test.js: alle Szenarien bestanden.");

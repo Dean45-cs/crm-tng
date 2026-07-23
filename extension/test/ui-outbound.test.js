@@ -1,12 +1,13 @@
 "use strict";
 
-// Outbound-Modus im Jira-Panel (src/ui.js): Richtungsschalter, modusabhängiger
-// Leitfaden, Rückrufliste und die Ergebnis-Erfassung nach dem Gespräch.
+// Outbound-Panel (src/ui.js): die vier Bereiche Vorbereitung/Gespräch/
+// Abschluss/Rückrufe, der Outbound-Leitfaden samt Einwandkarten, die
+// Rückrufliste und die Ergebnis-Erfassung nach dem Gespräch.
 //
-// Deckt bewusst die Stellen ab, an denen der Modus die Oberfläche umschaltet –
-// dort sitzen die stillen Fehler: ein Kopier-Button, der weiter in die
-// Inbound-Liste indiziert, oder eine Einstellung, die beim Speichern
-// verlorengeht, fällt sonst niemandem auf.
+// Im reinen Outbound-Betrieb gibt es keinen Richtungsschalter mehr – der Modus
+// ist konstant ausgehend. Geprüft werden hier die Stellen, an denen ein stiller
+// Fehler teuer wäre: ein Kopier-Button, der in die falsche Liste indiziert, oder
+// eine Einstellung, die beim Speichern verlorengeht.
 //
 // Ausführen mit: node test/ui-outbound.test.js
 
@@ -31,72 +32,36 @@ async function mountPanel(options) {
 }
 
 async function run() {
-  // --- Richtungsschalter ----------------------------------------------------
+  // --- Vier Bereiche, kein Richtungsschalter -------------------------------
   {
-    const { env, KEYS } = await mountPanel();
+    const { env } = await mountPanel();
 
-    assert.ok(env.html().includes('data-action="set-call-mode"'), "der Richtungsschalter steht im Panel-Kopf");
-    assert.ok(env.html().includes("Call-Hilfe"), "im Normalfall heißt der Tab Call-Hilfe");
-    assert.ok(!env.html().includes(">Outbound<"), "und noch nicht Outbound");
-
-    env.click("set-call-mode", { mode: "outbound" });
-    assert.strictEqual(env.storage[KEYS.callMode], "outbound", "die Richtung wird für das timio-Cockpit veröffentlicht");
-    assert.ok(env.html().includes(">Outbound<"), "der Tab heißt jetzt Outbound – die Richtung ist auch ohne Blick auf den Schalter sichtbar");
-
-    env.click("set-call-mode", { mode: "inbound" });
-    assert.strictEqual(env.storage[KEYS.callMode], "inbound", "zurückschalten funktioniert ebenso");
+    assert.ok(!env.html().includes('data-action="set-call-mode"'), "es gibt keinen Richtungsschalter mehr");
+    ["Vorbereitung", "Gespräch", "Abschluss", "Rückrufe"].forEach((label) => {
+      assert.ok(env.html().includes(label), `der Tab "${label}" steht im Panel`);
+    });
+    // Vorbereitung ist der Startbereich – dort läuft die Gesprächsvorbereitung.
+    assert.ok(env.html().includes('data-action="generate-call-prep"'), "die Gesprächsvorbereitung steht im Vorbereitungs-Tab");
   }
 
-  // --- Richtung kommt aus dem timio-Cockpit --------------------------------
-  {
-    const { env, KEYS } = await mountPanel();
-    // Beide Seiten zeigen denselben Schalter; wird er in timio umgelegt, muss
-    // das Panel nachziehen, ohne dass jemand neu lädt.
-    env.sandbox.chrome.storage.local.set({ [KEYS.callMode]: "outbound" });
-    assert.ok(env.html().includes(">Outbound<"), "ein Moduswechsel aus timio schlägt im Panel durch");
-  }
-
-  // --- Gemerkte Richtung überlebt den Reload -------------------------------
-  {
-    const env = makePanelSandbox();
-    loadScripts(env.sandbox, SCRIPTS);
-    const KEYS = env.sandbox.StadtnetzCRM.CONFIG.storageKeys;
-    env.storage[KEYS.callMode] = "outbound";
-    await env.sandbox.StadtnetzCRM.ui.mount();
-    assert.ok(env.html().includes(">Outbound<"), "die zuletzt gewählte Richtung wird beim Laden übernommen");
-  }
-
-  // --- Leitfaden und Einwandkarten wechseln mit ----------------------------
+  // --- Outbound-Leitfaden und Einwandkarten --------------------------------
   {
     const { env, CONFIG } = await mountPanel();
-    // Titel enthalten Zeichen wie "&", die im Markup escaped landen – deshalb
-    // mit derselben Funktion vergleichen, die auch das Panel benutzt.
     const escapeHtml = env.sandbox.StadtnetzCRM.shared.escapeHtml;
-    env.click("switch-tab", { tab: "call" });
+    env.click("switch-tab", { tab: "talk" });
 
-    const inboundFirst = escapeHtml(CONFIG.callGuides.inbound[0].title);
-    const outboundFirst = escapeHtml(CONFIG.callGuides.outbound[0].title);
-    assert.ok(env.html().includes(inboundFirst), "eingehend steht der Inbound-Leitfaden im Call-Tab");
-    assert.ok(!env.html().includes(outboundFirst), "und nicht der Outbound-Leitfaden");
-
-    env.click("set-call-mode", { mode: "outbound" });
-    assert.ok(env.html().includes(outboundFirst), "ausgehend erscheint der Outbound-Leitfaden");
-    assert.ok(!env.html().includes(inboundFirst), "der Inbound-Leitfaden verschwindet");
-    assert.ok(env.html().includes(escapeHtml(CONFIG.objectionCards.outbound[0].title)), "auch die Einwandkarten wechseln mit");
-    assert.ok(env.html().includes('data-action="generate-call-prep"'), "die Gesprächsvorbereitung erscheint nur im Outbound-Modus prominent");
+    assert.ok(env.html().includes(escapeHtml(CONFIG.callGuides.outbound[0].title)), "der Outbound-Leitfaden steht im Gespräch-Tab");
+    assert.ok(env.html().includes(escapeHtml(CONFIG.objectionCards.outbound[0].title)), "auch die Einwandkarten sind da");
   }
 
-  // --- Kopier-Buttons greifen in den AKTIVEN Leitfaden ---------------------
+  // --- Kopier-Buttons greifen in den Outbound-Leitfaden --------------------
   {
     const { env, CONFIG } = await mountPanel();
-    env.click("switch-tab", { tab: "call" });
-    env.click("set-call-mode", { mode: "outbound" });
+    env.click("switch-tab", { tab: "talk" });
 
-    // Der stille Fehler wäre hier: der Button indiziert weiter in die
-    // Inbound-Liste und kopiert im Outbound-Modus den falschen Satz.
     env.click("copy-call-phase", { phaseIndex: "0" });
     await new Promise((resolve) => setImmediate(resolve));
-    assert.strictEqual(env.copied.slice(-1)[0], CONFIG.callGuides.outbound[0].prompt, "kopiert wird der Outbound-Satz, nicht der Inbound-Satz");
+    assert.strictEqual(env.copied.slice(-1)[0], CONFIG.callGuides.outbound[0].prompt, "kopiert wird der Outbound-Gesprächsbaustein");
 
     env.click("copy-objection", { objectionIndex: "0" });
     await new Promise((resolve) => setImmediate(resolve));
@@ -106,7 +71,7 @@ async function run() {
   // --- Rückrufliste ---------------------------------------------------------
   {
     const { env, KEYS } = await mountPanel();
-    env.click("switch-tab", { tab: "call" });
+    env.click("switch-tab", { tab: "callbacks" });
 
     assert.ok(env.html().includes("Keine offenen Rückrufe"), "die Liste startet leer");
 
@@ -133,8 +98,6 @@ async function run() {
   // --- Ergebnis-Erfassung ---------------------------------------------------
   {
     const { env, KEYS } = await mountPanel();
-    env.click("switch-tab", { tab: "call" });
-    env.click("set-call-mode", { mode: "outbound" });
 
     env.click("call-outcome", { outcome: "not-reached" });
     const after = env.storage[KEYS.callbacks];
@@ -161,9 +124,6 @@ async function run() {
   // --- Ergebnis aus dem timio-Cockpit ---------------------------------------
   {
     const { env, KEYS } = await mountPanel();
-    // "mailbox" existiert nur im Outbound-Wortschatz (Stufe 3) — der frische
-    // Panel-Start ist standardmäßig inbound.
-    env.click("set-call-mode", { mode: "outbound" });
     // In timio läuft keine lokale KI – der Klick kommt dort nur als
     // Staffelstab über den Storage an und wird hier verarbeitet.
     env.sandbox.chrome.storage.local.set({
@@ -201,18 +161,16 @@ async function run() {
     assert.ok(Object.prototype.hasOwnProperty.call(saved, "agentName"), "die bisherigen Felder bleiben erhalten");
   }
 
-  // --- Recht auf Löschung erfasst auch die neuen Daten ---------------------
+  // --- Recht auf Löschung erfasst auch die Rückrufdaten --------------------
   {
     const { env, KEYS } = await mountPanel();
-    env.click("switch-tab", { tab: "call" });
-    env.click("set-call-mode", { mode: "outbound" });
+    env.click("switch-tab", { tab: "callbacks" });
     env.click("add-callback");
     assert.ok(env.storage[KEYS.callbacks], "es liegen Rückrufdaten vor");
 
     env.click("wipe-data");
     assert.ok(!env.storage[KEYS.callbacks], "die Rückrufliste wird mitgelöscht");
-    assert.ok(!env.storage[KEYS.callMode], "die gemerkte Richtung wird mitgelöscht");
-    assert.ok(env.html().includes("Call-Hilfe"), "und das Panel steht wieder auf eingehend");
+    assert.ok(env.html().includes("Vorbereitung"), "das Panel steht danach wieder auf den Standard-Bereichen");
   }
 
   console.log("ui-outbound.test.js: alle Szenarien bestanden.");

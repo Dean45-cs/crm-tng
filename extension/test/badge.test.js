@@ -1,9 +1,11 @@
 "use strict";
 
-// Test für den Hintergrund-Service-Worker (src/background.js): das Wartefeld-
-// Badge auf dem Symbolleisten-Icon, die Benachrichtigungs-Logik und der
-// Klick-auf-Icon-springt-zu-timio-Weg. Läuft ohne Browser via Node `vm` gegen
-// die echten Quelldateien (siehe test/support/stub-env.js).
+// Test für den Hintergrund-Service-Worker (src/background.js): das Rückruf-
+// Badge auf dem Symbolleisten-Icon, die Benachrichtigungs-Logik für fällige
+// Rückrufe und der Klick-auf-Icon-springt-zu-timio-Weg. Im reinen Outbound-
+// Betrieb gibt es kein Wartefeld mehr – die drängende Zahl sind die fälligen
+// Wiedervorlagen. Läuft ohne Browser via Node `vm` gegen die echten
+// Quelldateien (siehe test/support/stub-env.js).
 //
 // Ausführen mit: node test/badge.test.js
 
@@ -21,8 +23,8 @@ function load() {
   return { env, bg, KEYS: CONFIG.storageKeys, BADGE: CONFIG.badge };
 }
 
-function freshQueue(groups, updatedAt) {
-  return { updatedAt: updatedAt || Date.now(), groups };
+function callbacks(items, updatedAt) {
+  return { items, updatedAt: updatedAt || Date.now() };
 }
 
 async function run() {
@@ -31,69 +33,87 @@ async function run() {
     const { bg, BADGE } = load();
     const now = Date.now();
 
-    const noData = bg.computeBadge(null, null, now);
-    assert.strictEqual(noData.text, "", "ohne Daten: leeres Badge");
+    const none = bg.computeBadge(null, now, { callbacks: null });
+    assert.strictEqual(none.text, "", "keine fälligen Rückrufe: leeres Badge");
+    assert.ok(none.title.includes("Keine fälligen Rückrufe"), "Tooltip meldet: keine fälligen Rückrufe");
 
-    const clear = bg.computeBadge(freshQueue([{ name: "A", waiting: 0 }], now), null, now);
-    assert.strictEqual(clear.text, "0", "frei: Badge zeigt 0");
-    assert.strictEqual(clear.color, BADGE.colorClear, "frei: grüne Farbe");
+    const dueOne = bg.computeBadge(null, now, {
+      callbacks: callbacks([{ id: "cb1", dueAt: now - 1000, ticketKey: "TNG-1", reason: "Mailbox" }], now)
+    });
+    assert.strictEqual(dueOne.text, "1", "ein fälliger Rückruf: Badge zeigt 1");
+    assert.strictEqual(dueOne.color, BADGE.colorDue, "fällig: bernsteinfarbenes Badge");
+    assert.ok(dueOne.title.includes("Rückruf fällig"), "Tooltip nennt fälligen Rückruf");
+    assert.ok(dueOne.title.includes("TNG-1"), "Tooltip listet den Ticketschlüssel auf");
 
-    const waiting = bg.computeBadge(freshQueue([{ name: "Bestellhotline", waiting: 3, currentWait: "1:20" }], now), null, now);
-    assert.strictEqual(waiting.text, "3", "wartend: Badge zeigt Summe");
-    assert.strictEqual(waiting.color, BADGE.colorWaiting, "wartend: rote Farbe");
-    assert.ok(waiting.title.includes("Bestellhotline: 3"), "Tooltip listet die Gruppe auf");
+    const notYet = bg.computeBadge(null, now, {
+      callbacks: callbacks([{ id: "cb2", dueAt: now + 3600000, ticketKey: "TNG-2" }], now)
+    });
+    assert.strictEqual(notYet.text, "", "noch nicht fälliger Rückruf zählt nicht");
 
-    const stale = bg.computeBadge(freshQueue([{ name: "A", waiting: 2 }], now - 60000), null, now);
-    assert.strictEqual(stale.color, BADGE.colorStale, "veraltet: graue Farbe");
-    assert.ok(stale.title.includes("veraltet"), "veraltet: Hinweis im Tooltip");
-
-    const many = bg.computeBadge(freshQueue([{ name: "A", waiting: 250 }], now), null, now);
+    const many = bg.computeBadge(null, now, {
+      callbacks: callbacks(Array.from({ length: 250 }, (_, i) => ({ id: `c${i}`, dueAt: now - 1000 })), now)
+    });
     assert.strictEqual(many.text, `${BADGE.maxDisplay}+`, "über maxDisplay: Badge zeigt 99+");
 
     const onCall = bg.computeBadge(
-      freshQueue([{ name: "A", waiting: 1 }], now),
       { status: "connected", callerName: "Anna Beispiel", updatedAt: now },
-      now
+      now,
+      { callbacks: callbacks([{ id: "cb3", dueAt: now - 1000, ticketKey: "TNG-3" }], now) }
     );
     assert.ok(onCall.title.includes("Im Gespräch: Anna Beispiel"), "Tooltip zeigt den aktiven Anruf");
   }
 
-  // --- shouldNotify (reine Logik) ------------------------------------------
+  // --- callbacksToNotify (reine Logik) -------------------------------------
   {
     const { bg } = load();
-    assert.strictEqual(bg.shouldNotify(0, 1, true), true, "0→1 mit aktiv: benachrichtigen");
-    assert.strictEqual(bg.shouldNotify(0, 3, false), false, "abgeschaltet: nie benachrichtigen");
-    assert.strictEqual(bg.shouldNotify(2, 3, true), false, "2→3: keine erneute Meldung (nur steigende Flanke aus leer)");
-    assert.strictEqual(bg.shouldNotify(null, 2, true), false, "unbekannt→2 (erster Start): nicht benachrichtigen");
-    assert.strictEqual(bg.shouldNotify(1, 0, true), false, "1→0: keine Meldung");
+    const now = Date.now();
+    const cbs = callbacks([
+      { id: "a", dueAt: now - 1000 },                    // fällig, noch nicht gemeldet
+      { id: "b", dueAt: now - 1000, notifiedAt: now - 5 }, // fällig, schon gemeldet
+      { id: "c", dueAt: now + 1000 }                      // noch nicht fällig
+    ], now);
+    const pending = bg.callbacksToNotify(cbs, now, true);
+    assert.strictEqual(pending.length, 1, "nur der ungemeldete fällige Rückruf steht zur Meldung an");
+    assert.strictEqual(pending[0].id, "a", "und zwar der richtige");
+    assert.strictEqual(bg.callbacksToNotify(cbs, now, false).length, 0, "abgeschaltet: keine Meldung");
   }
 
   // --- refresh: End-to-End über den Storage --------------------------------
   {
     const { env, bg, KEYS, BADGE } = load();
     const now = Date.now();
-    env.storage[KEYS.queueStats] = freshQueue([{ name: "A", waiting: 2 }], now);
-    env.storage[KEYS.badgeState] = { lastTotal: 0, updatedAt: now };
-    env.storage[KEYS.settings] = { notifyWaiting: true };
+    env.storage[KEYS.callbacks] = callbacks([{ id: "cb1", dueAt: now - 1000, ticketKey: "TNG-9" }], now);
+    env.storage[KEYS.settings] = { notifyCallbacks: true };
 
     await bg.refresh({ notify: true });
-    assert.strictEqual(env.calls.badgeText.slice(-1)[0], "2", "refresh setzt das Badge auf 2");
-    assert.strictEqual(env.calls.badgeColor.slice(-1)[0], BADGE.colorWaiting, "refresh setzt die rote Farbe");
-    assert.strictEqual(env.calls.notifications.length, 1, "refresh löst genau eine Benachrichtigung aus (0→2)");
-    assert.strictEqual(env.storage[KEYS.badgeState].lastTotal, 2, "refresh merkt sich die neue Zahl");
+    assert.strictEqual(env.calls.badgeText.slice(-1)[0], "1", "refresh setzt das Badge auf 1");
+    assert.strictEqual(env.calls.badgeColor.slice(-1)[0], BADGE.colorDue, "refresh setzt die bernsteinfarbene Farbe");
+    assert.strictEqual(env.calls.notifications.length, 1, "refresh löst genau eine Rückruf-Meldung aus");
+    assert.ok(env.storage[KEYS.callbacks].items[0].notifiedAt, "refresh merkt sich, dass gemeldet wurde");
   }
 
-  // --- refresh: keine Benachrichtigung bei abgeschalteter Einstellung -------
+  // --- refresh: keine erneute Meldung für einen schon gemeldeten Rückruf ----
   {
     const { env, bg, KEYS } = load();
     const now = Date.now();
-    env.storage[KEYS.queueStats] = freshQueue([{ name: "A", waiting: 4 }], now);
-    env.storage[KEYS.badgeState] = { lastTotal: 0, updatedAt: now };
-    env.storage[KEYS.settings] = { notifyWaiting: false };
+    env.storage[KEYS.callbacks] = callbacks([{ id: "cb1", dueAt: now - 1000, notifiedAt: now - 5 }], now);
+    env.storage[KEYS.settings] = { notifyCallbacks: true };
+
+    await bg.refresh({ notify: true });
+    assert.strictEqual(env.calls.notifications.length, 0, "schon gemeldet: keine erneute Benachrichtigung");
+    assert.strictEqual(env.calls.badgeText.slice(-1)[0], "1", "Badge zeigt den fälligen Rückruf trotzdem");
+  }
+
+  // --- refresh: keine Meldung bei abgeschalteter Einstellung ----------------
+  {
+    const { env, bg, KEYS } = load();
+    const now = Date.now();
+    env.storage[KEYS.callbacks] = callbacks([{ id: "cb1", dueAt: now - 1000 }], now);
+    env.storage[KEYS.settings] = { notifyCallbacks: false };
 
     await bg.refresh({ notify: true });
     assert.strictEqual(env.calls.notifications.length, 0, "abgeschaltet: keine Benachrichtigung");
-    assert.strictEqual(env.calls.badgeText.slice(-1)[0], "4", "Badge wird trotzdem gesetzt");
+    assert.strictEqual(env.calls.badgeText.slice(-1)[0], "1", "Badge wird trotzdem gesetzt");
   }
 
   // --- Klick aufs Icon springt zu einem vorhandenen timio-Tab --------------

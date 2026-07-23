@@ -5,8 +5,8 @@
   const { CONFIG, jiraReader, rules, aiCache, shared } = app;
   const {
     escapeHtml, extensionAlive, formatDuration, callTimerText,
-    callModeMeta, isOutbound, normalizePhone, nextRetryAt, pruneCallbacks, customerSearchUrl,
-    jiraTicketUrl, ticketResolution, formatDateDE, calcContractCommission, calcTariffCommission,
+    normalizePhone, nextRetryAt, pruneCallbacks, customerSearchUrl,
+    jiraTicketUrl, formatDateDE, calcContractCommission, calcTariffCommission,
     groupProductsByCategory, todayIso
   } = shared;
   const AI = CONFIG.ai;
@@ -23,18 +23,16 @@
   const state = {
     ticket: null,
     isOpen: true,
-    activeTab: "overview",
-    tone: AI.defaultTone,
+    // Vier Bereiche entlang des ausgehenden Gesprächs (siehe CONFIG.tabs):
+    // prep · talk · close · callbacks.
+    activeTab: "prep",
     settings: { ...CONFIG.settingsDefaults },
     settingsOpen: false,
-    emailTemplates: [],
-    emailEditor: { isOpen: false, templateId: null },
     activeCall: null, // Signal von timio-content.js über chrome.storage, siehe currentActiveCall()
-    queueStats: null, // Wartefeld-Zahlen aus dem timio-Portal (nur Gruppen + Zähler)
-    // Arbeitsrichtung. timio zeigt bei ausgehenden Anrufen denselben
-    // Call-Screen wie bei eingehenden – die Richtung setzt der Bearbeiter
-    // selbst über den Schalter im Panel-Kopf bzw. im timio-Cockpit.
-    callMode: "inbound",
+    // Arbeitsrichtung ist im reinen Outbound-Betrieb konstant. Der Wert bleibt
+    // im State, weil geteilte Helfer (shared.callStatusMeta, callModeMeta) ihn
+    // erwarten; ein Richtungsschalter existiert nicht mehr.
+    callMode: "outbound",
     // Eigene Rückrufliste (Wiedervorlage). Getrennt von timios Anrufliste:
     // hier stehen nur selbst vereinbarte Rückrufe.
     callbacks: [],
@@ -48,13 +46,14 @@
     // geht nur an den Auth-Endpoint und wird danach verworfen.
     supabaseAuth: { name: "", pin: "", busy: false, error: "" },
     // Zuletzt nachgeschlagene Kundenakte, geschrieben von timio-content.js bei
-    // eingehendem Anruf (siehe CONFIG.storageKeys.customerCard).
+    // einem Anruf (siehe CONFIG.storageKeys.customerCard).
     customerCard: null,
     // Netz-Auskunft (aktive Dashboard-Abfrage). `result` wird aus
     // storageKeys.lookupResult gespiegelt (vom Worker/lookup.js geschrieben),
     // `confirm` hält die ausstehende Bestätigung { kind, customerNumber } – die
-    // kritische Aktion wird VOR jedem Lauf im Panel bestätigt.
-    lookup: { result: null, confirm: null },
+    // kritische Aktion wird VOR jedem Lauf im Panel bestätigt. `customerInput`
+    // ist die (optional manuell überschriebene) Kundennummer für die Abfrage.
+    lookup: { result: null, confirm: null, customerInput: "" },
     // Zustand der WebSocket-Bridge (aus storageKeys.bridgeState) für das
     // „Bridge aktiv"-Banner.
     bridgeState: null,
@@ -65,50 +64,23 @@
     // Produktkatalog + Provisions-Matrix für Vertrag/Tarifwechsel im
     // Abschluss-Panel.
     sharedSettings: { status: "idle", data: null, error: "" },
-    // Übernahme der Ticket-Zusammenfassung in die Kundenakte:
-    // { status: "idle"|"saving"|"ok"|"no-customer"|"error", error, signature,
-    //   customerNumber, resolution, created }. signature ist der Fingerabdruck
-    //  dessen, was zuletzt geschrieben wurde – gleicher Stand, kein zweiter
-    // Schreibvorgang.
-    crmNote: { status: "idle", error: "", signature: "", customerNumber: "", resolution: "", created: false },
     // Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md): ⌘K-Schnellsuche,
-    // eigener DOM-Root unabhängig vom Panel. { open, query, groups, status,
-    // error, activeIdx } oder null. Eigene Instanz, unabhängig vom Gegenstück
-    // in timio-content.js.
+    // eigener DOM-Root unabhängig vom Panel.
     palette: null,
     ai: {
-      replyLanguage: "de",
       caps: null,           // Ergebnis von localAi.capabilities()
       busy: "",             // Name der gerade laufenden KI-Aufgabe ("" = frei)
       download: 0,          // Download-Fortschritt in Prozent
       controller: null,     // AbortController der laufenden Aufgabe
       error: "",
 
-      summary: { status: "idle", text: "" },
-      triage: { status: "idle", data: null },
-      advice: { status: "idle", text: "" },
-      documentation: { status: "idle", text: "" },
-
-      note: "",             // Notiz/Absicht des Bearbeiters
-      draft: "",            // aktueller Entwurf (Kommentar oder E-Mail-Text)
-      draftKind: "comment", // "comment" | "email"
-      emailSubject: "",
-      review: { status: "idle", checks: [], improved: "" },
-
+      // Freies Mitschreib-Notizfeld während des Gesprächs.
       callNotes: "",
+      // Aus den Stichpunkten formulierte interne Notiz (lokale KI, draftCallNote).
       callDraft: { status: "idle", text: "" },
       // Gesprächsvorbereitung für ausgehende Anrufe: Ziel, Punkte, Fragen,
-      // Einwände. Läuft im Outbound-Modus automatisch vorab, damit sie fertig
-      // ist, bevor timio wählt.
-      callPrep: { status: "idle", data: null },
-      translation: { status: "idle", text: "", language: "" },
-
-      handoff: {
-        department: "",
-        note: "",
-        comment: { status: "idle", text: "" },
-        email: { status: "idle", subject: "", body: "" }
-      }
+      // Einwände. Läuft automatisch vorab, damit sie fertig ist, bevor timio wählt.
+      callPrep: { status: "idle", data: null }
     }
   };
 
@@ -157,13 +129,8 @@
   function persistUiState() {
     safeLocalSet({
       [CONFIG.storageKeys.isOpen]: state.isOpen,
-      [CONFIG.storageKeys.activeTab]: state.activeTab,
-      [CONFIG.storageKeys.tone]: state.tone
+      [CONFIG.storageKeys.activeTab]: state.activeTab
     });
-  }
-
-  function persistEmailTemplates() {
-    safeLocalSet({ [CONFIG.storageKeys.emailTemplates]: state.emailTemplates });
   }
 
   function persistSettings() {
@@ -184,25 +151,23 @@
       priority: known(t.priority) ? t.priority : "",
       customerReference: known(t.customerReference) ? t.customerReference : "",
       customerName: known(t.customerName) ? t.customerName : "",
-      aiSummary: state.ai.summary.status === "ok" ? (state.ai.summary.text || "") : "",
       // Anrufziel und Gesprächspunkte wandern mit ins timio-Cockpit: bei
       // ausgehenden Anrufen sitzt der Bearbeiter dort und hat keine Zeit,
       // erst nach Jira zu wechseln.
       aiCallPrep: state.ai.callPrep.status === "ok" ? (state.ai.callPrep.data || null) : null,
       updatedAt: Date.now()
     };
-    const signature = JSON.stringify([payload.key, payload.summary, payload.status, payload.priority, payload.customerReference, payload.aiSummary, payload.aiCallPrep]);
+    const signature = JSON.stringify([payload.key, payload.summary, payload.status, payload.priority, payload.customerReference, payload.aiCallPrep]);
     if (signature === lastTicketContextSignature) return;
     lastTicketContextSignature = signature;
     safeLocalSet({ [CONFIG.storageKeys.ticketContext]: payload });
   }
 
-  // Bearbeiter-/Firmenangaben für KI-Entwürfe (leere Felder werden ignoriert).
+  // Bearbeiter-/Firmenangaben für die KI (leere Felder werden ignoriert).
   function agentForAi() {
     return {
       name: state.settings.agentName,
-      company: state.settings.company,
-      signature: state.settings.signature
+      company: state.settings.company
     };
   }
 
@@ -239,28 +204,11 @@
   // hier gesetzt und über den Storage mit dem timio-Cockpit geteilt.
   // ---------------------------------------------------------------------------
 
+  // Reiner Outbound-Betrieb: es gibt keinen Richtungsschalter und keinen
+  // Inbound-Pfad mehr. outboundMode() bleibt als Funktion erhalten, weil viele
+  // Helfer sie abfragen – sie ist jetzt konstant wahr.
   function outboundMode() {
-    return isOutbound(state.callMode);
-  }
-
-  function setCallMode(mode) {
-    const next = callModeMeta(mode).id;
-    if (next === state.callMode) return;
-    syncInputsFromDom();
-    state.callMode = next;
-    safeLocalSet({ [CONFIG.storageKeys.callMode]: next });
-    render();
-    // Die Gesprächsvorbereitung läuft nur im Outbound-Modus automatisch mit.
-    maybeAutoRun();
-  }
-
-  function renderModeSwitch() {
-    const outbound = outboundMode();
-    return `
-      <div class="sc-mode-switch" role="group" aria-label="Arbeitsrichtung">
-        <button class="${outbound ? "" : "is-active"}" type="button" data-action="set-call-mode" data-mode="inbound" aria-pressed="${!outbound}" title="Eingehende Anrufe: Kunden rufen an">☎ Eingehend</button>
-        <button class="${outbound ? "is-active" : ""}" type="button" data-action="set-call-mode" data-mode="outbound" aria-pressed="${outbound}" title="Ausgehende Anrufe: timio wählt aus seiner Anrufliste">↗ Ausgehend</button>
-      </div>`;
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -397,77 +345,6 @@
     window.open(url, "_blank", "noopener");
   }
 
-  // ---------------------------------------------------------------------------
-  // Wartefeld (Live-Zahlen aus dem timio-Portal, siehe timio-content.js).
-  // Die Rechenlogik (Summe, Veraltung, Gruppen-Matching, Dauer-Formatierung)
-  // liegt zentral in shared.js – hier nur die Anbindung an den Panel-State.
-  // ---------------------------------------------------------------------------
-
-  function queueStaleAfterMs() {
-    return (CONFIG.call && CONFIG.call.queueStaleAfterMs) || 30000;
-  }
-
-  function queueTotalWaiting() {
-    return shared.queueTotalWaiting(state.queueStats);
-  }
-
-  function queueGroupMatchesCall(groupName, call) {
-    return shared.groupsMatch(groupName, call && call.group);
-  }
-
-  function queueStaleLabel() {
-    const minutes = shared.queueStaleMinutes(state.queueStats, queueStaleAfterMs());
-    return minutes ? `Stand: vor ${minutes} min – timio-Portal geöffnet lassen` : "";
-  }
-
-  function queueMarkup() {
-    const q = state.queueStats;
-    if (!q || !Array.isArray(q.groups) || !q.groups.length) {
-      return `<p class="sc-queue-empty">Keine Wartefeld-Daten – das timio-Portal (Tab „Portal“) muss dafür geöffnet sein.</p>`;
-    }
-    const call = currentActiveCall();
-    const total = queueTotalWaiting();
-    const chips = q.groups.map((group) => {
-      const isCallGroup = queueGroupMatchesCall(group.name, call);
-      const hasWaiting = typeof group.waiting === "number" && group.waiting > 0;
-      const title = group.avgWait ? `Ø Wartezeit ${group.avgWait}` : "";
-      return `
-        <span class="sc-queue-chip ${isCallGroup ? "is-call-group" : ""} ${hasWaiting ? "has-waiting" : ""}" title="${escapeHtml(title)}">
-          ${escapeHtml(group.name)}
-          <b>${typeof group.waiting === "number" ? group.waiting : "–"}</b>
-        </span>`;
-    }).join("");
-    const staleLabel = queueStaleLabel();
-    return `
-      <div class="sc-queue-head">
-        <span>Im Wartefeld</span>
-        <strong class="${total > 0 ? "has-waiting" : ""}">${total === null ? "–" : total}</strong>
-        <em data-role="queue-stale">${escapeHtml(staleLabel)}</em>
-      </div>
-      <div class="sc-queue-chips">${chips}</div>`;
-  }
-
-  // Aktualisiert alle sichtbaren Wartefeld-Anzeigen gezielt im DOM, ohne das
-  // ganze Panel neu zu rendern (die Zahlen kommen alle paar Sekunden herein).
-  function refreshQueueNodes() {
-    const markup = queueMarkup();
-    ["overlay-queues", "queue-overview"].forEach((role) => {
-      const node = el(role);
-      if (node) node.innerHTML = markup;
-    });
-    const bannerNode = el("banner-queue");
-    if (bannerNode) {
-      const total = queueTotalWaiting();
-      bannerNode.textContent = total === null ? "" : ` · Wartefeld ${total}`;
-    }
-    const miniNode = el("cockpit-mini-queue");
-    if (miniNode) {
-      const total = queueTotalWaiting();
-      miniNode.textContent = total === null ? "–" : String(total);
-      miniNode.classList.toggle("has-waiting", Boolean(total));
-    }
-  }
-
   function renderActiveCallBanner() {
     const call = currentActiveCall();
     if (!call) return "";
@@ -487,8 +364,6 @@
       call.group
     ].filter(Boolean).join(" · ");
     const timer = callTimerText(call, call.connectedAt);
-    const total = queueTotalWaiting();
-    const queueSuffix = total === null ? "" : ` · Wartefeld ${total}`;
 
     return `
       <div class="sc-call-banner ${hasMismatch ? "is-mismatch" : ""} ${ended ? "is-ended" : ""}">
@@ -497,7 +372,7 @@
           <strong>${escapeHtml(nameLine)}</strong>
           ${!ringing ? `<span data-role="active-call-timer" class="sc-call-banner-timer">${escapeHtml(timer)}</span>` : ""}
         </div>
-        <p class="sc-call-banner-details">${escapeHtml(details)}<span data-role="banner-queue">${escapeHtml(queueSuffix)}</span></p>
+        <p class="sc-call-banner-details">${escapeHtml(details)}</p>
         ${hasMismatch ? `<p class="sc-call-banner-warning">Passt nicht zum offenen Ticket (Kundenreferenz ${escapeHtml(state.ticket.customerReference)}).</p>` : ""}
       </div>`;
   }
@@ -517,17 +392,12 @@
       if (status === "connected" && previousStatus !== "connected") {
         state.callOverlay.dismissedForCallId = null;
         state.settingsOpen = false;
-        state.activeTab = "call";
+        state.activeTab = "talk";
         persistUiState();
       }
     }
     if (status === "ended" && previousStatus !== "ended") {
       scheduleCockpitEndedHide();
-      // Eingehende Anrufe bekommen das Abschluss-Panel ohne Klick — anders
-      // als bei ausgehenden Anrufen gibt es keinen "niemand erreicht"-Fall
-      // (Stufe 3, KONZEPT-INTEGRATION.md). previousStatus !== "ended" sorgt
-      // hier bereits dafür, dass das pro Anruf nur einmal passiert.
-      if (!outboundMode()) openCloseout("notiz", state.activeCall, "");
     }
     render();
   }
@@ -648,7 +518,6 @@
       return `<p class="sc-cockpit-mismatch">⚠ Offenes Ticket ${escapeHtml(state.ticket.key)} gehört zu Kundenreferenz ${escapeHtml(state.ticket.customerReference)} – Anrufer hat Kundennummer ${escapeHtml(call.customerNumber)}. Richtiges Ticket öffnen!</p>`;
     }
     const t = state.ticket;
-    const summaryText = state.ai.summary.status === "ok" && state.ai.summary.text ? state.ai.summary.text : "";
     const warnings = rules.ticketWarnings(t);
     return `
       <div class="sc-cockpit-ticket">
@@ -660,9 +529,6 @@
           <span class="sc-badge sc-badge--status ${statusClass(t.status)}">${escapeHtml(t.status)}</span>
           <span class="sc-badge sc-badge--priority ${priorityClass(t.priority)}">${escapeHtml(t.priority)}</span>
         </div>
-        ${summaryText
-          ? `<div class="sc-ai-result sc-cockpit-summary">${escapeHtml(summaryText)}</div>`
-          : `<p class="sc-cockpit-hint">Noch keine KI-Zusammenfassung für dieses Ticket erstellt.</p>`}
         ${warnings.length ? renderChecks(warnings.map((text) => ({ level: "warning", text })), "") : ""}
       </div>`;
   }
@@ -719,7 +585,6 @@
     const timer = cockpitTimerText(call);
     const nameLine = call.callerName || call.callerNumber || "Unbekannter Anrufer";
     const mini = state.callOverlay.mode === "mini";
-    const totalWaiting = queueTotalWaiting();
 
     if (mini) {
       return `
@@ -728,7 +593,6 @@
             <span class="sc-cockpit-status">${escapeHtml(status.label)}</span>
             <strong class="sc-cockpit-mini-name">${escapeHtml(nameLine)}</strong>
             <span class="sc-cockpit-timer" data-role="overlay-call-timer">${escapeHtml(timer)}</span>
-            <span class="sc-cockpit-mini-queue ${totalWaiting ? "has-waiting" : ""}" data-role="cockpit-mini-queue" title="Anrufe im Wartefeld">${totalWaiting === null ? "–" : totalWaiting}</span>
             <button class="sc-icon-button" type="button" data-action="toggle-cockpit-mode" title="Cockpit ausklappen" aria-label="Cockpit ausklappen">▢</button>
             <button class="sc-icon-button" type="button" data-action="dismiss-call-overlay" title="Für diesen Anruf ausblenden" aria-label="Schließen">×</button>
           </div>
@@ -740,16 +604,9 @@
       call.customerNumber ? `Kundennummer ${call.customerNumber}` : "",
       call.group
     ].filter(Boolean).join(" · ");
-    // Ausgehend hat niemand gewartet – die Wartezeit-Zeile wäre dort falsch.
-    const outbound = outboundMode();
-    const waitInfo = !outbound && call.status !== "ended" && call.waitTime
-      ? `<p class="sc-cockpit-wait">Kunde wartete ${escapeHtml(call.waitTime)} in der Leitung.</p>`
-      : "";
-    // Reihenfolge folgt dem, was in der jeweiligen Richtung zuerst zählt:
-    // ausgehend "was will ich von dieser Person", eingehend "wer wartet noch".
-    const blocks = outbound
-      ? `${renderCockpitPrep()}${renderCockpitTicket(call)}${renderOutcomeBar(call, "sc-cockpit-outcome")}${renderCloseoutPanel(call)}<div class="sc-cockpit-queues" data-role="overlay-queues">${queueMarkup()}</div>`
-      : `<div class="sc-cockpit-queues" data-role="overlay-queues">${queueMarkup()}</div>${renderCockpitTicket(call)}${renderOutcomeBar(call, "sc-cockpit-outcome")}${renderCloseoutPanel(call)}`;
+    // Ausgehend zuerst das, was zählt: "was will ich von dieser Person"
+    // (Vorbereitung), dann der Ticket-Abgleich, dann Ergebnis und Abschluss.
+    const blocks = `${renderCockpitPrep()}${renderCockpitTicket(call)}${renderOutcomeBar(call, "sc-cockpit-outcome")}${renderCloseoutPanel(call)}`;
 
     return `
       <div class="sc-cockpit ${status.className}" data-role="cockpit" role="status" style="${cockpitPositionStyle()}">
@@ -763,22 +620,12 @@
           <div class="sc-cockpit-caller">
             <strong>${escapeHtml(nameLine)}</strong>
             ${subLine ? `<p>${escapeHtml(subLine)}</p>` : ""}
-            ${waitInfo}
             ${renderKundenakte(call)}
             ${renderCustomerSearchButton(call, "sc-cockpit-search")}
-            ${renderOutboundHint(call)}
           </div>
           ${blocks}
         </div>
       </div>`;
-  }
-
-  // Hinweis statt Automatik: Ein Anruf, der ohne Klingeln direkt verbunden ist,
-  // stammt typischerweise aus timios eigener Anrufliste. Das ist ein Indiz –
-  // umgeschaltet wird nur auf Klick.
-  function renderOutboundHint(call) {
-    if (outboundMode() || !call || !call.likelyOutbound) return "";
-    return `<button class="sc-cockpit-hint-switch" type="button" data-action="set-call-mode" data-mode="outbound">Wirkt ausgehend – auf Outbound umschalten?</button>`;
   }
 
   // Läuft unabhängig von render()/KI-Läufen im Sekundentakt: aktualisiert nur
@@ -804,8 +651,6 @@
       const overlayNode = el("overlay-call-timer");
       if (overlayNode) overlayNode.textContent = text;
     }
-    const staleNode = el("queue-stale");
-    if (staleNode) staleNode.textContent = queueStaleLabel();
   }
 
   // Verschieben des Cockpits per Maus/Touch (Pointer Events). Startet nur auf
@@ -861,6 +706,14 @@
   }
 
   function aiUnavailableMessage(status) {
+    // Im HUD (Desktop-App) läuft die lokale KI nicht hier, sondern ferngesteuert
+    // in Chrome. Meldet der Shim `offline`, ist NICHT das Modell das Problem,
+    // sondern die fehlende Verbindung zur Extension/zum Jira-Tab. Dann eine
+    // konkrete, behebbare Anweisung zeigen statt des irreführenden
+    // „in diesem Chrome nicht verfügbar".
+    if (state.ai.caps && state.ai.caps.offline) {
+      return "Keine Verbindung zur Chrome-Erweiterung. Chrome mit geöffnetem Jira-Vorgang starten; nach einem Neuladen der Erweiterung auch den Jira-Tab neu laden (F5).";
+    }
     switch (status) {
       case S.UNSUPPORTED:
         return "Lokale KI ist in diesem Chrome nicht verfügbar. Es wird ausdrücklich kein Cloud-Dienst als Ersatz genutzt.";
@@ -981,210 +834,6 @@
     return `<div class="sc-ai-banner is-warn"><span aria-hidden="true">!</span>${escapeHtml(aiUnavailableMessage(caps.status))}</div>`;
   }
 
-  // ---------------------------------------------------------------------------
-  // Tab: Übersicht
-  // ---------------------------------------------------------------------------
-
-  function stimmungClass(value) {
-    if (value === "verärgert" || value === "negativ") return "is-bad";
-    if (value === "positiv") return "is-good";
-    return "is-neutral";
-  }
-
-  function dringlichkeitClass(value) {
-    if (value === "hoch") return "is-bad";
-    if (value === "mittel") return "is-mid";
-    return "is-good";
-  }
-
-  // Liefert die Triage-Daten zurück, wenn das Ticket eskalationsverdächtig ist.
-  function escalationFlag() {
-    const t = state.ai.triage;
-    if (t.status !== "ok" || !t.data) return null;
-    const hot = t.data.stimmung === "verärgert" || t.data.stimmung === "negativ" || t.data.dringlichkeit === "hoch";
-    return hot ? t.data : null;
-  }
-
-  function renderEscalation() {
-    const d = escalationFlag();
-    if (!d) return "";
-    const reasons = [];
-    if (d.stimmung === "verärgert" || d.stimmung === "negativ") reasons.push(`Stimmung: ${d.stimmung}`);
-    if (d.dringlichkeit === "hoch") reasons.push("hohe Dringlichkeit");
-    return `
-      <section class="sc-section sc-escalation">
-        <div class="sc-escalation-head">
-          <span class="sc-escalation-icon" aria-hidden="true">!</span>
-          <div>
-            <strong>Aufmerksamkeit empfohlen</strong>
-            <p>${escapeHtml(reasons.join(" · "))}. Kunde zeitnah und deeskalierend beantworten.</p>
-          </div>
-        </div>
-        <button class="sc-primary-button" type="button" data-action="deescalate" ${anyBusy() ? "disabled" : ""}>Deeskalierend antworten</button>
-      </section>`;
-  }
-
-  function renderTriage() {
-    const t = state.ai.triage;
-    const running = busyOn("triage");
-
-    let inner;
-    if (running) {
-      inner = `<div class="sc-inline-loading"><span class="sc-spinner" aria-hidden="true"></span>KI ordnet das Ticket ein …</div>`;
-    } else if (t.status === "ok" && t.data) {
-      const d = t.data;
-      inner = `
-        <div class="sc-triage-chips">
-          <span class="sc-triage-chip ${stimmungClass(d.stimmung)}">Stimmung: ${escapeHtml(d.stimmung)}</span>
-          <span class="sc-triage-chip ${dringlichkeitClass(d.dringlichkeit)}">Dringlichkeit: ${escapeHtml(d.dringlichkeit)}</span>
-          <span class="sc-triage-chip is-neutral">${escapeHtml(d.kategorie)}</span>
-        </div>
-        <p class="sc-triage-line"><strong>Kundenwunsch:</strong> ${escapeHtml(d.kundenwunsch)}</p>
-        <p class="sc-triage-line"><strong>Empfohlen:</strong> ${escapeHtml(d.naechsterSchritt)}</p>`;
-    } else if (t.status === "error") {
-      inner = `<p class="sc-ai-message">${escapeHtml(aiUnavailableMessage(S.ERROR))}</p>`;
-    } else if (!aiUsable()) {
-      inner = `<p class="sc-ai-message">${escapeHtml(aiUnavailableMessage(state.ai.caps ? state.ai.caps.status : ""))}</p>`;
-    } else {
-      inner = `<p class="sc-ai-message">Automatische Einordnung von Stimmung, Dringlichkeit und Kundenwunsch – vollständig lokal.</p>`;
-    }
-
-    const canRun = aiUsable() && !anyBusy();
-    return `
-      <section class="sc-section sc-ai-card">
-        <div class="sc-section-title-row">
-          <h3>KI-Einordnung</h3>
-          ${staleBadge(t)}
-          <span class="sc-local-label">lokale KI</span>
-        </div>
-        ${inner}
-        <button class="sc-secondary-button" type="button" data-action="run-triage" ${canRun ? "" : "disabled"}>${regenerateLabel(t, running, t.status === "ok", "Ticket einordnen", "Neu einordnen")}</button>
-      </section>`;
-  }
-
-  function renderSummary() {
-    const s = state.ai.summary;
-    const running = busyOn("summary");
-    const hasText = s.status === "ok" && s.text;
-
-    let body;
-    if (hasText || running) {
-      body = `<div class="sc-ai-result" data-role="summary-out">${escapeHtml(s.text)}</div>`;
-    } else if (s.status === "error" || (state.ai.caps && !aiUsable())) {
-      body = `<p class="sc-ai-message">${escapeHtml(aiUnavailableMessage(s.status === "error" ? S.ERROR : state.ai.caps.status))}</p>`;
-    } else {
-      body = `<p class="sc-ai-message">Vier klare Punkte: Anliegen, Stand, Kundenergebnis und nächster Schritt – aus Beschreibung und sichtbaren Kommentaren.</p>`;
-    }
-
-    const canRun = aiUsable() && !anyBusy();
-    return `
-      <section class="sc-section sc-ai-card">
-        <div class="sc-section-title-row">
-          <h3>Ticket-Zusammenfassung</h3>
-          ${staleBadge(s)}
-          <span class="sc-local-label">lokale KI</span>
-        </div>
-        ${body}
-        ${hasText && !running ? renderSummaryCrmStatus() : ""}
-        <button class="sc-primary-button" type="button" data-action="generate-summary" ${canRun ? "" : "disabled"}>${regenerateLabel(s, running, hasText, "Zusammenfassung erstellen", "Zusammenfassung erneuern")}</button>
-      </section>`;
-  }
-
-  function renderDocumentation() {
-    const d = state.ai.documentation;
-    const running = busyOn("documentation");
-    const hasText = d.status === "ok" && d.text;
-
-    let body;
-    if (hasText || running) {
-      body = `<div class="sc-ai-result" data-role="documentation-out">${escapeHtml(d.text)}</div>`;
-      if (hasText && !running) {
-        body += `
-          <div class="sc-inline-actions">
-            <button class="sc-secondary-button" type="button" data-action="copy-documentation">Kopieren</button>
-            <button class="sc-text-button" type="button" data-action="use-documentation">Als Kommentar-Entwurf übernehmen</button>
-          </div>`;
-      }
-    } else if (d.status === "error" || (state.ai.caps && !aiUsable())) {
-      body = `<p class="sc-ai-message">${escapeHtml(aiUnavailableMessage(d.status === "error" ? S.ERROR : state.ai.caps.status))}</p>`;
-    } else {
-      body = `<p class="sc-ai-message">Ein vollständiger Übergabetext (Anliegen, Verlauf, Stand, Fakten, offene Punkte, nächster Schritt), damit jeder Kollege das Ticket ohne Rückfrage übernehmen kann.</p>`;
-    }
-
-    const canRun = aiUsable() && !anyBusy();
-    return `
-      <section class="sc-section sc-ai-card">
-        <div class="sc-section-title-row">
-          <h3>Team-Doku</h3>
-          ${staleBadge(d)}
-          <span class="sc-local-label">lokale KI</span>
-        </div>
-        ${body}
-        <button class="sc-primary-button" type="button" data-action="generate-documentation" ${canRun ? "" : "disabled"}>${regenerateLabel(d, running, hasText, "Doku erstellen", "Doku erneuern")}</button>
-      </section>`;
-  }
-
-  function renderTranslation() {
-    const tr = state.ai.translation;
-    const running = busyOn("translate");
-    // Nur anbieten, wenn KI nutzbar ist und eine Beschreibung existiert.
-    if (!aiUsable() || !known(state.ticket.description)) return "";
-
-    const foreign = tr.language && tr.language !== "de";
-    let body = "";
-    if (running) {
-      body = `<div class="sc-inline-loading"><span class="sc-spinner" aria-hidden="true"></span>Übersetzt …</div>`;
-    } else if (tr.status === "ok" && tr.text) {
-      body = `<div class="sc-ai-result" data-role="translation-out">${escapeHtml(tr.text)}</div>`;
-    } else if (foreign) {
-      body = `<p class="sc-ai-message">Kundentext scheint nicht auf Deutsch zu sein (${escapeHtml(tr.language)}).</p>`;
-    }
-
-    const label = tr.status === "ok" && tr.text ? "Erneut übersetzen" : "Beschreibung ins Deutsche übersetzen";
-    return `
-      <section class="sc-section sc-ai-card">
-        <div class="sc-section-title-row">
-          <h3>Übersetzung</h3>
-          <span class="sc-local-label">lokale KI</span>
-        </div>
-        ${body}
-        <button class="sc-secondary-button" type="button" data-action="translate-description" ${anyBusy() ? "disabled" : ""}>${label}</button>
-      </section>`;
-  }
-
-  // Kompakte "Nächster Schritt"-Karte (früher ein eigenes Tab): sofortige
-  // Regel-Empfehlung als Schnellstart plus KI-Handlungsempfehlung darunter.
-  function renderNextStepCard() {
-    const recommendation = rules.nextStep(state.ticket);
-    const advice = state.ai.advice;
-    const running = busyOn("advice");
-
-    let aiBody;
-    if (running || (advice.status === "ok" && advice.text)) {
-      aiBody = `<div class="sc-ai-result" data-role="advice-out">${escapeHtml(advice.text)}</div>`;
-    } else if (advice.status === "error" || (state.ai.caps && !aiUsable())) {
-      aiBody = `<p class="sc-ai-message">${escapeHtml(aiUnavailableMessage(advice.status === "error" ? S.ERROR : state.ai.caps.status))}</p>`;
-    } else {
-      aiBody = `<p class="sc-ai-message">Die KI liest Status, Beschreibung und Kommentare und schlägt 2–4 konkrete Schritte vor.</p>`;
-    }
-    const canRun = aiUsable() && !anyBusy();
-
-    return `
-      <section class="sc-section sc-ai-card">
-        <div class="sc-section-title-row">
-          <h3>Nächster Schritt</h3>
-          ${staleBadge(advice)}
-          <span class="sc-local-label">lokale KI</span>
-        </div>
-        <div class="sc-quickrule">
-          <span class="sc-eyebrow">Schnellregel</span>
-          <p><strong>${escapeHtml(recommendation.title)}.</strong> ${escapeHtml(recommendation.text)}</p>
-          <button class="sc-text-button" type="button" data-action="apply-suggestion" data-intent-id="${escapeHtml(recommendation.intentId || "")}">${escapeHtml(recommendation.action)} →</button>
-        </div>
-        ${aiBody}
-        <button class="sc-secondary-button" type="button" data-action="generate-advice" ${canRun ? "" : "disabled"}>${regenerateLabel(advice, running, advice.status === "ok", "Vorgehen empfehlen", "Empfehlung erneuern")}</button>
-      </section>`;
-  }
 
   // ---------------------------------------------------------------------------
   // Netz-Auskunft (aktive Dashboard-Abfrage: Baustatus/FTTX + Kündiger/GFIZ)
@@ -1305,17 +954,23 @@
     } else if (state.lookup.confirm) {
       body = renderLookupConfirm(state.lookup.confirm);
     } else {
-      const number = lookupCustomerNumber();
+      const detected = lookupCustomerNumber();
+      const fieldValue = state.lookup.customerInput || detected;
       const running = state.lookup.result && state.lookup.result.status === "running";
-      const actions = number
-        ? `
-          <p class="sc-section-intro">Schlägt zu Kundennummer <strong>${escapeHtml(number)}</strong> nach – öffnet und automatisiert dafür das jeweilige Dashboard. Vor jeder Abfrage wird bestätigt.</p>
-          <div class="sc-inline-actions">
-            <button class="sc-primary-button" type="button" data-action="lookup-baustatus" ${running ? "disabled" : ""}>Baustatus nachschlagen</button>
-            <button class="sc-secondary-button" type="button" data-action="lookup-churn" ${running ? "disabled" : ""}>Kündiger-Status prüfen</button>
-          </div>`
-        : `<p class="sc-ai-message">Keine Kundennummer erkannt – weder aus dem Ticket (Kunden-ID) noch aus einem aktiven Anruf. Ohne Kundennummer ist keine Abfrage möglich.</p>`;
-      body = actions + renderLookupResult(state.lookup.result);
+      const hint = detected
+        ? `Kundennummer aus dem Ticket/Anruf übernommen – bei Bedarf überschreiben.`
+        : `Auf diesem Ticket wurde keine Kundennummer automatisch erkannt – hier eintragen.`;
+      body = `
+        <p class="sc-section-intro">Öffnet und automatisiert dafür das jeweilige Dashboard. Vor jeder Abfrage wird bestätigt.</p>
+        <label class="sc-input-label">Kundennummer
+          <input class="sc-text-input" data-role="lookup-customer" value="${escapeHtml(fieldValue)}" placeholder="z. B. 287246" ${running ? "disabled" : ""}>
+          <small class="sc-input-hint">${escapeHtml(hint)}</small>
+        </label>
+        <div class="sc-inline-actions">
+          <button class="sc-primary-button" type="button" data-action="lookup-baustatus" ${running ? "disabled" : ""}>Baustatus nachschlagen</button>
+          <button class="sc-secondary-button" type="button" data-action="lookup-churn" ${running ? "disabled" : ""}>Kündiger-Status prüfen</button>
+        </div>
+        ${renderLookupResult(state.lookup.result)}`;
     }
     return `
       <section class="sc-section sc-netzauskunft">
@@ -1327,12 +982,17 @@
       </section>`;
   }
 
-  function renderOverview() {
+  // Tab „Vorbereitung": alles, was VOR dem ausgehenden Gespräch auf den Schirm
+  // gehört – Ticketkontext, KI-Gesprächsvorbereitung (Ziel/Punkte/Fragen/
+  // Einwände), der Ein-Klick-Sprung von der Kundennummer zum Ticket und die
+  // optionale Netz-Auskunft. timio wählt selbst, also muss das hier fertig
+  // stehen, bevor verbunden wird.
+  function renderPrep() {
     const ticket = state.ticket;
-    const warnings = rules.ticketWarnings(ticket);
+    const ref = ticket && known(ticket.customerReference) ? ticket.customerReference.trim() : "";
     return `
       ${renderAiBanner()}
-      <section class="sc-section" aria-label="Ticketübersicht">
+      <section class="sc-section" aria-label="Ticketkontext">
         <div class="sc-issue-heading">
           <span class="sc-ticket-key">${escapeHtml(ticket.key)}</span>
           <h2>${escapeHtml(ticket.summary)}</h2>
@@ -1344,207 +1004,13 @@
         <div class="sc-ticket-grid">
           ${ticketRow("Typ", ticket.issueType)}
           ${ticketRow("Bearbeiter", ticket.assignee)}
-          ${ticketRow("Autor", ticket.reporter)}
           ${ticketRow("Kunden-ID / Referenz", ticket.customerReference)}
           ${ticketRow("Kundenname", ticket.customerName)}
         </div>
+        ${ref ? `<button class="sc-secondary-button" type="button" data-action="search-customer" data-customer="${escapeHtml(ref)}">Ticket zu Kundennummer ${escapeHtml(ref)} suchen</button>` : ""}
       </section>
-      ${renderEscalation()}
-      ${renderTriage()}
-      ${renderNextStepCard()}
-      ${renderSummary()}
-      ${renderDocumentation()}
-      ${renderTranslation()}
-      ${renderNetzauskunft()}
-      <section class="sc-section">
-        <h3>Hinweise vor der Bearbeitung</h3>
-        ${renderChecks(warnings.map((text) => ({ level: "warning", text })), "Alle sichtbaren Basisinformationen sind vorhanden.")}
-      </section>`;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Tab: Antwort (KI-Entwürfe)
-  // ---------------------------------------------------------------------------
-
-  function renderToneRow() {
-    return `<div class="sc-tone-row" role="group" aria-label="Tonalität">${AI.tones.map((tone) => `
-      <button class="sc-chip ${state.tone === tone.id ? "is-active" : ""}" type="button" data-action="set-tone" data-tone="${tone.id}">${escapeHtml(tone.label)}</button>`).join("")}</div>`;
-  }
-
-  function renderReview() {
-    const review = state.ai.review;
-    if (busyOn("review")) {
-      return `<div class="sc-inline-loading"><span class="sc-spinner" aria-hidden="true"></span>KI prüft den Entwurf …</div>`;
-    }
-    if (review.status !== "ok" && review.status !== "fallback") return "";
-    const checks = review.checks || [];
-    const improvedBlock = review.improved
-      ? `<div class="sc-review-improved">
-          <div class="sc-section-title-row"><h4>KI-Vorschlag</h4></div>
-          <div class="sc-ai-result">${escapeHtml(review.improved)}</div>
-          <button class="sc-secondary-button" type="button" data-action="apply-review">Vorschlag übernehmen</button>
-        </div>`
-      : "";
-    return `
-      <div class="sc-quality-results">
-        ${renderChecks(checks, "Der Entwurf wirkt vollständig.", "ok")}
-        ${improvedBlock}
-      </div>`;
-  }
-
-  function renderHandoff() {
-    const h = state.ai.handoff;
-    const running = busyOn("handoff");
-    const disabledAll = !aiUsable() || anyBusy();
-    const hasComment = h.comment.status === "ok" && h.comment.text;
-    const hasEmail = h.email.status === "ok" && (h.email.subject || h.email.body);
-    const departmentLabel = h.department.trim() || "Fachabteilung";
-
-    return `
-      <section class="sc-section sc-ai-card">
-        <div class="sc-section-title-row">
-          <h3>An Fachabteilung weiterleiten</h3>
-          <span class="sc-local-label">lokale KI</span>
-        </div>
-        <p class="sc-section-intro">Erstellt in einem Schritt eine Kunden-Info-Mail zur Weiterleitung und einen internen Kommentar mit ToDo für die Fachabteilung.</p>
-        <label class="sc-input-label">Fachabteilung
-          <input class="sc-text-input" data-role="handoff-department" value="${escapeHtml(h.department)}" placeholder="z. B. Buchhaltung, IT, Logistik">
-        </label>
-        <textarea class="sc-comment-draft sc-note-input" data-role="handoff-note" placeholder="Zusätzliche Hinweise für die Fachabteilung (optional) – was genau soll geprüft werden?">${escapeHtml(h.note)}</textarea>
-        <button class="sc-primary-button" type="button" data-action="generate-handoff" ${disabledAll ? "disabled" : ""}>${running ? "KI arbeitet …" : "Weiterleitung erstellen"}</button>
-
-        ${(running || hasComment) ? `
-          <div class="sc-email-editor">
-            <h4>Interner Kommentar (für ${escapeHtml(departmentLabel)})</h4>
-            <textarea class="sc-comment-draft" data-role="handoff-comment" placeholder="Kommentar für die Fachabteilung …">${escapeHtml(h.comment.text)}</textarea>
-            <div class="sc-inline-actions">
-              <button class="sc-secondary-button" type="button" data-action="copy-handoff-comment">Kommentar kopieren</button>
-              <button class="sc-text-button" type="button" data-action="use-handoff-comment">Als Kommentar-Entwurf übernehmen</button>
-            </div>
-          </div>` : ""}
-
-        ${(running || hasEmail) ? `
-          <div class="sc-email-editor">
-            <h4>Kunden-E-Mail</h4>
-            <label class="sc-input-label">Betreff
-              <input class="sc-text-input" data-role="handoff-email-subject" value="${escapeHtml(h.email.subject)}" placeholder="Betreff …">
-            </label>
-            <textarea class="sc-comment-draft sc-email-body" data-role="handoff-email-body" placeholder="E-Mail-Text …">${escapeHtml(h.email.body)}</textarea>
-            <div class="sc-inline-actions">
-              <button class="sc-secondary-button" type="button" data-action="copy-handoff-email">E-Mail kopieren</button>
-              <button class="sc-text-button" type="button" data-action="use-handoff-email">Als E-Mail-Entwurf übernehmen</button>
-            </div>
-          </div>` : ""}
-      </section>`;
-  }
-
-  function renderReply() {
-    const busyDraft = busyOn("comment") || busyOn("email");
-    const isEmail = state.ai.draftKind === "email";
-    const draftLabel = isEmail ? "E-Mail-Entwurf" : "Kommentar-Entwurf";
-    const disabledAll = !aiUsable() || anyBusy();
-
-    return `
-      ${renderHandoff()}
-      <section class="sc-section sc-ai-card">
-        <div class="sc-section-title-row">
-          <h3>Antwort-Assistent</h3>
-          <span class="sc-local-label">lokale KI</span>
-        </div>
-        <p class="sc-section-intro">Stichworte genügen. Die KI formuliert daraus einen Jira-Kommentar oder eine Kunden-E-Mail – nur aus sichtbaren Ticketdaten und deiner Notiz.</p>
-        <div class="sc-chip-row">${AI.intents.map((intent) => `
-          <button class="sc-chip" type="button" data-action="use-intent" data-intent-id="${escapeHtml(intent.id)}">${escapeHtml(intent.label)}</button>`).join("")}</div>
-        <textarea class="sc-comment-draft sc-note-input" data-role="note" placeholder="Was möchtest du dokumentieren? Stichworte reichen – z. B. „Rückruf morgen 14 Uhr, Kunde braucht Rechnungskopie“ …">${escapeHtml(state.ai.note)}</textarea>
-        <div class="sc-inline-actions">
-          <button class="sc-primary-button" type="button" data-action="draft-comment" ${disabledAll ? "disabled" : ""}>${busyOn("comment") ? "KI arbeitet …" : "Jira-Kommentar entwerfen"}</button>
-          <button class="sc-secondary-button" type="button" data-action="draft-email" ${disabledAll ? "disabled" : ""}>${busyOn("email") ? "KI arbeitet …" : "Kunden-E-Mail entwerfen"}</button>
-        </div>
-        <div class="sc-lang-row">
-          <span class="sc-lang-label">E-Mail-Sprache</span>
-          ${AI.replyLanguages.map((lang) => `
-            <button class="sc-chip sc-chip--sm ${state.ai.replyLanguage === lang.id ? "is-active" : ""}" type="button" data-action="set-language" data-language="${escapeHtml(lang.id)}">${escapeHtml(lang.label)}</button>`).join("")}
-        </div>
-      </section>
-
-      <section class="sc-section sc-draft-section">
-        <div class="sc-section-title-row">
-          <h3>${escapeHtml(draftLabel)}</h3>
-          <span class="sc-local-label">${isEmail ? "E-Mail" : "Kommentar"}</span>
-        </div>
-        <p class="sc-section-intro">Ton wählen, Text feinschleifen und anschließend in Jira bzw. die E-Mail kopieren.</p>
-        ${renderToneRow()}
-        ${isEmail ? `<label class="sc-input-label">Betreff
-          <input class="sc-text-input" data-role="draft-subject" value="${escapeHtml(state.ai.emailSubject)}" placeholder="Betreff …">
-        </label>` : ""}
-        <textarea class="sc-comment-draft" data-role="draft" placeholder="Hier entsteht dein Entwurf – oder schreibe direkt los …">${escapeHtml(state.ai.draft)}</textarea>
-        <div class="sc-toolbar">
-          <button class="sc-tool-button" type="button" data-action="rewrite-draft" ${disabledAll ? "disabled" : ""}>${busyOn("rewrite") ? "…" : "Umschreiben"}</button>
-          <button class="sc-tool-button" type="button" data-action="proofread-draft" ${disabledAll ? "disabled" : ""}>${busyOn("proofread") ? "…" : "Korrektur lesen"}</button>
-          <button class="sc-tool-button" type="button" data-action="review-draft" ${anyBusy() ? "disabled" : ""}>${busyOn("review") ? "…" : "Qualität prüfen"}</button>
-          <button class="sc-tool-button is-primary" type="button" data-action="copy-draft">Kopieren</button>
-        </div>
-        ${renderReview()}
-      </section>
-
-      ${renderEmailTemplates()}`;
-  }
-
-  // ---------------------------------------------------------------------------
-  // E-Mail-Vorlagen (lokale CRUD, bleibt bestehen)
-  // ---------------------------------------------------------------------------
-
-  function renderEmailTemplateCard(template) {
-    return `
-      <article class="sc-email-template-card">
-        <div>
-          <h4>${escapeHtml(template.title)}</h4>
-          <p><strong>Betreff:</strong> ${escapeHtml(template.subject || "Ohne Betreff")}</p>
-        </div>
-        <div class="sc-email-template-actions">
-          <button class="sc-secondary-button" type="button" data-action="copy-email-template" data-email-id="${escapeHtml(template.id)}">E-Mail kopieren</button>
-          <button class="sc-text-button" type="button" data-action="edit-email-template" data-email-id="${escapeHtml(template.id)}">Bearbeiten</button>
-          <button class="sc-text-button sc-text-button--danger" type="button" data-action="delete-email-template" data-email-id="${escapeHtml(template.id)}">Löschen</button>
-        </div>
-      </article>`;
-  }
-
-  function renderEmailEditor() {
-    if (!state.emailEditor.isOpen) {
-      return `<button class="sc-secondary-button" type="button" data-action="open-email-editor">Neue E-Mail-Vorlage anlegen</button>`;
-    }
-    const existing = state.emailTemplates.find((template) => template.id === state.emailEditor.templateId);
-    const template = existing || { title: "", subject: "", body: "" };
-    return `
-      <div class="sc-email-editor">
-        <h4>${existing ? "E-Mail-Vorlage bearbeiten" : "Neue E-Mail-Vorlage"}</h4>
-        <label class="sc-input-label">Name der Vorlage
-          <input class="sc-text-input" data-role="email-title" value="${escapeHtml(template.title)}" placeholder="z. B. Rückmeldung nach Prüfung">
-        </label>
-        <label class="sc-input-label">Betreff
-          <input class="sc-text-input" data-role="email-subject" value="${escapeHtml(template.subject)}" placeholder="z. B. Update zu Ihrem Anliegen">
-        </label>
-        <label class="sc-input-label">E-Mail-Text
-          <textarea class="sc-comment-draft sc-email-body" data-role="email-body" placeholder="E-Mail-Text eingeben …">${escapeHtml(template.body)}</textarea>
-        </label>
-        <p class="sc-placeholder-help">Platzhalter: <code>[Kundenname]</code>, <code>[Kundennummer]</code>, <code>[Ticketnummer]</code>, <code>[Tickettitel]</code>, <code>[Anliegen]</code>, <code>[Bearbeiter]</code>.</p>
-        <div class="sc-inline-actions">
-          <button class="sc-secondary-button" type="button" data-action="close-email-editor">Abbrechen</button>
-          <button class="sc-primary-button" type="button" data-action="save-email-template">Lokal speichern</button>
-        </div>
-      </div>`;
-  }
-
-  function renderEmailTemplates() {
-    const empty = `<p class="sc-empty-state">Noch keine eigene E-Mail-Vorlage gespeichert.</p>`;
-    return `
-      <section class="sc-section sc-email-section">
-        <div class="sc-section-title-row">
-          <h3>Gespeicherte E-Mail-Vorlagen</h3>
-          <span class="sc-local-label">nur lokal</span>
-        </div>
-        <div class="sc-email-template-list">${state.emailTemplates.length ? state.emailTemplates.map(renderEmailTemplateCard).join("") : empty}</div>
-        ${renderEmailEditor()}
-      </section>`;
+      ${renderCallPrep()}
+      ${renderNetzauskunft()}`;
   }
 
   // ---------------------------------------------------------------------------
@@ -1559,19 +1025,19 @@
       body = `<div class="sc-ai-result" data-role="calldraft-out">${escapeHtml(cd.text)}</div>
         <div class="sc-inline-actions">
           <button class="sc-secondary-button" type="button" data-action="copy-call-draft">Kopieren</button>
-          <button class="sc-text-button" type="button" data-action="use-call-draft">In Antwort übernehmen</button>
+          <button class="sc-text-button" type="button" data-action="use-call-draft">In den Abschluss übernehmen</button>
         </div>`;
     }
     const disabled = !aiUsable() || anyBusy();
     return `
       <section class="sc-section sc-ai-card">
         <div class="sc-section-title-row">
-          <h3>Notizen → sauberer Kommentar</h3>
+          <h3>Notizen → interne Notiz</h3>
           <span class="sc-local-label">lokale KI</span>
         </div>
-        <p class="sc-section-intro">Tippe während des Gesprächs Stichworte. Die KI macht daraus einen strukturierten Jira-Kommentar.</p>
+        <p class="sc-section-intro">Tippe während des Gesprächs Stichworte. Nach einer Tipppause macht die lokale KI daraus eine saubere interne Notiz für den CRM-Abschluss.</p>
         <textarea class="sc-comment-draft sc-note-input" data-role="call-notes" placeholder="Stichworte aus dem Gespräch …">${escapeHtml(state.ai.callNotes)}</textarea>
-        <button class="sc-primary-button" type="button" data-action="clean-call-notes" ${disabled ? "disabled" : ""}>${running ? "KI arbeitet …" : "In sauberen Kommentar umwandeln"}</button>
+        <button class="sc-primary-button" type="button" data-action="clean-call-notes" ${disabled ? "disabled" : ""}>${running ? "KI arbeitet …" : "In interne Notiz umwandeln"}</button>
         ${body}
       </section>`;
   }
@@ -1641,8 +1107,7 @@
   // KONZEPT-INTEGRATION.md) — "Mailbox"/"Falsche Nummer" ergeben bei einem
   // eingehenden Anruf keinen Sinn.
   function activeOutcomes() {
-    const cfg = outboundMode() ? CONFIG.outbound : CONFIG.inbound;
-    return (cfg && cfg.outcomes) || [];
+    return (CONFIG.outbound && CONFIG.outbound.outcomes) || [];
   }
 
   // Erscheint nach dem Auflegen. Ein Klick füllt die Gesprächsnotiz vor, lässt
@@ -1671,12 +1136,16 @@
     const existing = state.ai.callNotes.trim();
     state.ai.callNotes = existing ? `${existing}\n${outcome.seed}` : outcome.seed;
     state.settingsOpen = false;
-    state.activeTab = "call";
+    // Ergebnisse mit echtem Gesprächsinhalt öffnen das Abschluss-Panel und
+    // wechseln in den Abschluss-Tab; reine Erreichbarkeits-Ergebnisse (Mailbox,
+    // nicht erreicht …) bleiben im Gespräch-Tab.
+    if (outcome.opensPanel) {
+      state.activeTab = "close";
+      openCloseout("notiz", call, outcome.seed);
+    } else {
+      state.activeTab = "talk";
+    }
     persistUiState();
-    // "Ergebnis festhalten" öffnet für Optionen mit echtem Gesprächsinhalt
-    // zusätzlich das Abschluss-Panel — das "fehlende Ziel" des Staffelstabs
-    // (KONZEPT-INTEGRATION.md, Stufe 3).
-    if (outcome.opensPanel) openCloseout("notiz", call, outcome.seed);
 
     let scheduled = null;
     if (outcome.followUp) {
@@ -2080,20 +1549,10 @@
       </section>`;
   }
 
-  function renderQueueSection() {
-    return `
-      <section class="sc-section">
-        <div class="sc-section-title-row">
-          <h3>Wartefeld live</h3>
-          <span class="sc-local-label">aus timio</span>
-        </div>
-        <div data-role="queue-overview">${queueMarkup()}</div>
-      </section>`;
-  }
-
-  // Der aktive Anruf war in diesem Tab bisher unsichtbar. Ausgehend ist er der
-  // Ausgangspunkt: timio wählt selbst, also ist die erste Frage immer, wer da
-  // gerade dran ist und ob das offene Ticket dazu passt.
+  // Der aktive Anruf ist im Outbound-Betrieb der Ausgangspunkt: timio wählt
+  // selbst, also ist die erste Frage immer, wer gerade dran ist und ob das
+  // offene Ticket dazu passt. Das Abschluss-Panel liegt im eigenen Tab
+  // „Abschluss"; hier steht nur der Gesprächskontext plus Ergebnis-Leiste.
   function renderActiveCallCard() {
     const call = currentActiveCall();
     if (!call) return "";
@@ -2114,28 +1573,45 @@
         ${details ? `<p class="sc-callback-meta">${escapeHtml(details)}</p>` : ""}
         ${renderCustomerSearchButton(call, "sc-secondary-button")}
         ${renderOutcomeBar(call)}
-        ${renderCloseoutPanel(call)}
       </section>`;
   }
 
-  // Reihenfolge folgt der Arbeitsrichtung: ausgehend zuerst der Gesprächs-
-  // partner und die Vorbereitung, eingehend zuerst das Wartefeld.
-  function renderCall() {
-    if (outboundMode()) {
-      return `
-        ${renderActiveCallCard()}
-        ${renderCallPrep()}
-        ${renderCallDraft()}
-        ${renderCallbackList()}
-        ${renderCallGuide()}
-        ${renderQueueSection()}`;
-    }
+  // Tab „Gespräch": Kontext des laufenden Anrufs, Leitfaden + Einwandkarten,
+  // das Mitschreib-Notizfeld (→ lokale KI formuliert die interne Notiz) und die
+  // Ergebnis-Leiste nach dem Auflegen.
+  function renderTalk() {
     return `
-      ${renderQueueSection()}
       ${renderActiveCallCard()}
-      ${renderCallDraft()}
-      ${renderCallbackList()}
-      ${renderCallGuide()}`;
+      ${renderCallGuide()}
+      ${renderCallDraft()}`;
+  }
+
+  // Tab „Abschluss": der CRM-Eintrag zum Gespräch (Notiz/Lead/Vertrag/
+  // Tarifwechsel). Ein Gesprächsergebnis mit Inhalt öffnet das Panel
+  // automatisch; ohne offenes Panel bieten wir den manuellen Einstieg an.
+  function renderClose() {
+    const call = currentActiveCall();
+    const panel = renderCloseoutPanel(call);
+    if (panel) return panel;
+    const ticket = state.ticket;
+    const hasTicket = ticket && known(ticket.key);
+    return `
+      <section class="sc-section">
+        <div class="sc-section-title-row">
+          <h3>Abschluss erfassen</h3>
+          <span class="sc-local-label">ins CRM</span>
+        </div>
+        <p class="sc-section-intro">Ergebnis des Gesprächs direkt ins CRM schreiben: Notiz, Lead, Vertrag oder Tarifwechsel – inklusive Provisionsrechnung. Über die Ergebnis-Leiste im Tab „Gespräch" öffnet sich das passende Formular nach dem Auflegen automatisch; hier kannst du auch ohne aktiven Anruf einen Eintrag beginnen.</p>
+        <div class="sc-inline-actions">
+          <button class="sc-primary-button" type="button" data-action="closeout-start" data-value="notiz">Neuer Eintrag</button>
+        </div>
+        ${hasTicket ? "" : `<p class="sc-ai-message">Kein Jira-Ticket erkannt – Ticket/Kundennummer werden dann nicht vorbefüllt.</p>`}
+      </section>`;
+  }
+
+  // Tab „Rückrufe": die selbst vereinbarte Wiedervorlageliste.
+  function renderCallbacksTab() {
+    return renderCallbackList();
   }
 
   // ---------------------------------------------------------------------------
@@ -2192,27 +1668,16 @@
           <h3>Einstellungen</h3>
           <span class="sc-local-label">nur lokal</span>
         </div>
-        <p class="sc-section-intro">Diese Angaben fließen in KI-Entwürfe ein, damit Kommentare und E-Mails ohne Platzhalter fertig sind. Sie bleiben ausschließlich in deinem Chrome-Profil.</p>
+        <p class="sc-section-intro">Diese Angaben fließen in die KI-Gesprächsvorbereitung und die Abschluss-Notiz ein, damit sie ohne Platzhalter fertig sind. Sie bleiben ausschließlich in deinem Chrome-Profil.</p>
         <label class="sc-input-label">Dein Name
           <input class="sc-text-input" data-role="set-agent-name" value="${escapeHtml(s.agentName)}" placeholder="z. B. Max Muster">
         </label>
         <label class="sc-input-label">Unternehmen / Team
-          <input class="sc-text-input" data-role="set-company" value="${escapeHtml(s.company)}" placeholder="z. B. ennit Support">
-        </label>
-        <label class="sc-input-label">E-Mail-Signatur
-          <textarea class="sc-comment-draft sc-email-body" data-role="set-signature" placeholder="Freundliche Grüße&#10;Max Muster&#10;ennit Support">${escapeHtml(s.signature)}</textarea>
-        </label>
-        <label class="sc-check-label">
-          <input type="checkbox" data-role="set-notify-waiting" ${s.notifyWaiting !== false ? "checked" : ""}>
-          <span>Benachrichtigen, wenn jemand ins Wartefeld kommt<small>Lokale Desktop-Meldung, sobald aus einem leeren Wartefeld ein Anruf wartet – so musst du das Wartefeld nicht im Blick behalten. Die Wartefeld-Zahl steht ohnehin immer als Badge auf dem Symbolleisten-Icon.</small></span>
+          <input class="sc-text-input" data-role="set-company" value="${escapeHtml(s.company)}" placeholder="z. B. TNG Vertrieb">
         </label>
         <label class="sc-check-label">
           <input type="checkbox" data-role="set-notify-callbacks" ${s.notifyCallbacks !== false ? "checked" : ""}>
           <span>Benachrichtigen, wenn ein Rückruf fällig wird<small>Lokale Desktop-Meldung je Eintrag genau einmal, sobald der vereinbarte Zeitpunkt erreicht ist.</small></span>
-        </label>
-        <label class="sc-check-label">
-          <input type="checkbox" data-role="set-sync-summary" ${s.syncTicketSummaryToCrm !== false ? "checked" : ""}>
-          <span>Ticket-Zusammenfassung in die Kundenakte schreiben<small>Jede fertige Zusammenfassung landet als Notiz in der Kundenakte des CRM – eine je Ticket, beim erneuten Zusammenfassen aktualisiert, mit dem Vermerk, ob das Ticket offen oder geschlossen ist. Nur bei erkannter Kundennummer und bestehender CRM-Anmeldung.</small></span>
         </label>
         <label class="sc-input-label">Jira-Suche nach Kundennummer (JQL)
           <input class="sc-text-input" data-role="set-customer-jql" value="${escapeHtml(s.customerSearchJql || "")}" placeholder='${escapeHtml((CONFIG.jira && CONFIG.jira.customerSearchJql) || "")}'>
@@ -2254,7 +1719,7 @@
           <h3>Daten &amp; Datenschutz</h3>
           <span class="sc-local-label">nur lokal</span>
         </div>
-        <p class="sc-section-intro">Alle Daten dieser Extension (Einstellungen, E-Mail-Vorlagen, KI-Ergebnisse pro Ticket, Anruf- und Wartefeld-Status) liegen ausschließlich lokal in deinem Chrome-Profil. Es gibt keinen Server und keine Übertragung. Hier kannst du alles vollständig löschen.</p>
+        <p class="sc-section-intro">Alle Daten dieser Extension (Einstellungen, KI-Gesprächsvorbereitung pro Ticket, Anruf-Status und Rückrufliste) liegen ausschließlich lokal in deinem Chrome-Profil. Es gibt keinen Server und keine Übertragung. Hier kannst du alles vollständig löschen.</p>
         <button class="sc-secondary-button sc-danger-button" type="button" data-action="wipe-data">Alle lokal gespeicherten Daten löschen</button>
       </section>`;
   }
@@ -2262,26 +1727,22 @@
   // Recht auf Löschung, lokal umgesetzt: entfernt sämtliche Storage-Schlüssel
   // der Extension und setzt den Arbeitsspeicher-Zustand auf Werkseinstellung.
   function wipeAllData() {
-    if (!window.confirm("Wirklich alle lokal gespeicherten Daten von Stadtnetz CRM Copilot löschen? (Einstellungen, Vorlagen, KI-Ergebnisse, Anruf-Status)")) return;
+    if (!window.confirm("Wirklich alle lokal gespeicherten Daten von Stadtnetz CRM Outbound löschen? (Einstellungen, KI-Ergebnisse, Anruf-Status, Rückrufliste)")) return;
     safeLocalRemove(Object.values(CONFIG.storageKeys));
     lastTicketContextSignature = null;
     aiCache.init(null);
     state.settings = { ...CONFIG.settingsDefaults };
-    state.emailTemplates = CONFIG.emailTemplates.map((template) => ({ ...template }));
-    state.tone = AI.defaultTone;
     state.activeCall = null;
-    state.queueStats = null;
     state.callOverlay = { mode: "full", pos: null, dismissedForCallId: null };
-    state.callMode = "inbound";
+    state.callMode = "outbound";
     state.callbacks = [];
     state.supabaseSession = null;
     state.supabaseAuth = { name: "", pin: "", busy: false, error: "" };
     state.customerCard = null;
-    state.lookup = { result: null, confirm: null };
+    state.lookup = { result: null, confirm: null, customerInput: "" };
     state.bridgeState = null;
     state.closeout = null;
     state.sharedSettings = { status: "idle", data: null, error: "" };
-    state.crmNote = { status: "idle", error: "", signature: "", customerNumber: "", resolution: "", created: false };
     if (state.ticket) hydrateAiFromCache(state.ticket);
     render();
     toast("Alle lokalen Daten wurden gelöscht.");
@@ -2289,30 +1750,26 @@
 
   function activeContent() {
     switch (state.activeTab) {
-      case "reply": return renderReply();
-      case "call": return renderCall();
-      default: return renderOverview();
+      case "talk": return renderTalk();
+      case "close": return renderClose();
+      case "callbacks": return renderCallbacksTab();
+      default: return renderPrep();
     }
   }
 
   function rootMarkup() {
-    // Der Call-Tab heißt im Outbound-Modus anders – so ist die eingestellte
-    // Richtung auch dann sichtbar, wenn der Schalter gerade nicht im Blick ist.
-    const tabs = CONFIG.tabs.map((tab) => {
-      const label = tab.id === "call" && outboundMode() ? "Outbound" : tab.label;
-      return `
-      <button class="sc-tab ${state.activeTab === tab.id ? "is-active" : ""}" type="button" role="tab" aria-selected="${state.activeTab === tab.id}" data-action="switch-tab" data-tab="${tab.id}">${escapeHtml(label)}</button>`;
-    }).join("");
+    const tabs = CONFIG.tabs.map((tab) => `
+      <button class="sc-tab ${state.activeTab === tab.id ? "is-active" : ""}" type="button" role="tab" aria-selected="${state.activeTab === tab.id}" data-action="switch-tab" data-tab="${tab.id}">${escapeHtml(tab.label)}</button>`).join("");
     return `
       ${renderCallCockpit()}
-      <button class="sc-launcher ${state.isOpen ? "is-hidden" : ""}" type="button" data-action="open-panel" aria-label="Stadtnetz CRM Copilot öffnen">
-        <span>AI</span><span>Copilot</span>
+      <button class="sc-launcher ${state.isOpen ? "is-hidden" : ""}" type="button" data-action="open-panel" aria-label="Stadtnetz CRM Outbound öffnen">
+        <span>Out</span><span>bound</span>
       </button>
-      <aside class="sc-panel ${state.isOpen ? "is-open" : ""}" aria-label="Stadtnetz CRM Copilot">
+      <aside class="sc-panel ${state.isOpen ? "is-open" : ""}" aria-label="Stadtnetz CRM Outbound">
         <header class="sc-panel-header">
           <div>
-            <span class="sc-eyebrow">Stadtnetz CRM Copilot · lokale KI</span>
-            <strong>Smart dokumentieren.</strong>
+            <span class="sc-eyebrow">Stadtnetz CRM · Outbound · lokale KI</span>
+            <strong>Anrufen. Abschließen.</strong>
           </div>
           <div class="sc-header-actions">
             <button class="sc-icon-button ${state.settingsOpen ? "is-active" : ""}" type="button" data-action="toggle-settings" title="Einstellungen" aria-label="Einstellungen">⚙</button>
@@ -2320,7 +1777,6 @@
             <button class="sc-icon-button" type="button" data-action="close-panel" title="Panel minimieren" aria-label="Panel minimieren">×</button>
           </div>
         </header>
-        ${renderModeSwitch()}
         ${renderBridgeBanner()}
         ${renderActiveCallBanner()}
         ${state.settingsOpen ? "" : `<nav class="sc-tabs" role="tablist" aria-label="Bereiche">${tabs}</nav>`}
@@ -2329,127 +1785,6 @@
         <div class="sc-toast" role="status" aria-live="polite"></div>
       </aside>`;
   }
-
-  // ---------------------------------------------------------------------------
-  // Ticket-Zusammenfassung in die Kundenakte
-  //
-  // Eine Zusammenfassung, die nur im Panel steht, ist nach dem Schließen des
-  // Tabs weg. Sie gehört dorthin, wo später jemand ohne Jira-Zugang nachsieht:
-  // in die Kundenakte des CRM — zusammen mit der Angabe, ob das Ticket noch
-  // offen oder schon geschlossen ist. Geschrieben wird eine einzige Notiz je
-  // Ticket; beim erneuten Zusammenfassen aktualisiert
-  // supabase.upsertTicketSummaryNote() dieselbe Zeile.
-  //
-  // Drei Voraussetzungen, die bewusst nicht umgangen werden: eine Kundennummer
-  // aus dem Oikonomikos-Feld (ohne sie hätte die Notiz keine Akte), eine
-  // CRM-Anmeldung und der Schalter in den Einstellungen. Fehlt eine davon,
-  // bleibt es bei der Anzeige im Panel – die Zusammenfassung selbst
-  // funktioniert unverändert.
-  // ---------------------------------------------------------------------------
-
-  function summaryCrmPayload() {
-    const t = state.ticket;
-    const summaryText = state.ai.summary.status === "ok" ? (state.ai.summary.text || "").trim() : "";
-    if (!t || !known(t.key) || !summaryText) return null;
-    // Kundennummer ausschließlich aus dem Ticket: die zuletzt geladene
-    // Kundenakte im Speicher kann von einem parallelen Anruf stammen und würde
-    // die Notiz sonst in die falsche Akte schreiben. Deren Name wird nur
-    // übernommen, wenn beide Kundennummern übereinstimmen.
-    const customerNumber = known(t.customerReference) ? t.customerReference : "";
-    const card = state.customerCard && state.customerCard.status === "ok" ? state.customerCard.data : null;
-    const cardMatches = Boolean(card && card.customerNumber && card.customerNumber === customerNumber);
-    return {
-      ticketKey: t.key,
-      ticketTitle: known(t.summary) ? t.summary : "",
-      customerNumber,
-      customerName: (known(t.customerName) ? t.customerName : "") || (cardMatches ? card.name : "") || "",
-      resolution: ticketResolution(known(t.status) ? t.status : ""),
-      summary: summaryText
-    };
-  }
-
-  // Fingerabdruck des Stands, der in der Akte landen würde. Ändert er sich
-  // nicht, wird auch nicht erneut geschrieben.
-  function crmNoteSignature(payload) {
-    return JSON.stringify([payload.ticketKey, payload.customerNumber, payload.resolution.id, payload.summary]);
-  }
-
-  function crmNoteErrorText(res) {
-    if (res.reason === "not-logged-in") return "Nicht am CRM angemeldet (Einstellungen ⚙).";
-    if (res.reason === "not-configured") return "Keine CRM-Verbindung hinterlegt (Einstellungen ⚙).";
-    if (res.reason === "network") return "CRM gerade nicht erreichbar.";
-    return res.error || "Speichern in der Kundenakte fehlgeschlagen.";
-  }
-
-  async function syncSummaryToCrm(opts) {
-    const manual = Boolean(opts && opts.manual);
-    if (!supabaseClient) {
-      if (manual) toast("Kundenakte nicht verfügbar – keine CRM-Verbindung konfiguriert.");
-      return;
-    }
-    if (!manual && state.settings.syncTicketSummaryToCrm === false) return;
-
-    const payload = summaryCrmPayload();
-    if (!payload) {
-      if (manual) toast("Erst eine Zusammenfassung erstellen.");
-      return;
-    }
-    if (!payload.customerNumber) {
-      state.crmNote = { status: "no-customer", error: "", signature: "", customerNumber: "", resolution: payload.resolution.id, created: false };
-      if (manual) toast("Keine Kundennummer im Ticket – die Notiz hätte keine Akte.");
-      render();
-      return;
-    }
-
-    const signature = crmNoteSignature(payload);
-    // Automatisch nur einmal je Stand: nicht doppelt schreiben und nach einem
-    // Fehler nicht in einer Schleife erneut versuchen (dafür gibt es den
-    // Button). Ein manueller Klick darf dagegen jederzeit erneut schreiben.
-    if (!manual && state.crmNote.signature === signature && state.crmNote.status !== "idle") return;
-    if (state.crmNote.status === "saving" && state.crmNote.signature === signature) return;
-
-    state.crmNote = { status: "saving", error: "", signature, customerNumber: payload.customerNumber, resolution: payload.resolution.id, created: false };
-    render();
-
-    const res = await supabaseClient.upsertTicketSummaryNote(payload);
-    // Zwischenzeitlich anderes Ticket oder neue Zusammenfassung: das Ergebnis
-    // gehört dann nicht mehr zum aktuell angezeigten Stand.
-    if (state.crmNote.signature !== signature) return;
-
-    if (res.ok) {
-      state.crmNote = { status: "ok", error: "", signature, customerNumber: payload.customerNumber, resolution: payload.resolution.id, created: Boolean(res.created) };
-      if (manual) toast(res.created ? "In der Kundenakte gespeichert." : "Kundenakte aktualisiert.");
-    } else {
-      state.crmNote = { status: "error", error: crmNoteErrorText(res), signature, customerNumber: payload.customerNumber, resolution: payload.resolution.id, created: false };
-    }
-    render();
-  }
-
-  const CRM_RESOLUTION_LABEL = {
-    offen: "Ticket offen",
-    geschlossen: "Ticket geschlossen",
-    unbekannt: "Ticketstand unbekannt"
-  };
-
-  function renderSummaryCrmStatus() {
-    if (!supabaseClient) return "";
-    const n = state.crmNote;
-    const button = (label) => `<button class="sc-text-button" type="button" data-action="save-summary-to-crm">${label}</button>`;
-
-    if (n.status === "saving") return `<p class="sc-cockpit-hint">Kundenakte wird aktualisiert …</p>`;
-    if (n.status === "ok") {
-      const stand = CRM_RESOLUTION_LABEL[n.resolution] || CRM_RESOLUTION_LABEL.unbekannt;
-      return `<p class="sc-cockpit-hint">✓ Kundenakte ${escapeHtml(n.customerNumber)} ${n.created ? "ergänzt" : "aktualisiert"} · ${escapeHtml(stand)}. ${button("Erneut schreiben")}</p>`;
-    }
-    if (n.status === "no-customer") {
-      return `<p class="sc-cockpit-hint">Keine Kundennummer im Ticket – nichts in der Kundenakte gespeichert.</p>`;
-    }
-    if (n.status === "error") {
-      return `<p class="sc-cockpit-hint">Kundenakte: ${escapeHtml(n.error)} ${button("Erneut versuchen")}</p>`;
-    }
-    return `<p class="sc-cockpit-hint">${button("In die Kundenakte schreiben")}</p>`;
-  }
-
   // ---------------------------------------------------------------------------
   // Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md) — ⌘K/Ctrl+K, eigener
   // DOM-Root unabhängig vom Panel (jederzeit auslösbar). Eigenständige, aber
@@ -2724,15 +2059,7 @@
       const node = container.querySelector(`[data-role='${role}']`);
       return node ? node.value : undefined;
     };
-    const note = value("note"); if (note !== undefined) state.ai.note = note;
-    const draft = value("draft"); if (draft !== undefined) state.ai.draft = draft;
-    const subject = value("draft-subject"); if (subject !== undefined) state.ai.emailSubject = subject;
     const callNotes = value("call-notes"); if (callNotes !== undefined) state.ai.callNotes = callNotes;
-    const handoffDepartment = value("handoff-department"); if (handoffDepartment !== undefined) state.ai.handoff.department = handoffDepartment;
-    const handoffNote = value("handoff-note"); if (handoffNote !== undefined) state.ai.handoff.note = handoffNote;
-    const handoffComment = value("handoff-comment"); if (handoffComment !== undefined) state.ai.handoff.comment.text = handoffComment;
-    const handoffEmailSubject = value("handoff-email-subject"); if (handoffEmailSubject !== undefined) state.ai.handoff.email.subject = handoffEmailSubject;
-    const handoffEmailBody = value("handoff-email-body"); if (handoffEmailBody !== undefined) state.ai.handoff.email.body = handoffEmailBody;
   }
 
   // ---------------------------------------------------------------------------
@@ -2765,21 +2092,14 @@
     return field.status === "error" || (field.status === "ok" && !isStale(field));
   }
 
+  // Die einzige automatisch mitlaufende KI-Aufgabe: die Gesprächsvorbereitung.
+  // timio wählt selbst, also muss sie fertig sein, bevor verbunden wird.
   const AUTO_RUN_TASKS = [
-    { isDone: () => autoRunSatisfied(state.ai.triage), run: runTriage },
-    { isDone: () => autoRunSatisfied(state.ai.summary), run: generateSummary },
-    // Nur im Outbound-Modus: dort wählt timio selbst, die Vorbereitung muss
-    // also fertig sein, bevor das Gespräch beginnt. Eingehend wäre sie
-    // sinnlose Modell-Last.
-    { isDone: () => !outboundMode() || autoRunSatisfied(state.ai.callPrep), run: generateCallPrep },
-    { isDone: () => autoRunSatisfied(state.ai.documentation), run: generateDocumentation }
+    { isDone: () => autoRunSatisfied(state.ai.callPrep), run: generateCallPrep }
   ];
 
-  // Arbeitet Einordnung, Zusammenfassung und Doku nacheinander im Hintergrund
-  // ab, aber nur wenn das Modell bereits vorhanden ist (kein ungefragter
-  // Download) und aktuell nichts anderes läuft. Jeder Aufruf startet höchstens
-  // die nächste offene Aufgabe; die Erfolgspfade rufen maybeAutoRun() erneut
-  // auf, wodurch sich die Kette selbst fortsetzt.
+  // Startet die nächste offene Auto-Aufgabe, aber nur wenn das Modell bereits
+  // vorhanden ist (kein ungefragter Download) und aktuell nichts anderes läuft.
   function maybeAutoRun() {
     if (!aiUsable()) return;
     if (state.ai.caps.status !== S.AVAILABLE) return;
@@ -2794,8 +2114,8 @@
     render();
     try {
       // Ein leichter Lauf stößt den Modell-Download an und zeigt Fortschritt.
-      const result = await localAi.triage(state.ticket, { signal, onDownload });
-      if (result && result.status === S.OK) cacheField("triage", { status: "ok", data: result.data });
+      const result = await localAi.prepareCall({ ticket: state.ticket, agent: agentForAi() }, { signal, onDownload });
+      if (result && result.status === S.OK) cacheField("callPrep", { status: "ok", data: result.data });
       state.ai.caps = await localAi.capabilities();
     } catch (error) {
       if (!isAbort(error)) state.ai.caps = await safeCaps();
@@ -2820,329 +2140,6 @@
     publishTicketContext();
   }
 
-  async function runTriage() {
-    if (!aiUsable()) return;
-    const previous = state.ai.triage;
-    const signal = beginRun("triage");
-    render();
-    try {
-      const result = await localAi.triage(state.ticket, { signal, onDownload });
-      if (result.status === "ok") cacheField("triage", { status: "ok", data: result.data });
-      else state.ai.triage = { status: result.status === S.OK ? "ok" : "error", data: result.data || null };
-    } catch (error) {
-      state.ai.triage = isAbort(error) ? previous : { status: "error", data: null };
-    } finally {
-      endRun(signal);
-      render();
-      maybeAutoRun();
-    }
-  }
-
-  async function generateSummary() {
-    if (!aiUsable()) return;
-    const previous = state.ai.summary;
-    const signal = beginRun("summary");
-    state.ai.summary = { status: "loading", text: "" };
-    render();
-    try {
-      const result = await localAi.summarize(state.ticket, {
-        signal,
-        onDownload,
-        onChunk: (acc) => { const out = el("summary-out"); if (out) out.textContent = acc; }
-      });
-      if (result.status === S.AVAILABLE) {
-        cacheField("summary", { status: "ok", text: result.text });
-        // Frisch zusammengefasst heißt: der Stand in der Kundenakte ist alt.
-        // Bewusst nicht abgewartet – die Zusammenfassung steht ja schon da;
-        // ein Fehler beim Schreiben zeigt sich an der Karte, nicht als
-        // unbehandelte Rejection.
-        syncSummaryToCrm().catch(() => {});
-      } else {
-        state.ai.summary = { status: "error", text: "" };
-      }
-    } catch (error) {
-      state.ai.summary = isAbort(error) ? previous : { status: "error", text: "" };
-    } finally {
-      endRun(signal);
-      render();
-      maybeAutoRun();
-    }
-  }
-
-  async function generateAdvice() {
-    if (!aiUsable()) return;
-    const previous = state.ai.advice;
-    const signal = beginRun("advice");
-    state.ai.advice = { status: "loading", text: "" };
-    render();
-    try {
-      const result = await localAi.advise(state.ticket, {
-        signal,
-        onDownload,
-        onChunk: (acc) => { const out = el("advice-out"); if (out) out.textContent = acc; }
-      });
-      if (result.status === S.OK) cacheField("advice", { status: "ok", text: result.text });
-      else state.ai.advice = { status: "error", text: "" };
-    } catch (error) {
-      state.ai.advice = isAbort(error) ? previous : { status: "error", text: "" };
-    } finally {
-      endRun(signal);
-      render();
-    }
-  }
-
-  async function generateDocumentation() {
-    if (!aiUsable()) return;
-    const previous = state.ai.documentation;
-    const previousDoc = previous.status === "ok" ? previous.text : "";
-    const signal = beginRun("documentation");
-    state.ai.documentation = { status: "loading", text: "" };
-    render();
-    try {
-      const result = await localAi.documentTicket(state.ticket, {
-        signal,
-        onDownload,
-        previousDoc,
-        onChunk: (acc) => { const out = el("documentation-out"); if (out) out.textContent = acc; }
-      });
-      if (result.status === S.OK) cacheField("documentation", { status: "ok", text: result.text });
-      else state.ai.documentation = { status: "error", text: "" };
-    } catch (error) {
-      state.ai.documentation = isAbort(error) ? previous : { status: "error", text: "" };
-    } finally {
-      endRun(signal);
-      render();
-      maybeAutoRun();
-    }
-  }
-
-  function useDocumentationAsComment() {
-    if (!state.ai.documentation.text) return;
-    state.ai.draftKind = "comment";
-    state.ai.draft = state.ai.documentation.text;
-    state.activeTab = "reply";
-    persistUiState();
-    render();
-    toast("In den Antwort-Tab übernommen.");
-  }
-
-  // Erstellt in einem Zug den internen ToDo-Kommentar für die Fachabteilung
-  // und die Kunden-Info-Mail. Läuft als ein zusammenhängender KI-Lauf, damit
-  // beide Teile unter demselben Busy-Status/Abbruch-Signal entstehen.
-  async function generateHandoff() {
-    if (!aiUsable()) return;
-    syncInputsFromDom();
-    const department = state.ai.handoff.department.trim();
-    if (!department) { toast("Bitte zuerst eine Fachabteilung angeben."); return; }
-
-    const previousComment = state.ai.handoff.comment;
-    const previousEmail = state.ai.handoff.email;
-    const signal = beginRun("handoff");
-    state.ai.handoff.comment = { status: "loading", text: "" };
-    state.ai.handoff.email = { status: "loading", subject: "", body: "" };
-    render();
-
-    try {
-      const commentResult = await localAi.draftHandoffComment(
-        { ticket: state.ticket, department, note: state.ai.handoff.note, agent: agentForAi() },
-        { signal, onDownload, onChunk: (acc) => { const out = el("handoff-comment"); if (out) out.value = acc; } }
-      );
-      state.ai.handoff.comment = commentResult.status === S.OK
-        ? { status: "ok", text: commentResult.text }
-        : { status: "error", text: "" };
-      render();
-
-      const emailResult = await localAi.draftHandoffEmail(
-        { ticket: state.ticket, department, note: state.ai.handoff.note, agent: agentForAi(), language: state.ai.replyLanguage },
-        {
-          signal, onDownload,
-          onChunk: (acc) => {
-            const parsed = { subject: "", body: acc };
-            const match = acc.match(/^\s*Betreff:\s*(.*)$/im);
-            const out = el("handoff-email-body");
-            const subj = el("handoff-email-subject");
-            if (match) {
-              parsed.subject = match[1].trim();
-              parsed.body = acc.slice(match.index + match[0].length).replace(/^\s+/, "");
-            }
-            if (subj && parsed.subject) subj.value = parsed.subject;
-            if (out) out.value = parsed.body;
-          }
-        }
-      );
-      state.ai.handoff.email = emailResult.status === S.OK
-        ? { status: "ok", subject: emailResult.subject, body: emailResult.body || emailResult.raw || "" }
-        : { status: "error", subject: "", body: "" };
-    } catch (error) {
-      if (isAbort(error)) {
-        state.ai.handoff.comment = previousComment;
-        state.ai.handoff.email = previousEmail;
-      } else {
-        if (state.ai.handoff.comment.status === "loading") state.ai.handoff.comment = { status: "error", text: "" };
-        if (state.ai.handoff.email.status === "loading") state.ai.handoff.email = { status: "error", subject: "", body: "" };
-      }
-    } finally {
-      endRun(signal);
-      render();
-    }
-  }
-
-  function useHandoffComment() {
-    syncInputsFromDom();
-    if (!state.ai.handoff.comment.text) return;
-    state.ai.draftKind = "comment";
-    state.ai.draft = state.ai.handoff.comment.text;
-    render();
-    toast("Als Kommentar-Entwurf übernommen.");
-  }
-
-  function useHandoffEmail() {
-    syncInputsFromDom();
-    const h = state.ai.handoff.email;
-    if (!h.body && !h.subject) return;
-    state.ai.draftKind = "email";
-    state.ai.emailSubject = h.subject;
-    state.ai.draft = h.body;
-    render();
-    toast("Als E-Mail-Entwurf übernommen.");
-  }
-
-  async function translateDescription() {
-    if (!aiUsable()) return;
-    const signal = beginRun("translate");
-    state.ai.translation = { ...state.ai.translation, status: "loading", text: "" };
-    render();
-    try {
-      const detection = await localAi.detectLanguage(state.ticket.description);
-      const source = detection.language || "";
-      state.ai.translation.language = source;
-      const result = await localAi.translate(state.ticket.description, {
-        target: "de",
-        source: source && source !== "de" ? source : undefined,
-        signal,
-        onChunk: (acc) => { const out = el("translation-out"); if (out) out.textContent = acc; }
-      });
-      state.ai.translation = { status: result.status === S.OK ? "ok" : "error", text: result.text || "", language: source };
-    } catch (error) {
-      if (!isAbort(error)) state.ai.translation = { ...state.ai.translation, status: "error" };
-    } finally {
-      endRun(signal);
-      render();
-    }
-  }
-
-  async function draft(kind) {
-    if (!aiUsable()) return;
-    syncInputsFromDom();
-    const name = kind === "email" ? "email" : "comment";
-    const signal = beginRun(name);
-    state.ai.draftKind = kind === "email" ? "email" : "comment";
-    state.ai.draft = "";
-    if (kind === "email") state.ai.emailSubject = "";
-    state.ai.review = { status: "idle", checks: [], improved: "" };
-    render();
-
-    const onChunk = (acc) => { const out = el("draft"); if (out) out.value = acc; };
-    try {
-      if (kind === "email") {
-        const result = await localAi.draftEmail({ ticket: state.ticket, note: state.ai.note, tone: state.tone, agent: agentForAi(), language: state.ai.replyLanguage }, {
-          signal, onDownload,
-          onChunk: (acc) => {
-            const parsed = { subject: "", body: acc };
-            const match = acc.match(/^\s*Betreff:\s*(.*)$/im);
-            const out = el("draft");
-            const subj = el("draft-subject");
-            if (match) {
-              parsed.subject = match[1].trim();
-              parsed.body = acc.slice(match.index + match[0].length).replace(/^\s+/, "");
-            }
-            if (subj && parsed.subject) subj.value = parsed.subject;
-            if (out) out.value = parsed.body;
-          }
-        });
-        if (result.status === S.OK) {
-          state.ai.emailSubject = result.subject || state.ai.emailSubject;
-          state.ai.draft = result.body || result.raw || "";
-        } else {
-          state.ai.error = aiUnavailableMessage(result.status);
-        }
-      } else {
-        const result = await localAi.draftComment({ ticket: state.ticket, note: state.ai.note, tone: state.tone, agent: agentForAi() }, { signal, onDownload, onChunk });
-        if (result.status === S.OK) state.ai.draft = result.text;
-        else state.ai.error = aiUnavailableMessage(result.status);
-      }
-    } catch (error) {
-      if (!isAbort(error)) { state.ai.error = "Die lokale KI konnte den Entwurf nicht erstellen."; toast(state.ai.error); }
-    } finally {
-      endRun(signal);
-      render();
-    }
-  }
-
-  async function rewriteDraft() {
-    if (!aiUsable()) return;
-    syncInputsFromDom();
-    if (!state.ai.draft.trim()) { toast("Bitte zuerst einen Entwurf erstellen oder eingeben."); return; }
-    const signal = beginRun("rewrite");
-    render();
-    const onChunk = (acc) => { const out = el("draft"); if (out) out.value = acc; };
-    try {
-      const result = await localAi.rewrite(state.ai.draft, { tone: state.tone, signal, onDownload, onChunk });
-      if (result.status === S.OK && result.text) state.ai.draft = result.text;
-      else toast(aiUnavailableMessage(result.status));
-    } catch (error) {
-      if (!isAbort(error)) toast("Umschreiben nicht möglich.");
-    } finally {
-      endRun(signal);
-      render();
-    }
-  }
-
-  async function proofreadDraft() {
-    if (!aiUsable()) return;
-    syncInputsFromDom();
-    if (!state.ai.draft.trim()) { toast("Bitte zuerst einen Entwurf erstellen oder eingeben."); return; }
-    const signal = beginRun("proofread");
-    render();
-    const onChunk = (acc) => { const out = el("draft"); if (out) out.value = acc; };
-    try {
-      const result = await localAi.proofread(state.ai.draft, { signal, onDownload, onChunk });
-      if (result.status === S.OK && result.text) { state.ai.draft = result.text; toast("Korrektur gelesen."); }
-      else toast(aiUnavailableMessage(result.status));
-    } catch (error) {
-      if (!isAbort(error)) toast("Korrektur nicht möglich.");
-    } finally {
-      endRun(signal);
-      render();
-    }
-  }
-
-  async function reviewDraft() {
-    syncInputsFromDom();
-    const text = state.ai.draft.trim();
-    if (!text) { toast("Bitte zuerst einen Entwurf erstellen oder eingeben."); return; }
-
-    // Sofortiges, deterministisches Feedback als Fallback.
-    if (!aiUsable()) {
-      state.ai.review = { status: "fallback", checks: rules.commentQuality(text), improved: "" };
-      render();
-      return;
-    }
-
-    const signal = beginRun("review");
-    render();
-    try {
-      const result = await localAi.reviewDraft(text, state.ticket, { signal, onDownload });
-      if (result.status === S.OK) state.ai.review = { status: "ok", checks: result.checks, improved: result.improved };
-      else state.ai.review = { status: "fallback", checks: rules.commentQuality(text), improved: "" };
-    } catch (error) {
-      if (!isAbort(error)) state.ai.review = { status: "fallback", checks: rules.commentQuality(text), improved: "" };
-    } finally {
-      endRun(signal);
-      render();
-    }
-  }
-
   // Setzt den Aufräum-Lauf für die Gesprächsnotizen tatsächlich in Gang.
   // Geht davon aus, dass die Notiz bereits geprüft/nicht leer ist.
   async function runCallClean() {
@@ -3152,7 +2149,7 @@
     state.ai.callDraft = { status: "loading", text: "" };
     render();
     try {
-      const result = await localAi.draftComment({ ticket: state.ticket, note: state.ai.callNotes, tone: state.tone, agent: agentForAi() }, {
+      const result = await localAi.draftCallNote({ ticket: state.ticket, note: state.ai.callNotes, agent: agentForAi() }, {
         signal, onDownload,
         onChunk: (acc) => { const out = el("calldraft-out"); if (out) out.textContent = acc; }
       });
@@ -3227,128 +2224,19 @@
   }
 
   // ---------------------------------------------------------------------------
-  // E-Mail-Vorlagen-Logik
-  // ---------------------------------------------------------------------------
-
-  function ticketValueForEmail(value) {
-    return known(value) ? value : "[bitte ergänzen]";
-  }
-
-  function fillEmailPlaceholders(value) {
-    const ticket = state.ticket;
-    const placeholders = {
-      "[Kundenname]": ticketValueForEmail(ticket.customerName),
-      "[Kundennummer]": ticketValueForEmail(ticket.customerReference),
-      "[Ticketnummer]": ticketValueForEmail(ticket.key),
-      "[Tickettitel]": ticketValueForEmail(ticket.summary),
-      "[Anliegen]": ticketValueForEmail(ticket.description),
-      "[Bearbeiter]": ticketValueForEmail(ticket.assignee)
-    };
-    return Object.entries(placeholders).reduce(
-      (result, [placeholder, replacement]) => result.split(placeholder).join(replacement),
-      value || ""
-    );
-  }
-
-  function copyEmailTemplate(templateId) {
-    const template = state.emailTemplates.find((entry) => entry.id === templateId);
-    if (!template) return;
-    const subject = fillEmailPlaceholders(template.subject);
-    const body = fillEmailPlaceholders(template.body);
-    copyText(`Betreff: ${subject}\n\n${body}`, `E-Mail „${template.title}“ kopiert.`);
-  }
-
-  function readEmailEditorFromDom() {
-    const container = root();
-    const value = (role) => {
-      const field = container && container.querySelector(`[data-role='${role}']`);
-      return field ? field.value.trim() : "";
-    };
-    return { title: value("email-title"), subject: value("email-subject"), body: value("email-body") };
-  }
-
-  function saveEmailTemplate() {
-    const values = readEmailEditorFromDom();
-    if (!values.title || !values.subject || !values.body) {
-      toast("Bitte Name, Betreff und E-Mail-Text ausfüllen.");
-      return;
-    }
-    const existingId = state.emailEditor.templateId;
-    const template = { id: existingId || `email-${Date.now()}-${Math.random().toString(16).slice(2)}`, ...values };
-    state.emailTemplates = existingId
-      ? state.emailTemplates.map((entry) => entry.id === existingId ? template : entry)
-      : [...state.emailTemplates, template];
-    state.emailEditor = { isOpen: false, templateId: null };
-    persistEmailTemplates();
-    render();
-    toast("E-Mail-Vorlage lokal gespeichert.");
-  }
-
-  function deleteEmailTemplate(templateId) {
-    const template = state.emailTemplates.find((entry) => entry.id === templateId);
-    if (!template || !window.confirm(`E-Mail-Vorlage „${template.title}“ wirklich löschen?`)) return;
-    state.emailTemplates = state.emailTemplates.filter((entry) => entry.id !== templateId);
-    state.emailEditor = { isOpen: false, templateId: null };
-    persistEmailTemplates();
-    render();
-    toast("E-Mail-Vorlage gelöscht.");
-  }
-
-  // ---------------------------------------------------------------------------
   // Klick-/Eingabe-Handling
   // ---------------------------------------------------------------------------
 
-  function useIntent(intentId) {
-    const intent = AI.intents.find((entry) => entry.id === intentId);
-    if (!intent) return;
-    syncInputsFromDom();
-    const existing = state.ai.note.trim();
-    state.ai.note = existing ? `${existing}\n${intent.seed}` : intent.seed;
-    render();
-    const note = el("note");
-    if (note) { note.focus(); note.selectionStart = note.value.length; }
-  }
-
-  function copyDraft() {
-    syncInputsFromDom();
-    if (state.ai.draftKind === "email") {
-      const subject = state.ai.emailSubject.trim();
-      const body = state.ai.draft.trim();
-      copyText(subject ? `Betreff: ${subject}\n\n${body}` : body, "E-Mail-Entwurf kopiert.");
-    } else {
-      copyText(state.ai.draft, "Kommentar kopiert.");
-    }
-  }
-
-  function applyReview() {
-    if (!state.ai.review.improved) return;
-    state.ai.draft = state.ai.review.improved;
-    state.ai.review = { status: "idle", checks: [], improved: "" };
-    render();
-    toast("Vorschlag übernommen.");
-  }
-
+  // Die aus den Gesprächsstichpunkten formulierte Notiz in den Abschluss
+  // übernehmen (CRM-Eintrag), statt sie wie früher in einen Jira-Kommentar.
   function useCallDraft() {
     if (!state.ai.callDraft.text) return;
-    state.ai.draftKind = "comment";
-    state.ai.draft = state.ai.callDraft.text;
-    state.activeTab = "reply";
+    const call = currentActiveCall();
+    openCloseout(state.closeout ? state.closeout.entryType : "notiz", call, state.ai.callDraft.text);
+    state.activeTab = "close";
     persistUiState();
     render();
-    toast("In den Antwort-Tab übernommen.");
-  }
-
-  function deescalate() {
-    const d = escalationFlag();
-    syncInputsFromDom();
-    state.settingsOpen = false;
-    state.activeTab = "reply";
-    state.ai.draftKind = "email";
-    const wish = d && d.kundenwunsch ? ` Anliegen des Kunden: ${d.kundenwunsch}.` : "";
-    state.ai.note = `Deeskalierende Antwort: Verständnis und Bedauern für die Unannehmlichkeiten ausdrücken, das Anliegen ernst nehmen und einen klaren nächsten Schritt mit Zeitangabe nennen.${wish}`;
-    persistUiState();
-    render();
-    draft("email");
+    toast("In den Abschluss übernommen.");
   }
 
   async function handleSupabaseLogin() {
@@ -3412,10 +2300,7 @@
     state.settings = {
       agentName: value("set-agent-name"),
       company: value("set-company"),
-      signature: value("set-signature"),
-      notifyWaiting: checked("set-notify-waiting"),
       notifyCallbacks: checked("set-notify-callbacks"),
-      syncTicketSummaryToCrm: checked("set-sync-summary"),
       customerSearchJql: value("set-customer-jql"),
       supabaseUrl: value("set-supabase-url"),
       supabaseAnonKey: value("set-supabase-anon-key"),
@@ -3431,16 +2316,6 @@
     toast("Einstellungen lokal gespeichert.");
   }
 
-  // Schnellregel-Klick: in den Antwort-Tab wechseln und – falls die Regel eine
-  // Intent-ID mitliefert (rules.nextStep) – die passende Notiz-Vorlage einsetzen.
-  function applySuggestion(intentId) {
-    state.activeTab = "reply";
-    persistUiState();
-    const intent = intentId && AI.intents.find((entry) => entry.id === intentId);
-    if (intent) state.ai.note = intent.seed;
-    render();
-  }
-
   // Netz-Auskunft: Schritt 1 – Bestätigung anfordern (kritische Aktion). Der
   // eigentliche Lauf startet erst nach „Ja" in confirmLookup().
   function promptLookup(kind) {
@@ -3448,8 +2323,14 @@
       toast("Netz-Auskunft ist ausgeschaltet – erst in den Einstellungen aktivieren.");
       return;
     }
-    const number = lookupCustomerNumber();
-    if (!number) { toast("Keine Kundennummer erkannt."); return; }
+    // Live aus dem Feld lesen (falls der Nutzer gerade getippt hat und der
+    // input-Handler den State noch nicht gespiegelt hat), sonst State/Erkennung.
+    const container = root();
+    const node = container && container.querySelector("[data-role='lookup-customer']");
+    const typed = node && node.value ? node.value.trim() : "";
+    const number = typed || (state.lookup.customerInput || "").trim() || lookupCustomerNumber();
+    try { console.log("[Netz-Auskunft] promptLookup", kind, "enabled=", state.settings.enableLookups, "nr=", number); } catch (e) { /* egal */ }
+    if (!number) { toast("Bitte eine Kundennummer eingeben."); return; }
     state.lookup.confirm = { kind, customerNumber: number };
     render();
   }
@@ -3463,6 +2344,26 @@
     state.lookup.confirm = null;
     const dash = (CONFIG.lookups && CONFIG.lookups[confirm.kind]) || {};
     const requestId = `lk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // Häufigste Ursache für „es passiert nichts": die Extension wurde neu
+    // geladen, der Jira-Tab aber nicht – dann ist der Content-Script-Kontext
+    // ungültig und chrome.runtime.sendMessage wirft. Das darf NICHT still
+    // scheitern, sonst hängt die Anzeige ewig bei „läuft".
+    const reloadHint = {
+      requestId, kind: confirm.kind, customerNumber: confirm.customerNumber,
+      status: "error",
+      steps: (dash.steps || []).map((step) => ({ id: step.id, state: "pending" })),
+      data: null,
+      error: "Verbindung zur Extension verloren – bitte den Jira-Tab neu laden (F5) und erneut versuchen. (Nach dem Neuladen der Extension muss auch der Jira-Tab neu geladen werden.)"
+    };
+    try { console.log("[Netz-Auskunft] confirmLookup alive=", extensionAlive(), "kind=", confirm.kind, "nr=", confirm.customerNumber); } catch (e) { /* egal */ }
+    if (!extensionAlive()) {
+      state.lookup.result = reloadHint;
+      render();
+      toast("Bitte Jira-Tab neu laden (F5).");
+      return;
+    }
+
     state.lookup.result = {
       requestId,
       kind: confirm.kind,
@@ -3473,13 +2374,26 @@
       error: ""
     };
     try {
-      if (chrome.runtime && chrome.runtime.sendMessage) {
-        chrome.runtime.sendMessage({
-          type: "sc-run-lookup",
-          request: { kind: confirm.kind, customerNumber: confirm.customerNumber, source: "panel", requestId }
-        }, () => void chrome.runtime.lastError);
-      }
-    } catch (error) { /* Worker nicht erreichbar – Ergebnis bleibt bei „läuft" */ }
+      try { console.log("[Netz-Auskunft] sende sc-run-lookup an den Worker …", requestId); } catch (e) { /* egal */ }
+      chrome.runtime.sendMessage({
+        type: "sc-run-lookup",
+        request: { kind: confirm.kind, customerNumber: confirm.customerNumber, source: "panel", requestId }
+      }, () => {
+        // Fire-and-forget: „message port closed" ist erwartbar (keine Antwort).
+        // Andere Fehler deuten auf einen fehlenden Empfänger (Worker/lookup.js
+        // nicht geladen) – dann sichtbar auf Reload hinweisen.
+        const err = chrome.runtime.lastError;
+        if (err && !/message port closed/i.test(err.message || "")) {
+          state.lookup.result = reloadHint;
+          render();
+        }
+      });
+    } catch (error) {
+      state.lookup.result = reloadHint;
+      render();
+      toast("Bitte Jira-Tab neu laden (F5).");
+      return;
+    }
     render();
     toast("Abfrage gestartet …");
   }
@@ -3523,69 +2437,20 @@
       case "save-settings": saveSettings(); return;
       case "supabase-login": await handleSupabaseLogin(); return;
       case "supabase-logout": handleSupabaseLogout(); return;
-      case "deescalate": deescalate(); return;
-      case "set-language":
-        syncInputsFromDom();
-        state.ai.replyLanguage = control.dataset.language;
-        render();
-        return;
       case "enable-ai": enableAi(); return;
-      case "run-triage": runTriage(); return;
-      case "generate-summary": generateSummary(); return;
-      case "save-summary-to-crm": await syncSummaryToCrm({ manual: true }); return;
-      case "generate-documentation": generateDocumentation(); return;
-      case "copy-documentation": copyText(state.ai.documentation.text, "Doku kopiert."); return;
-      case "use-documentation": useDocumentationAsComment(); return;
-      case "generate-advice": generateAdvice(); return;
-      case "translate-description": translateDescription(); return;
-      case "generate-handoff": generateHandoff(); return;
       case "dismiss-call-overlay": dismissCallOverlay(); return;
       case "toggle-cockpit-mode": toggleCockpitMode(); return;
       case "wipe-data": wipeAllData(); return;
-      case "copy-handoff-comment": syncInputsFromDom(); copyText(state.ai.handoff.comment.text, "Kommentar kopiert."); return;
-      case "copy-handoff-email": {
-        syncInputsFromDom();
-        const subject = state.ai.handoff.email.subject.trim();
-        const body = state.ai.handoff.email.body.trim();
-        copyText(subject ? `Betreff: ${subject}\n\n${body}` : body, "E-Mail kopiert.");
-        return;
-      }
-      case "use-handoff-comment": useHandoffComment(); return;
-      case "use-handoff-email": useHandoffEmail(); return;
-      case "set-tone":
-        syncInputsFromDom();
-        state.tone = control.dataset.tone;
-        persistUiState();
-        render();
-        return;
-      case "use-intent": useIntent(control.dataset.intentId); return;
-      case "draft-comment": draft("comment"); return;
-      case "draft-email": draft("email"); return;
-      case "rewrite-draft": rewriteDraft(); return;
-      case "proofread-draft": proofreadDraft(); return;
-      case "review-draft": reviewDraft(); return;
-      case "apply-review": applyReview(); return;
-      case "copy-draft": copyDraft(); return;
       case "clean-call-notes": cleanCallNotes(); return;
-      case "copy-call-draft": copyText(state.ai.callDraft.text, "Kommentar kopiert."); return;
+      case "copy-call-draft": copyText(state.ai.callDraft.text, "Notiz kopiert."); return;
       case "use-call-draft": useCallDraft(); return;
-      case "copy-email-template": copyEmailTemplate(control.dataset.emailId); return;
-      case "open-email-editor": state.emailEditor = { isOpen: true, templateId: null }; render(); return;
-      case "edit-email-template": state.emailEditor = { isOpen: true, templateId: control.dataset.emailId }; render(); return;
-      case "close-email-editor": state.emailEditor = { isOpen: false, templateId: null }; render(); return;
-      case "save-email-template": saveEmailTemplate(); return;
-      case "delete-email-template": deleteEmailTemplate(control.dataset.emailId); return;
-      case "copy-call-note": { const note = el("call-note"); copyText(note && note.value, "Gesprächsnotiz kopiert."); return; }
-      // Wichtig: in den AKTIVEN Leitfaden indizieren, nicht in eine feste
-      // Liste – sonst kopieren die Buttons im Outbound-Modus Inbound-Sätze.
       case "copy-call-phase": { const phase = activeCallPhases()[Number(control.dataset.phaseIndex)]; if (phase) copyText(phase.prompt, "Gesprächsbaustein kopiert."); return; }
       case "copy-objection": { const card = activeObjectionCards()[Number(control.dataset.objectionIndex)]; if (card) copyText(card.text, "Antwort kopiert."); return; }
-      case "apply-suggestion": applySuggestion(control.dataset.intentId); return;
-      case "set-call-mode": setCallMode(control.dataset.mode); return;
       case "search-customer": openCustomerSearch(control.dataset.customer); return;
       case "generate-call-prep": generateCallPrep(); return;
       case "copy-call-prep": copyText(callPrepAsText(), "Gesprächsvorbereitung kopiert."); return;
       case "call-outcome": applyOutcome(control.dataset.outcome); return;
+      case "closeout-start": openCloseout("notiz", currentActiveCall(), ""); return;
       case "closeout-type":
         if (state.closeout) {
           state.closeout.entryType = control.dataset.value;
@@ -3645,21 +2510,14 @@
   // Textareas direkt in den State spiegeln (verhindert Verlust bei Re-Render).
   function handleInput(event) {
     const role = event.target && event.target.dataset && event.target.dataset.role;
-    if (role === "note") state.ai.note = event.target.value;
-    else if (role === "draft") state.ai.draft = event.target.value;
-    else if (role === "draft-subject") state.ai.emailSubject = event.target.value;
-    else if (role === "call-notes") { state.ai.callNotes = event.target.value; scheduleAutoCallClean(); }
-    else if (role === "handoff-department") state.ai.handoff.department = event.target.value;
-    else if (role === "handoff-note") state.ai.handoff.note = event.target.value;
-    else if (role === "handoff-comment") state.ai.handoff.comment.text = event.target.value;
-    else if (role === "handoff-email-subject") state.ai.handoff.email.subject = event.target.value;
-    else if (role === "handoff-email-body") state.ai.handoff.email.body = event.target.value;
+    if (role === "call-notes") { state.ai.callNotes = event.target.value; scheduleAutoCallClean(); }
     else if (role === "set-agent-name") state.settings.agentName = event.target.value;
     else if (role === "set-company") state.settings.company = event.target.value;
-    else if (role === "set-signature") state.settings.signature = event.target.value;
     else if (role === "set-customer-jql") state.settings.customerSearchJql = event.target.value;
     else if (role === "set-supabase-url") state.settings.supabaseUrl = event.target.value;
     else if (role === "set-supabase-anon-key") state.settings.supabaseAnonKey = event.target.value;
+    else if (role === "set-bridge-token") state.settings.bridgeToken = event.target.value;
+    else if (role === "lookup-customer") state.lookup.customerInput = event.target.value;
     else if (role === "sb-login-name") state.supabaseAuth.name = event.target.value;
     else if (role === "sb-login-pin") state.supabaseAuth.pin = event.target.value;
     else if (role && role.indexOf("closeout-") === 0 && state.closeout) {
@@ -3689,10 +2547,6 @@
   // (oder mit "idle", falls noch nichts generiert wurde).
   function hydrateAiFromCache(ticket) {
     const entry = aiCache.getEntry(ticket.key);
-    state.ai.summary = (entry && entry.summary) || { status: "idle", text: "" };
-    state.ai.triage = (entry && entry.triage) || { status: "idle", data: null };
-    state.ai.advice = (entry && entry.advice) || { status: "idle", text: "" };
-    state.ai.documentation = (entry && entry.documentation) || { status: "idle", text: "" };
     state.ai.callPrep = (entry && entry.callPrep) || { status: "idle", data: null };
   }
 
@@ -3704,24 +2558,8 @@
     state.ai.download = 0;
     state.ai.error = "";
     hydrateAiFromCache(nextTicket);
-    // Der Aktenstand gehört zum vorherigen Ticket – für das neue ist noch
-    // nichts geschrieben (die zwischengespeicherte Zusammenfassung wurde beim
-    // damaligen Erstellen bereits übernommen).
-    state.crmNote = { status: "idle", error: "", signature: "", customerNumber: "", resolution: "", created: false };
-    state.ai.review = { status: "idle", checks: [], improved: "" };
-    state.ai.translation = { status: "idle", text: "", language: "" };
-    state.ai.note = "";
-    state.ai.draft = "";
-    state.ai.emailSubject = "";
-    state.ai.draftKind = "comment";
     state.ai.callNotes = "";
     state.ai.callDraft = { status: "idle", text: "" };
-    state.ai.handoff = {
-      department: "",
-      note: "",
-      comment: { status: "idle", text: "" },
-      email: { status: "idle", subject: "", body: "" }
-    };
   }
 
   function refreshTicket() {
@@ -3748,14 +2586,10 @@
     const saved = await localStorageGet([
       CONFIG.storageKeys.isOpen,
       CONFIG.storageKeys.activeTab,
-      CONFIG.storageKeys.tone,
-      CONFIG.storageKeys.emailTemplates,
       CONFIG.storageKeys.settings,
       CONFIG.storageKeys.aiCache,
       CONFIG.storageKeys.activeCall,
-      CONFIG.storageKeys.queueStats,
       CONFIG.storageKeys.callOverlay,
-      CONFIG.storageKeys.callMode,
       CONFIG.storageKeys.callbacks,
       CONFIG.storageKeys.supabaseSession,
       CONFIG.storageKeys.customerCard,
@@ -3764,17 +2598,11 @@
     ]);
     if (typeof saved[CONFIG.storageKeys.isOpen] === "boolean") state.isOpen = saved[CONFIG.storageKeys.isOpen];
     if (CONFIG.tabs.some((tab) => tab.id === saved[CONFIG.storageKeys.activeTab])) state.activeTab = saved[CONFIG.storageKeys.activeTab];
-    if (AI.tones.some((tone) => tone.id === saved[CONFIG.storageKeys.tone])) state.tone = saved[CONFIG.storageKeys.tone];
     if (saved[CONFIG.storageKeys.settings] && typeof saved[CONFIG.storageKeys.settings] === "object") {
       state.settings = { ...CONFIG.settingsDefaults, ...saved[CONFIG.storageKeys.settings] };
     }
-    state.emailTemplates = Array.isArray(saved[CONFIG.storageKeys.emailTemplates])
-      ? saved[CONFIG.storageKeys.emailTemplates]
-      : CONFIG.emailTemplates.map((template) => ({ ...template }));
     aiCache.init(saved[CONFIG.storageKeys.aiCache]);
     state.activeCall = saved[CONFIG.storageKeys.activeCall] || null;
-    state.queueStats = saved[CONFIG.storageKeys.queueStats] || null;
-    state.callMode = callModeMeta(saved[CONFIG.storageKeys.callMode]).id;
     // Beim Laden gleich ausmisten: erledigte und lang überfällige Einträge
     // verschwinden, ohne dass jemand aufräumen muss (Datensparsamkeit).
     const savedCallbacks = saved[CONFIG.storageKeys.callbacks];
@@ -3805,21 +2633,6 @@
         if (area !== "local") return;
         if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.activeCall)) {
           handleActiveCallChange(changes[CONFIG.storageKeys.activeCall].newValue);
-        }
-        if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.queueStats)) {
-          // Wartefeld-Zahlen kommen alle paar Sekunden – nur die betroffenen
-          // DOM-Knoten aktualisieren statt das ganze Panel neu zu bauen.
-          state.queueStats = changes[CONFIG.storageKeys.queueStats].newValue || null;
-          refreshQueueNodes();
-        }
-        // Der Modus kann auch im timio-Cockpit umgelegt worden sein.
-        if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.callMode)) {
-          const next = callModeMeta(changes[CONFIG.storageKeys.callMode].newValue).id;
-          if (next !== state.callMode) {
-            state.callMode = next;
-            render();
-            maybeAutoRun();
-          }
         }
         // Rückrufliste: der Service-Worker vermerkt dort, dass er erinnert hat.
         if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.callbacks)) {

@@ -24,6 +24,13 @@
   const KEYS = CONFIG.storageKeys || {};
   const LOOKUPS = CONFIG.lookups || {};
 
+  // Diagnose: erscheint in der Service-Worker-Konsole (chrome://extensions →
+  // „Service Worker"). Macht sichtbar, ob der Auftrag ankommt und woran ein
+  // Lauf ggf. scheitert.
+  function log(...args) {
+    try { console.log("[Netz-Auskunft]", ...args); } catch (error) { /* egal */ }
+  }
+
   // In-Flight-Spiegel des laufenden Lookups (Worker lebt während des aktiven
   // async-Vorgangs; Storage ist die Quelle der Wahrheit fürs Panel).
   const active = new Map();
@@ -138,11 +145,13 @@
     const source = req.source || "panel";
     const dash = LOOKUPS[kind];
     const base = { requestId, kind, customerNumber, source, steps: initSteps(kind), data: null, error: "" };
+    log(`Auftrag: kind=${kind} kunde=${customerNumber} quelle=${source} id=${requestId}`);
 
     // Gate: Master-Schalter (technische Absicherung; Dialog sitzt im Panel).
     const stored = await getLocal([KEYS.settings]);
     const settings = stored[KEYS.settings] || {};
     if (settings.enableLookups !== true) {
+      log("Abbruch: enableLookups ist AUS.");
       writeResult(Object.assign({}, base, { status: "error", error: "Netz-Auskunft ist ausgeschaltet – erst in den Einstellungen aktivieren." }));
       return { ok: false, error: "disabled", requestId };
     }
@@ -159,9 +168,11 @@
 
     const target = await findOrOpenTab(dash);
     if (!target) {
-      writeResult(Object.assign({}, active.get(requestId) || base, { status: "error", error: "Dashboard-Tab konnte nicht geöffnet werden." }));
+      log("Fehler: chrome.tabs.create/query lieferte keinen Tab (Permission fehlt? Extension neu laden).");
+      writeResult(Object.assign({}, active.get(requestId) || base, { status: "error", error: "Dashboard-Tab konnte nicht geöffnet werden. Extension in chrome://extensions neu laden (die „tabs\"-Berechtigung wurde neu hinzugefügt)." }));
       return { ok: false, error: "no-tab", requestId };
     }
+    log(`Tab bereit: id=${target.tabId} neu=${target.created} geladen=${target.complete} → ${dash.openUrl}`);
     if (!target.complete) await waitForTabLoad(target.tabId, LOOKUPS.tabLoadTimeoutMs);
     await sleep(600);
 
@@ -177,7 +188,13 @@
       writeResult(Object.assign({}, latest, { status: "ok", data: response.data, error: "" }));
       return { ok: true, data: response.data, requestId };
     }
-    const error = (response && response.error) || "Abfrage fehlgeschlagen.";
+    let error = (response && response.error) || "Abfrage fehlgeschlagen.";
+    // Häufigste reale Ursache, wenn das Content-Script nie antwortet: der
+    // Dashboard-Tab lädt eine Login-/SSO-Seite statt des Dashboards, oder die
+    // Oberfläche sieht anders aus als erwartet. Konkreten Hinweis anhängen.
+    if (/zeitüberschreitung|keine antwort|receiving end|establish connection/i.test(error)) {
+      error += ` (Ist der Tab „${dash.openUrl}" geladen und bist du dort angemeldet? Dashboard offen lassen und erneut versuchen.)`;
+    }
     writeResult(Object.assign({}, latest, { status: "error", error }));
     return { ok: false, error, requestId };
   }
@@ -190,6 +207,7 @@
         applyStep(message.requestId, message.step, message.state);
       } else if (message.type === "sc-run-lookup" && message.request) {
         // Fire-and-forget: das Panel liest Fortschritt/Ergebnis aus dem Storage.
+        log("sc-run-lookup empfangen.");
         runLookup(message.request);
       }
     });
@@ -198,4 +216,5 @@
   }
 
   app.lookup = { runLookup, initSteps, applyStep, waitForTabLoad };
+  log("lookup.js geladen – bereit für sc-run-lookup / sc-lookup-step.");
 })();

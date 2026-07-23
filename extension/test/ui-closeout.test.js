@@ -69,31 +69,29 @@ async function run() {
   {
     const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
     const { env, KEYS } = await mountPanel(inserted);
-    env.click("set-call-mode", { mode: "outbound" });
     env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall() });
     assert.ok(env.html().includes('data-outcome="mailbox"'), "Voraussetzung: die Outcome-Leiste zeigt Mailbox überhaupt an");
     env.click("call-outcome", { outcome: "mailbox" });
     assert.ok(!env.html().includes("sc-closeout"), "Mailbox hat keinen Gesprächsinhalt und öffnet kein Abschluss-Panel");
   }
 
-  // --- Inbound-Outcome öffnet das Panel mit Notiz ----------------------------
+  // --- Outbound "Erreicht & geklärt" öffnet das Panel mit Notiz --------------
   {
     const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
     const { env, KEYS } = await mountPanel(inserted);
     env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall() });
-    env.click("call-outcome", { outcome: "resolved" });
-    assert.ok(env.html().includes("sc-closeout"), "Inbound-Outcome \"Anliegen geklärt\" öffnet das Abschluss-Panel");
+    env.click("call-outcome", { outcome: "reached-done" });
+    assert.ok(env.html().includes("sc-closeout"), "Outcome \"Erreicht & geklärt\" öffnet das Abschluss-Panel");
     assert.ok(env.html().includes('data-role="closeout-title"'), "Notiz ist der Standard-Eintragstyp");
   }
 
-  // --- Inbound ohne Klick: Panel öffnet automatisch beim Auflegen ------------
+  // --- Manueller Einstieg über den Abschluss-Tab -----------------------------
   {
     const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
     const { env, KEYS } = await mountPanel(inserted);
-    env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: Object.assign(endedCall(), { status: "connected" }) });
-    assert.ok(!env.html().includes("sc-closeout"), "während des Gesprächs ist noch kein Panel offen");
     env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall() });
-    assert.ok(env.html().includes("sc-closeout"), "Inbound öffnet das Panel beim Auflegen ohne Klick auf einen Outcome-Button");
+    env.click("closeout-start", { value: "notiz" });
+    assert.ok(env.html().includes("sc-closeout"), "der Knopf \"Neuer Eintrag\" öffnet das Abschluss-Panel ohne Outcome-Klick");
   }
 
   // --- Typ-Wechsel + Produkt-Toggle + Absenden -> insertContract -------------
@@ -101,7 +99,7 @@ async function run() {
     const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
     const { env, KEYS } = await mountPanel(inserted);
     env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall() });
-    env.click("call-outcome", { outcome: "resolved" });
+    env.click("call-outcome", { outcome: "reached-done" });
 
     env.click("closeout-type", { value: "vertrag" });
     await flush();
@@ -121,7 +119,7 @@ async function run() {
     const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
     const { env, KEYS } = await mountPanel(inserted);
     env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall({ customerNumber: "99999" }) });
-    env.click("call-outcome", { outcome: "callback-agreed" });
+    env.click("call-outcome", { outcome: "reached-callback" });
     env.click("closeout-type", { value: "lead" });
     env.click("closeout-submit");
     await flush();

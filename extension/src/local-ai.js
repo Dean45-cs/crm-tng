@@ -11,7 +11,6 @@
     expectedOutputs: [{ type: "text", languages: ["de"] }]
   };
   const MAX_CONTEXT_CHARS = 12000;
-  const MAX_PREVIOUS_DOC_CHARS = 3000;
   const MAX_DESCRIPTION_CHARS = 4000; // Obergrenze für die Beschreibung, damit Platz für Kommentare bleibt
   const MAX_COMMENT_CHARS = 1500;     // Obergrenze pro einzelnem Kommentar
 
@@ -25,16 +24,13 @@
     ERROR: "error"
   };
 
-  // Zugriff auf die globalen On-Device-Konstruktoren. In Erweiterungskontexten
-  // ist mindestens die Prompt API (LanguageModel) verfügbar; die spezialisierten
-  // APIs werden opportunistisch genutzt, wenn Chrome sie bereitstellt.
+  // Zugriff auf den globalen On-Device-Konstruktor. Der Outbound-Modus braucht
+  // nur noch die Prompt API (LanguageModel) – für die Gesprächsvorbereitung und
+  // die interne Abschluss-Notiz. Die spezialisierten Companion-APIs
+  // (Summarizer/Rewriter/Proofreader/Translator) gehörten zu den entfallenen
+  // Support-Funktionen (E-Mail/Kommentar/Übersetzung) und werden nicht mehr genutzt.
   const globals = {
-    prompt: () => globalThis.LanguageModel,
-    summarizer: () => globalThis.Summarizer,
-    rewriter: () => globalThis.Rewriter,
-    proofreader: () => globalThis.Proofreader,
-    translator: () => globalThis.Translator,
-    detector: () => globalThis.LanguageDetector
+    prompt: () => globalThis.LanguageModel
   };
 
   // ---------------------------------------------------------------------------
@@ -100,8 +96,19 @@
   async function promptAvailability() {
     const model = globals.prompt();
     if (!model || typeof model.availability !== "function") return STATUS.UNSUPPORTED;
+    // Erst mit Sprach-Hinweisen prüfen. Manche Chrome-Versionen melden für eine
+    // nicht offiziell gelistete AUSGABE-Sprache (z. B. "de") fälschlich
+    // "unavailable", obwohl das Modell vorhanden ist und Deutsch problemlos
+    // erzeugt. Dann ohne die Hinweise erneut prüfen, statt die KI fälschlich als
+    // nicht verfügbar zu melden.
     try {
-      return await model.availability(EXPECTED);
+      const strict = await model.availability(EXPECTED);
+      if (strict && strict !== STATUS.UNAVAILABLE) return strict;
+    } catch (error) {
+      // Optionen evtl. nicht akzeptiert – unten schlicht prüfen.
+    }
+    try {
+      return await model.availability();
     } catch (error) {
       return STATUS.UNAVAILABLE;
     }
@@ -142,7 +149,19 @@
         base.topK = Math.max(1, Math.min(desiredTopK, maxTopK));
       }
     }
-    return model.create(createOptions(base, opts));
+    try {
+      return await model.create(createOptions(base, opts));
+    } catch (error) {
+      // Scheitert das Erstellen an den Sprach-Hinweisen (expectedInputs/-Outputs)
+      // – dieselbe Chrome-Eigenheit wie bei availability(), nur beim Anlegen der
+      // Sitzung –, ohne diese Hinweise erneut versuchen. Die Sprache gibt der
+      // System-Prompt ohnehin vor.
+      if (!base.expectedInputs && !base.expectedOutputs) throw error;
+      const withoutLangs = { ...base };
+      delete withoutLangs.expectedInputs;
+      delete withoutLangs.expectedOutputs;
+      return await model.create(createOptions(withoutLangs, opts));
+    }
   }
 
   // Baut aus den lokalen Bearbeiter-/Firmenangaben einen System-Zusatz.
@@ -151,9 +170,8 @@
     const lines = [];
     if (agent.name) lines.push(`Name des Bearbeiters: ${clip(agent.name, 120)}`);
     if (agent.company) lines.push(`Unternehmen: ${clip(agent.company, 160)}`);
-    if (agent.signature) lines.push(`Diese E-Mail-Signatur unverändert ans Ende von E-Mails setzen:\n${clip(agent.signature, 400)}`);
     if (!lines.length) return "";
-    return `Angaben zum Absender (verwende sie statt Platzhaltern wie [Name]):\n${lines.join("\n")}`;
+    return `Angaben zum Anrufer/Bearbeiter (verwende sie statt Platzhaltern wie [Name]):\n${lines.join("\n")}`;
   }
 
   // Führt einen Prompt aus und streamt Teilergebnisse an onChunk.
@@ -249,7 +267,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Öffentliche KI-Funktionen
+  // Öffentliche KI-Funktionen (Outbound)
   // ---------------------------------------------------------------------------
 
   // Verfügbarkeit der lokalen KI insgesamt (Prompt API ist die Voraussetzung).
@@ -259,69 +277,8 @@
       status,
       usable: isUsable(status),
       needsDownload: status === STATUS.DOWNLOADABLE,
-      downloading: status === STATUS.DOWNLOADING,
-      hasSummarizer: Boolean(globals.summarizer()),
-      hasRewriter: Boolean(globals.rewriter()),
-      hasProofreader: Boolean(globals.proofreader()),
-      hasTranslator: Boolean(globals.translator()),
-      hasDetector: Boolean(globals.detector())
+      downloading: status === STATUS.DOWNLOADING
     };
-  }
-
-  // Streamende Ticket-Zusammenfassung in vier festen Punkten.
-  async function summarize(ticket, opts = {}) {
-    const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
-
-    let session;
-    try {
-      session = await createPromptSession({ ...opts, temperature: analysisTemp(), topK: 1 });
-      const promptText = [
-        "Fasse dieses Jira-Ticket für die interne Bearbeitung zusammen.",
-        "Antworte mit genau vier Zeilen, jeweils beginnend mit dem Label:",
-        "Anliegen: …",
-        "Bisheriger Stand: …",
-        "Kundenergebnis/Zusage: …",
-        "Nächster Schritt: …",
-        "Ist ein Punkt nicht dokumentiert, schreibe 'Nicht dokumentiert'.",
-        "",
-        fenced("TICKETDATEN", ticketContext(ticket))
-      ].join("\n");
-      const text = await runStreaming(session, promptText, opts.onChunk, opts.signal);
-      return { status: STATUS.AVAILABLE, text };
-    } finally {
-      if (session && typeof session.destroy === "function") session.destroy();
-    }
-  }
-
-  // Automatische Einordnung: Stimmung, Dringlichkeit, Kategorie, Kundenwunsch.
-  async function triage(ticket, opts = {}) {
-    const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
-
-    const schema = {
-      type: "object",
-      additionalProperties: false,
-      required: ["stimmung", "dringlichkeit", "kategorie", "kundenwunsch", "naechsterSchritt"],
-      properties: {
-        stimmung: { type: "string", enum: ["positiv", "neutral", "negativ", "verärgert"] },
-        dringlichkeit: { type: "string", enum: ["niedrig", "mittel", "hoch"] },
-        kategorie: { type: "string", enum: ["Frage", "Störung", "Änderungswunsch", "Reklamation", "Information", "Sonstiges"] },
-        kundenwunsch: { type: "string" },
-        naechsterSchritt: { type: "string" }
-      }
-    };
-    const promptText = [
-      "Analysiere das folgende Support-Ticket und ordne es ein.",
-      "kundenwunsch: in einem kurzen Satz, was der Kunde erreichen möchte.",
-      "naechsterSchritt: der aus Sicht des Supports sinnvollste nächste Schritt in einem kurzen Satz.",
-      "",
-      fenced("TICKETDATEN", ticketContext(ticket))
-    ].join("\n");
-
-    const data = await promptJson(promptText, schema, { ...opts, temperature: analysisTemp(), topK: 1 });
-    if (!data) return { status: STATUS.ERROR };
-    return { status: STATUS.OK, data };
   }
 
   // Vorbereitung eines ausgehenden Anrufs. Anders als eingehend gibt es keine
@@ -377,459 +334,41 @@
     return { status: STATUS.OK, data };
   }
 
-  // Entwurf eines internen Jira-Kommentars aus der Notiz des Bearbeiters.
-  async function draftComment(input, opts = {}) {
-    const { ticket, note, tone, agent } = input || {};
+  // Aus den Gesprächsstichpunkten des Bearbeiters eine polierte interne
+  // CRM-Notiz zum Ergebnis eines ausgehenden Anrufs formulieren. Ersetzt die
+  // frühere Support-Kommentar-/E-Mail-Formulierung: im Outbound-Betrieb wird nur
+  // noch eine interne Notiz gebraucht, die den Gesprächsausgang festhält und am
+  // Gesprächsende ins CRM (bzw. per Zwischenablage nach Jira) wandert.
+  async function draftCallNote(input, opts = {}) {
+    const { ticket, note, agent } = input || {};
     const status = await promptAvailability();
     if (!isUsable(status)) return { status };
 
-    const toneHint = toneInstruction(tone);
     let session;
     try {
       session = await createPromptSession({ ...opts, temperature: draftTemp(), agentContext: agentContext(agent) });
       const promptText = [
-        "Formuliere einen internen Jira-Kommentar zur Dokumentation des Bearbeitungsstands.",
-        "Nutze die Ticketdaten als Kontext und die Notiz des Bearbeiters als Hauptinhalt.",
+        "Formuliere aus den Gesprächsstichpunkten eine knappe interne CRM-Notiz zum Ergebnis eines ausgehenden Anrufs.",
+        "Nutze die Ticketdaten nur als Kontext und die Stichpunkte des Bearbeiters als Hauptinhalt.",
         "Struktur mit genau diesen vier Zeilen (jeweils ein bis zwei Sätze):",
-        "Anliegen: …",
-        "Besprochen/Stand: …",
+        "Anlass: …",
+        "Besprochen: …",
         "Ergebnis: …",
         "Nächster Schritt: …",
-        toneHint,
         "Wird ein Rückruf oder Termin erwähnt, nenne Datum/Uhrzeit. Fehlt eine Angabe, schreibe [ergänzen].",
         "",
-        "Beispiel NUR für die Form (Inhalt NICHT übernehmen, immer aus Notiz und Ticket schöpfen):",
-        "Anliegen: Kunde meldet doppelte Abbuchung der März-Rechnung.",
-        "Besprochen/Stand: Buchungen geprüft, Dublette bestätigt.",
-        "Ergebnis: Storno der Doppelbuchung veranlasst.",
-        "Nächster Schritt: Korrigierte Rechnung bis [ergänzen] an den Kunden senden.",
+        "Beispiel NUR für die Form (Inhalt NICHT übernehmen, immer aus Stichpunkten und Ticket schöpfen):",
+        "Anlass: Ausbau im Gebiet abgeschlossen, Kunde auf Tarifwechsel angesprochen.",
+        "Besprochen: Aktuellen Tarif und Upgrade-Optionen erläutert.",
+        "Ergebnis: Kunde interessiert, möchte Angebot per Mail.",
+        "Nächster Schritt: Angebot bis [ergänzen] senden.",
         "",
-        fenced("NOTIZ DES BEARBEITERS", note || "(keine Notiz – formuliere aus dem Ticketkontext)"),
-        "",
-        fenced("TICKETDATEN", ticketContext(ticket))
-      ].join("\n");
-      const text = await runStreaming(session, promptText, opts.onChunk, opts.signal);
-      return { status: STATUS.OK, text };
-    } finally {
-      if (session && typeof session.destroy === "function") session.destroy();
-    }
-  }
-
-  // Entwurf einer Kunden-E-Mail (Betreff + Text) aus der Notiz des Bearbeiters.
-  async function draftEmail(input, opts = {}) {
-    const { ticket, note, tone, agent, language } = input || {};
-    const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
-
-    const toneHint = toneInstruction(tone);
-    const langLabel = languageLabel(language);
-    let session;
-    try {
-      session = await createPromptSession({ ...opts, temperature: draftTemp(), agentContext: agentContext(agent) });
-      const promptText = [
-        `Formuliere eine freundliche, professionelle Kunden-E-Mail auf ${langLabel}.`,
-        "Erste Zeile exakt 'Betreff: …', dann eine Leerzeile, dann der E-Mail-Text mit Anrede und Grußformel.",
-        toneHint,
-        agent && agent.signature ? "Beende die E-Mail mit der angegebenen Signatur." : "Beende die E-Mail mit einer passenden Grußformel und dem Namen des Bearbeiters, falls bekannt.",
-        "Keine internen Vermutungen, keine ticketinternen Details. Fehlt eine unverzichtbare Angabe, schreibe [bitte ergänzen].",
-        "",
-        "Beispiel NUR für die Form (Inhalt NICHT übernehmen):",
-        "Betreff: Update zu Ihrem Anliegen [Ticketnummer]",
-        "",
-        "Guten Tag [Kundenname],",
-        "vielen Dank für Ihre Rückmeldung. Wir haben [Sachverhalt] geprüft und [Ergebnis].",
-        "Nächster Schritt: [ergänzen].",
-        "",
-        "Freundliche Grüße",
-        "[Name]",
-        "",
-        fenced("NOTIZ DES BEARBEITERS", note || "(keine Notiz – formuliere einen freundlichen Zwischenstand)"),
-        "",
-        fenced("TICKETDATEN", ticketContext(ticket))
-      ].join("\n");
-
-      let raw = "";
-      const relay = typeof opts.onChunk === "function" ? (acc) => { raw = acc; opts.onChunk(acc); } : undefined;
-      raw = await runStreaming(session, promptText, relay, opts.signal);
-      const parsed = splitEmail(raw);
-      return { status: STATUS.OK, subject: parsed.subject, body: parsed.body, raw };
-    } finally {
-      if (session && typeof session.destroy === "function") session.destroy();
-    }
-  }
-
-  // Interner Kommentar zur Weiterleitung an eine Fachabteilung: Kontext plus
-  // explizites ToDo, damit die Abteilung ohne Rückfrage übernehmen kann.
-  async function draftHandoffComment(input, opts = {}) {
-    const { ticket, department, note, agent } = input || {};
-    const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
-
-    let session;
-    try {
-      session = await createPromptSession({ ...opts, temperature: draftTemp(), agentContext: agentContext(agent) });
-      const promptText = [
-        `Formuliere einen internen Jira-Kommentar zur Weitergabe dieses Tickets an die Fachabteilung "${clip(department, 120)}".`,
-        "Die Fachabteilung kennt das Ticket noch nicht. Nutze die Ticketdaten und ggf. die Notiz des Bearbeiters als Kontext.",
-        "Struktur mit genau diesen drei Zeilen:",
-        "Kontext: ein bis zwei Sätze, worum es geht und warum weitergegeben wird.",
-        `ToDo für ${clip(department, 120)}: maximal 3 konkrete, umsetzbare Stichpunkte, jeweils beginnend mit '- '.`,
-        "Rückmeldung erwartet bis: Datum/Frist, falls in Ticket oder Notiz genannt, sonst 'nicht festgelegt'.",
-        "Erfinde keine Fakten. Fehlt eine Angabe, schreibe 'nicht dokumentiert'.",
-        "",
-        fenced("NOTIZ DES BEARBEITERS", note || "(keine zusätzliche Notiz – ToDo aus dem Ticketkontext ableiten)"),
+        fenced("GESPRÄCHSSTICHPUNKTE", note || "(keine Stichpunkte – formuliere aus dem Ticketkontext)"),
         "",
         fenced("TICKETDATEN", ticketContext(ticket))
       ].join("\n");
       const text = await runStreaming(session, promptText, opts.onChunk, opts.signal);
       return { status: STATUS.OK, text };
-    } finally {
-      if (session && typeof session.destroy === "function") session.destroy();
-    }
-  }
-
-  // Kunden-E-Mail zur Weiterleitung: informiert nur, dass und an wen
-  // weitergegeben wurde – keine internen Details.
-  async function draftHandoffEmail(input, opts = {}) {
-    const { ticket, department, note, agent, language } = input || {};
-    const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
-
-    const langLabel = languageLabel(language);
-    let session;
-    try {
-      session = await createPromptSession({ ...opts, temperature: draftTemp(), agentContext: agentContext(agent) });
-      const promptText = [
-        `Formuliere eine kurze, freundliche Kunden-E-Mail auf ${langLabel}, die informiert, dass das Anliegen zur weiteren`,
-        `Bearbeitung an die zuständige Fachabteilung "${clip(department, 120)}" weitergeleitet wurde.`,
-        "Erste Zeile exakt 'Betreff: …', dann eine Leerzeile, dann der E-Mail-Text mit Anrede und Grußformel.",
-        "Keine internen Details, keine Namen von Kolleg:innen oder Abteilungsinterna außer dem genannten Abteilungsnamen.",
-        "Erwähne, dass sich die Fachabteilung meldet, sobald es Neuigkeiten gibt.",
-        agent && agent.signature ? "Beende die E-Mail mit der angegebenen Signatur." : "Beende die E-Mail mit einer passenden Grußformel und dem Namen des Bearbeiters, falls bekannt.",
-        "Fehlt eine unverzichtbare Angabe, schreibe [bitte ergänzen].",
-        "",
-        fenced("NOTIZ DES BEARBEITERS", note || "(keine zusätzliche Notiz)"),
-        "",
-        fenced("TICKETDATEN", ticketContext(ticket))
-      ].join("\n");
-
-      let raw = "";
-      const relay = typeof opts.onChunk === "function" ? (acc) => { raw = acc; opts.onChunk(acc); } : undefined;
-      raw = await runStreaming(session, promptText, relay, opts.signal);
-      const parsed = splitEmail(raw);
-      return { status: STATUS.OK, subject: parsed.subject, body: parsed.body, raw };
-    } finally {
-      if (session && typeof session.destroy === "function") session.destroy();
-    }
-  }
-
-  function splitEmail(raw) {
-    const text = String(raw || "").trim();
-    const match = text.match(/^\s*Betreff:\s*(.*)$/im);
-    if (!match) return { subject: "", body: text };
-    const subject = match[1].trim();
-    const body = text.slice(match.index + match[0].length).replace(/^\s+/, "");
-    return { subject, body };
-  }
-
-  // KI-Qualitätscheck eines Kommentars inkl. verbesserter Fassung.
-  async function reviewDraft(text, ticket, opts = {}) {
-    const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
-    if (!String(text || "").trim()) return { status: STATUS.OK, checks: [], improved: "" };
-
-    const schema = {
-      type: "object",
-      additionalProperties: false,
-      required: ["bewertung", "verbessert"],
-      properties: {
-        bewertung: {
-          type: "array",
-          minItems: 1,
-          maxItems: 5,
-          items: {
-            type: "object",
-            additionalProperties: false,
-            required: ["punkt", "status", "hinweis"],
-            properties: {
-              punkt: { type: "string", enum: ["Zusammenfassung", "Ergebnis", "Nächster Schritt", "Rückrufzeit", "Ton"] },
-              status: { type: "string", enum: ["ok", "fehlt", "unklar"] },
-              hinweis: { type: "string" }
-            }
-          }
-        },
-        verbessert: { type: "string" }
-      }
-    };
-    const promptText = [
-      "Prüfe den folgenden Support-Kommentar auf Vollständigkeit und professionellen Ton.",
-      "Bewerte diese Punkte: Zusammenfassung des Anliegens, Ergebnis, nächster Schritt,",
-      "Rückrufzeit (nur falls ein Rückruf/Termin erwähnt wird) und Ton.",
-      "status ist 'ok', 'fehlt' oder 'unklar'. hinweis: ein kurzer, konkreter Verbesserungshinweis.",
-      "verbessert: eine überarbeitete, vollständige und professionelle Fassung des Kommentars.",
-      "",
-      fenced("KOMMENTAR", text),
-      "",
-      fenced("TICKETKONTEXT", ticketContext(ticket))
-    ].join("\n");
-
-    const data = await promptJson(promptText, schema, { ...opts, temperature: analysisTemp(), topK: 1 });
-    if (!data || !Array.isArray(data.bewertung)) return { status: STATUS.ERROR };
-    const checks = data.bewertung.map((entry) => ({
-      level: entry.status === "ok" ? "ok" : entry.status === "fehlt" ? "warning" : "warning",
-      text: `${entry.punkt}: ${entry.hinweis}`
-    }));
-    return { status: STATUS.OK, checks, improved: String(data.verbessert || "").trim() };
-  }
-
-  // Streamende Handlungsempfehlung: konkrete nächste Schritte für den Bearbeiter.
-  async function advise(ticket, opts = {}) {
-    const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
-
-    let session;
-    try {
-      session = await createPromptSession({ ...opts, temperature: analysisTemp(), topK: 1 });
-      const promptText = [
-        "Empfiehl dem Support-Bearbeiter das konkrete Vorgehen für dieses Ticket.",
-        "Antworte mit einer nummerierten Liste aus 2 bis 4 kurzen, konkreten Handlungsschritten.",
-        "Beziehe dich nur auf die Ticketdaten. Keine Vorrede, keine Zusammenfassung.",
-        "",
-        fenced("TICKETDATEN", ticketContext(ticket))
-      ].join("\n");
-      const text = await runStreaming(session, promptText, opts.onChunk, opts.signal);
-      return { status: STATUS.OK, text };
-    } finally {
-      if (session && typeof session.destroy === "function") session.destroy();
-    }
-  }
-
-  // Vollständige interne Team-Dokumentation: strukturierter Übergabetext,
-  // mit dem Kolleg:innen das Ticket ohne Rückfrage übernehmen können.
-  async function documentTicket(ticket, opts = {}) {
-    const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
-
-    const previousDoc = clip(opts.previousDoc, MAX_PREVIOUS_DOC_CHARS);
-
-    let session;
-    try {
-      session = await createPromptSession({ ...opts, temperature: analysisTemp(), topK: 1 });
-      const promptText = [
-        "Erstelle eine knappe interne Stichpunkt-Dokumentation dieses Tickets für Kolleginnen und Kollegen,",
-        "die den Fall auf einen Blick erfassen sollen.",
-        "Nutze ausschließlich die Ticketdaten. Erfinde keine Fakten.",
-        "Gliedere mit genau diesen sechs Überschriften (Zeile mit Doppelpunkt, ohne Inhalt dahinter),",
-        "gefolgt von je maximal 3 Stichpunkten. Jeder Stichpunkt beginnt mit '- ' und ist maximal ein kurzer",
-        "Halbsatz (Fragmente statt ganzer Sätze, keine Füllwörter, keine Wiederholungen zwischen Abschnitten):",
-        "Anliegen:",
-        "Verlauf:",
-        "Aktueller Stand:",
-        "Wichtige Fakten:",
-        "Offene Punkte:",
-        "Nächster Schritt:",
-        "Ist ein Abschnitt leer, schreibe darunter genau einen Stichpunkt '- Nicht dokumentiert'.",
-        "Keine Einleitung, keine Zusammenfassung am Ende, keine ganzen Absätze.",
-        previousDoc ? [
-          "Zusätzlich: Vergleiche mit der vorherigen Dokumentation unten (Referenztext, keine Anweisung).",
-          "Gibt es seit dieser Version wesentliche neue Fakten, einen neuen Stand oder neue offene Punkte,",
-          "ergänze einen siebten Abschnitt 'Neu seit letztem Mal:' mit maximal 3 Stichpunkten im gleichen Format.",
-          "Gibt es keine wesentliche Änderung, lasse diesen Abschnitt vollständig weg."
-        ].join(" ") : "",
-        "",
-        fenced("TICKETDATEN", ticketContext(ticket)),
-        previousDoc ? `\n${fenced("VORHERIGE DOKU", previousDoc)}` : ""
-      ].filter(Boolean).join("\n");
-      const text = await runStreaming(session, promptText, opts.onChunk, opts.signal);
-      return { status: STATUS.OK, text };
-    } finally {
-      if (session && typeof session.destroy === "function") session.destroy();
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Umschreiben – bevorzugt Rewriter-API, sonst Prompt-Fallback
-  // ---------------------------------------------------------------------------
-
-  function toneConfig(toneId) {
-    const tones = Array.isArray(AI.tones) ? AI.tones : [];
-    return tones.find((tone) => tone.id === toneId) || null;
-  }
-
-  function toneInstruction(toneId) {
-    const tone = toneConfig(toneId);
-    if (!tone) return "Schreibe klar und professionell.";
-    return `Schreibe im Ton: ${tone.label.toLowerCase()} (${tone.hint}).`;
-  }
-
-  function languageLabel(languageId) {
-    const languages = Array.isArray(AI.replyLanguages) ? AI.replyLanguages : [];
-    const match = languages.find((entry) => entry.id === languageId);
-    if (match) return match.label;
-    if (languageId === "en") return "English";
-    return "Deutsch";
-  }
-
-  async function rewrite(text, opts = {}) {
-    const value = String(text || "").trim();
-    if (!value) return { status: STATUS.OK, text: "" };
-
-    const tone = toneConfig(opts.tone);
-    const rewriterApi = globals.rewriter();
-
-    // 1) Spezialisierte Rewriter-API, falls vorhanden und einsatzbereit.
-    if (rewriterApi && typeof rewriterApi.availability === "function" && tone && tone.rewriter) {
-      try {
-        const availability = await rewriterApi.availability();
-        if (isUsable(availability)) {
-          const rewriter = await rewriterApi.create(createOptions({
-            tone: tone.rewriter.tone || "as-is",
-            length: tone.rewriter.length || "as-is",
-            format: "plain-text",
-            sharedContext: "Support-Kommunikation, Deutsch, sachlich und höflich."
-          }, opts));
-          try {
-            const result = await rewriter.rewrite(value, opts.signal ? { signal: opts.signal } : undefined);
-            return { status: STATUS.OK, text: String(result || "").trim() };
-          } finally {
-            if (typeof rewriter.destroy === "function") rewriter.destroy();
-          }
-        }
-      } catch (error) {
-        // Fällt unten auf die Prompt API zurück.
-      }
-    }
-
-    // 2) Fallback über die Prompt API.
-    const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
-    let session;
-    try {
-      session = await createPromptSession(opts);
-      const promptText = [
-        `Schreibe den folgenden Text um. ${toneInstruction(opts.tone)}`,
-        "Erhalte die Aussage und alle Fakten. Gib nur den umgeschriebenen Text aus, ohne Vorrede.",
-        "",
-        fenced("TEXT", value)
-      ].join("\n");
-      const result = await runStreaming(session, promptText, opts.onChunk, opts.signal);
-      return { status: STATUS.OK, text: result };
-    } finally {
-      if (session && typeof session.destroy === "function") session.destroy();
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Korrektur lesen – bevorzugt Proofreader-API, sonst Prompt-Fallback
-  // ---------------------------------------------------------------------------
-
-  async function proofread(text, opts = {}) {
-    const value = String(text || "").trim();
-    if (!value) return { status: STATUS.OK, text: "" };
-
-    const proofreaderApi = globals.proofreader();
-    if (proofreaderApi && typeof proofreaderApi.availability === "function") {
-      try {
-        const availability = await proofreaderApi.availability();
-        if (isUsable(availability)) {
-          const proofreader = await proofreaderApi.create(createOptions({
-            expectedInputLanguages: ["de"]
-          }, opts));
-          try {
-            const result = await proofreader.proofread(value);
-            return { status: STATUS.OK, text: String((result && result.corrected) || value).trim() };
-          } finally {
-            if (typeof proofreader.destroy === "function") proofreader.destroy();
-          }
-        }
-      } catch (error) {
-        // Fällt unten auf die Prompt API zurück.
-      }
-    }
-
-    const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
-    let session;
-    try {
-      session = await createPromptSession(opts);
-      const promptText = [
-        "Korrigiere Rechtschreibung, Grammatik und Zeichensetzung des folgenden Textes.",
-        "Ändere Inhalt, Ton und Formulierung so wenig wie möglich. Gib nur den korrigierten Text aus.",
-        "",
-        fenced("TEXT", value)
-      ].join("\n");
-      const result = await runStreaming(session, promptText, opts.onChunk, opts.signal);
-      return { status: STATUS.OK, text: result };
-    } finally {
-      if (session && typeof session.destroy === "function") session.destroy();
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Sprache erkennen & übersetzen
-  // ---------------------------------------------------------------------------
-
-  async function detectLanguage(text) {
-    const value = String(text || "").trim();
-    if (!value) return { status: STATUS.OK, language: "", confidence: 0 };
-
-    const detectorApi = globals.detector();
-    if (detectorApi && typeof detectorApi.create === "function") {
-      try {
-        const availability = await detectorApi.availability();
-        if (isUsable(availability)) {
-          const detector = await detectorApi.create();
-          try {
-            const results = await detector.detect(value);
-            const best = Array.isArray(results) && results[0];
-            if (best) return { status: STATUS.OK, language: best.detectedLanguage, confidence: best.confidence };
-          } finally {
-            if (typeof detector.destroy === "function") detector.destroy();
-          }
-        }
-      } catch (error) {
-        // ignorieren – Sprache bleibt unbekannt
-      }
-    }
-    return { status: STATUS.OK, language: "", confidence: 0 };
-  }
-
-  async function translate(text, opts = {}) {
-    const value = String(text || "").trim();
-    const target = opts.target || "de";
-    if (!value) return { status: STATUS.OK, text: "" };
-
-    const translatorApi = globals.translator();
-    if (translatorApi && opts.source) {
-      try {
-        const availability = await translatorApi.availability({ sourceLanguage: opts.source, targetLanguage: target });
-        if (isUsable(availability)) {
-          const translator = await translatorApi.create(createOptions({ sourceLanguage: opts.source, targetLanguage: target }, opts));
-          try {
-            const result = await translator.translate(value);
-            return { status: STATUS.OK, text: String(result || "").trim() };
-          } finally {
-            if (typeof translator.destroy === "function") translator.destroy();
-          }
-        }
-      } catch (error) {
-        // Fällt unten auf die Prompt API zurück.
-      }
-    }
-
-    const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
-    let session;
-    try {
-      session = await createPromptSession(opts);
-      const targetLabel = target === "de" ? "Deutsch" : target;
-      const promptText = [
-        `Übersetze den folgenden Text nach ${targetLabel}. Gib nur die Übersetzung aus, ohne Vorrede.`,
-        "",
-        fenced("TEXT", value)
-      ].join("\n");
-      const result = await runStreaming(session, promptText, opts.onChunk, opts.signal);
-      return { status: STATUS.OK, text: result };
     } finally {
       if (session && typeof session.destroy === "function") session.destroy();
     }
@@ -838,19 +377,7 @@
   app.localAi = {
     STATUS,
     capabilities,
-    summarize,
-    triage,
     prepareCall,
-    advise,
-    documentTicket,
-    draftComment,
-    draftEmail,
-    draftHandoffComment,
-    draftHandoffEmail,
-    reviewDraft,
-    rewrite,
-    proofread,
-    detectLanguage,
-    translate
+    draftCallNote
   };
 })();
