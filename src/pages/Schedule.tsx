@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
 import { useStore } from '../store/useStore';
+import { useShifts } from '../store/useShifts';
 import { fetchShiftsForWeek, upsertShift, deleteShiftRow } from '../lib/supabaseApi';
 import { weekStart, weekLabel, formatDateObj } from '../lib/utils';
 import { toast } from '../store/useToast';
@@ -92,11 +93,16 @@ export function Schedule() {
   const { campaigns } = useStore();
   const manager = isManager();
 
+  // Schichten der aktuell angezeigten Woche kommen aus dem geteilten Store, der
+  // per Realtime live bleibt (crm-tng-shifts). Passt der geladene Wochenschlüssel
+  // nicht zur angezeigten Woche, gilt sie als „lädt noch" (shifts === null).
+  const loadedWeekStart = useShifts((s) => s.weekStart);
+  const rows = useShifts((s) => s.rows);
+  const loadWeek = useShifts((s) => s.loadWeek);
+  const patchRows = useShifts((s) => s.patchRows);
+  const setWriting = useShifts((s) => s.setWriting);
+
   const [refDate, setRefDate] = useState(() => weekStart());
-  // Geladene Woche zusammen mit ihrem Schlüssel halten: passt er nicht zur
-  // aktuell angezeigten Woche, gilt sie als „lädt noch" (shifts === null) —
-  // ohne synchrones setState im Effect (React-Hooks-Regel).
-  const [loaded, setLoaded] = useState<{ weekStart: string; rows: Shift[] } | null>(null);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -109,29 +115,15 @@ export function Schedule() {
   const weekEndKey = toDateKey(days[6]);
   const todayKey = toDateKey(new Date());
 
-  const reload = (): Promise<Shift[]> =>
-    fetchShiftsForWeek(weekStartKey, weekEndKey).then((rows) => {
-      setLoaded({ weekStart: weekStartKey, rows });
-      return rows;
-    });
+  const reload = (): Promise<Shift[]> => loadWeek(weekStartKey, weekEndKey);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchShiftsForWeek(weekStartKey, weekEndKey)
-      .then((rows) => {
-        if (!cancelled) setLoaded({ weekStart: weekStartKey, rows });
-      })
-      .catch(() => {
-        if (!cancelled) setLoaded({ weekStart: weekStartKey, rows: [] });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [weekStartKey, weekEndKey]);
+    loadWeek(weekStartKey, weekEndKey);
+  }, [weekStartKey, weekEndKey, loadWeek]);
 
   // Nur die Daten der aktuell angezeigten Woche gelten; nach einem Wochenwechsel
   // ist das noch null, bis der neue Fetch zurück ist → Skeleton.
-  const shifts = loaded && loaded.weekStart === weekStartKey ? loaded.rows : null;
+  const shifts = loadedWeekStart === weekStartKey ? rows : null;
 
   const shiftFor = (userId: string, dateKey: string): Shift | undefined =>
     shifts?.find((s) => s.userId === userId && s.shiftDate === dateKey);
@@ -159,17 +151,25 @@ export function Schedule() {
   // reconcilen (echte IDs/Zeitstempel). Ein Fehler lädt die Woche neu.
   async function persistCells(ops: CellOp[]) {
     if (ops.length === 0) return;
-    setBusy(true);
+    // Vor dem optimistischen Update `existing` aus dem aktuellen Stand ableiten:
+    // Clear-Ops müssen die echte, ggf. schon persistierte Zeile kennen, bevor
+    // patchRows sie lokal entfernt.
+    const existingForClear = new Map<string, Shift | undefined>(
+      ops.filter((op) => op.clear).map((op) => [`${op.userId}|${op.dateKey}`, shiftFor(op.userId, op.dateKey)]),
+    );
 
-    // Optimistisches Update
-    setLoaded((prev) => {
-      const rows = prev && prev.weekStart === weekStartKey ? [...prev.rows] : [];
+    setBusy(true);
+    setWriting(true);
+
+    // Optimistisches Update auf den geteilten Store (nur die aktuelle Woche).
+    patchRows((prev) => {
+      const draft = [...prev];
       for (const op of ops) {
-        const idx = rows.findIndex((r) => r.userId === op.userId && r.shiftDate === op.dateKey);
+        const idx = draft.findIndex((r) => r.userId === op.userId && r.shiftDate === op.dateKey);
         if (op.clear) {
-          if (idx >= 0) rows.splice(idx, 1);
+          if (idx >= 0) draft.splice(idx, 1);
         } else {
-          const base = idx >= 0 ? rows[idx] : null;
+          const base = idx >= 0 ? draft[idx] : null;
           const next: Shift = {
             id: base?.id ?? `tmp-${op.userId}-${op.dateKey}`,
             userId: op.userId,
@@ -179,18 +179,18 @@ export function Schedule() {
             createdAt: base?.createdAt ?? new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
-          if (idx >= 0) rows[idx] = next;
-          else rows.push(next);
+          if (idx >= 0) draft[idx] = next;
+          else draft.push(next);
         }
       }
-      return { weekStart: weekStartKey, rows };
+      return draft;
     });
 
     try {
       await Promise.all(
         ops.map((op) => {
           if (op.clear) {
-            const existing = shiftFor(op.userId, op.dateKey);
+            const existing = existingForClear.get(`${op.userId}|${op.dateKey}`);
             return existing && !existing.id.startsWith('tmp-')
               ? deleteShiftRow(existing.id)
               : Promise.resolve();
@@ -209,6 +209,7 @@ export function Schedule() {
       await reload().catch(() => {});
     } finally {
       setBusy(false);
+      setWriting(false);
     }
   }
 

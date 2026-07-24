@@ -19,6 +19,7 @@ import { useOnboarding, useOnboardingHotkey } from './store/useOnboarding';
 import { useStore } from './store/useStore';
 import { useStatus } from './store/useStatus';
 import { useCalls } from './store/useCalls';
+import { useShifts } from './store/useShifts';
 import { isConfigured, onConfigChange } from './lib/supabase';
 
 // Seiten werden bei Bedarf nachgeladen (Code-Splitting). Das hält das
@@ -265,6 +266,11 @@ export default function App() {
   const subscribeCalls = useCalls((s) => s.subscribeRealtime);
   const resetCalls = useCalls((s) => s.reset);
 
+  // Schichten sind wochen-scoped: kein loadAll beim Login, nur die Live-
+  // Subscription. Welche Woche geladen wird, entscheidet die Schichtplan-Seite.
+  const subscribeShifts = useShifts((s) => s.subscribeRealtime);
+  const resetShifts = useShifts((s) => s.reset);
+
   const [configured, setConfigured] = useState(isConfigured());
 
   // Tour-Steuerung: „." + „o" gleichzeitig öffnet die Einführungstour erneut
@@ -284,6 +290,7 @@ export default function App() {
       resetStore();
       resetStatus();
       resetCalls();
+      resetShifts();
       return;
     }
     loadAll();
@@ -292,10 +299,12 @@ export default function App() {
     const unsub = subscribeRealtime();
     const unsubStatus = subscribeStatus();
     const unsubCalls = subscribeCalls();
+    const unsubShifts = subscribeShifts();
     return () => {
       unsub();
       unsubStatus();
       unsubCalls();
+      unsubShifts();
     };
   }, [
     configured,
@@ -309,6 +318,8 @@ export default function App() {
     loadCalls,
     subscribeCalls,
     resetCalls,
+    subscribeShifts,
+    resetShifts,
   ]);
 
   useEffect(() => onConfigChange(() => setConfigured(isConfigured())), []);
