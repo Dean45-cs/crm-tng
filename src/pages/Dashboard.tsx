@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   TrendingUp,
   FileSignature,
@@ -34,9 +34,9 @@ import {
   isSameMonth,
 } from '../lib/utils';
 import { monthlySeries, trendPct } from '../lib/teamStats';
-import { fetchCallsSince } from '../lib/supabaseApi';
 import { callVolumeStats, linkCallsToOutcomes, conversionStats } from '../lib/callStats';
-import type { Call } from '../types';
+import { useMonthCalls } from '../store/useMonthCalls';
+import { useCurrentShiftContext } from '../hooks/useCurrentShiftContext';
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
 import { FollowUpInbox } from '../components/FollowUpInbox';
@@ -47,8 +47,20 @@ import { AccessRequestInbox } from '../components/AccessRequests';
 import { CustomizableGrid } from '../components/CustomizableGrid';
 import type { WidgetDef } from '../lib/gridLayout';
 import { useRouter } from '../router';
+import type { CampaignCallType } from '../types';
 
 type Scope = 'mine' | 'all';
+
+// Beschriftungen für das Betriebskontext-Badge (Tier 2).
+const CALL_TYPE_LABEL: Record<CampaignCallType, string> = {
+  churn: 'Rückgewinnung',
+  welcome: 'Willkommen',
+  other: 'Sonstige',
+};
+const SHIFT_LABEL: Record<'frueh' | 'spaet', string> = {
+  frueh: 'Frühschicht',
+  spaet: 'Spätschicht',
+};
 
 export function Dashboard() {
   // Gezielte Selektoren statt Komplett-Abo: das Dashboard (inkl. Chart)
@@ -60,24 +72,23 @@ export function Dashboard() {
   const loaded = useStore((s) => s.loaded);
   const currentUser = useAuth((s) => s.getCurrentUser());
   const greetName = currentUser?.displayName ?? 'Kolleg:in';
+  // Live aus useShifts.todayShift + Kampagnen-Katalog abgeleitet (Tier 2).
+  const shiftContext = useCurrentShiftContext();
+  const shiftContextText = shiftContext.working
+    ? shiftContext.campaignName
+      ? `Heute: ${shiftContext.campaignName}${shiftContext.callType ? ` · ${CALL_TYPE_LABEL[shiftContext.callType]}` : ''}`
+      : `Heute: ${shiftContext.shiftType === 'spaet' ? SHIFT_LABEL.spaet : SHIFT_LABEL.frueh}`
+    : null;
   const { navigate } = useRouter();
 
   const [scope, setScope] = useState<Scope>('mine');
   const [editingLayout, setEditingLayout] = useState(false);
   const userKey = currentUser?.key;
 
-  // Anrufe leben nicht im globalen Store (siehe useCalls.ts, Anrufvolumen
-  // kann deutlich höher sein als Verträge/Notizen) — eigener, einmaliger
-  // Fetch seit Monatsbeginn statt eines Realtime-Abos, analog zu
-  // TeamDashboard.tsx.
-  const [monthCalls, setMonthCalls] = useState<Call[] | null>(null);
-  useEffect(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    fetchCallsSince(monthStart)
-      .then(setMonthCalls)
-      .catch(() => setMonthCalls(null));
-  }, []);
+  // Anrufe kommen aus dem geteilten, live gehaltenen Monats-Store
+  // (useMonthCalls) — eine Quelle für Dashboard/TeamDashboard/AgentDetail, die
+  // per calls-Realtime aktuell bleibt. `null` = lädt noch (Skeleton).
+  const monthCalls = useMonthCalls((s) => s.calls);
 
   // Abschlussquote Anruf → Vertrag/Tarifwechsel (Stufe 4, KONZEPT-INTEGRATION.md).
   // Notizen/Leads werden hier bewusst per Store-Snapshot statt reaktivem
@@ -234,6 +245,12 @@ export function Dashboard() {
             {greeting()}, {greetName}
           </h1>
           <div className="dash-date">{todayLabel}</div>
+          {shiftContextText && (
+            <div className="dash-shift-context">
+              <span className="dash-shift-context-dot" />
+              {shiftContextText}
+            </div>
+          )}
         </div>
         <div className="dash-header-actions">
           <div

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Printer,
   ChevronRight,
@@ -38,7 +38,7 @@ import { useAuth } from '../store/useAuth';
 import { useRouter } from '../router';
 import { formatCurrency, formatDate } from '../lib/utils';
 import { agentStats, attainmentPct, teamKpis, monthlySeries, trendPct } from '../lib/teamStats';
-import { fetchCallsSince } from '../lib/supabaseApi';
+import { useMonthCalls } from '../store/useMonthCalls';
 import {
   callVolumeStats,
   linkCallsToOutcomes,
@@ -50,7 +50,6 @@ import {
 import { SkeletonTable } from '../components/Skeleton';
 import { StatusInsights } from '../components/StatusInsights';
 import { KpiTile } from '../components/KpiTile';
-import type { Call } from '../types';
 
 function initialsOf(name: string): string {
   return name
@@ -106,19 +105,10 @@ export function TeamDashboard() {
     [contracts, tariffChanges, leads, settings],
   );
 
-  // Anrufe leben nicht im globalen Store (siehe useCalls.ts, Anrufvolumen
-  // kann deutlich höher sein als Verträge/Notizen) — eigener, einmaliger
-  // Fetch seit Monatsbeginn statt eines Realtime-Abos. Volle Zeilen (nicht
-  // nur ein Zähler wie vorher), damit Pro-Agent-Aufschlüsselung und die
-  // Anruf-Abschlussquote (Stufe 4) berechnet werden können.
-  const [monthCalls, setMonthCalls] = useState<Call[] | null>(null);
-  useEffect(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    fetchCallsSince(monthStart)
-      .then(setMonthCalls)
-      .catch(() => setMonthCalls(null));
-  }, []);
+  // Anrufe kommen aus dem geteilten, live gehaltenen Monats-Store
+  // (useMonthCalls) — volle Zeilen für Pro-Agent-Aufschlüsselung, Abschluss-
+  // quote (Stufe 4) und Disposition-Kennzahlen, per calls-Realtime aktuell.
+  const monthCalls = useMonthCalls((s) => s.calls);
 
   const teamCallVolume = useMemo(() => (monthCalls ? callVolumeStats(monthCalls) : null), [monthCalls]);
 

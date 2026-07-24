@@ -33,13 +33,31 @@ alter table public.shifts enable row level security;
 -- SHIFTS: alle aktiven Nutzer lesen den kompletten Plan (geteilte Ansicht,
 -- explizite Anforderung — kein user_id = auth.uid()-Filter). Schreiben/
 -- Ändern/Löschen nur Chefs.
+-- drop-if-exists vor jedem create, damit die Migration gefahrlos erneut
+-- ausgeführt werden kann (gleiche Konvention wie Migration 011).
+drop policy if exists "shifts read all" on public.shifts;
 create policy "shifts read all" on public.shifts
   for select using (public.auth_is_active());
+drop policy if exists "shifts insert manager" on public.shifts;
 create policy "shifts insert manager" on public.shifts
   for insert with check (public.auth_is_manager());
+drop policy if exists "shifts update manager" on public.shifts;
 create policy "shifts update manager" on public.shifts
   for update using (public.auth_is_manager());
+drop policy if exists "shifts delete manager" on public.shifts;
 create policy "shifts delete manager" on public.shifts
   for delete using (public.auth_is_manager());
 
-alter publication supabase_realtime add table public.shifts;
+-- Realtime-Publication nur ergänzen, wenn die Tabelle noch nicht Mitglied ist —
+-- ein blankes `alter publication ... add table` bricht sonst beim Re-Run ab.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'shifts'
+  ) then
+    alter publication supabase_realtime add table public.shifts;
+  end if;
+end $$;

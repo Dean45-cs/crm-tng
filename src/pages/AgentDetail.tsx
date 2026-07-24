@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   ArrowLeft,
   FileSignature,
@@ -36,10 +36,9 @@ import {
   TARIFF_TYPE_LABEL,
 } from '../lib/utils';
 import { agentStats, attainmentPct, monthlySeries } from '../lib/teamStats';
-import { fetchCallsSince } from '../lib/supabaseApi';
+import { useMonthCalls } from '../store/useMonthCalls';
 import { callVolumeStats, linkCallsToOutcomes, conversionStats } from '../lib/callStats';
 import { KpiTile } from '../components/KpiTile';
-import type { Call } from '../types';
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
 import { AgentStatusHistory } from '../components/AgentStatusHistory';
@@ -66,17 +65,10 @@ export function AgentDetail({ agentKey }: Props) {
   const { navigate } = useRouter();
   const { editContract, editTariff, editNote } = useQuickAdd();
 
-  // Anrufe leben nicht im globalen Store (siehe useCalls.ts) — eigener,
-  // einmaliger Fetch seit Monatsbeginn, gleiches Muster wie Dashboard.tsx/
-  // TeamDashboard.tsx.
-  const [monthCalls, setMonthCalls] = useState<Call[] | null>(null);
-  useEffect(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    fetchCallsSince(monthStart)
-      .then(setMonthCalls)
-      .catch(() => setMonthCalls(null));
-  }, []);
+  // Anrufe kommen aus dem geteilten, live gehaltenen Monats-Store
+  // (useMonthCalls) — dieselbe Quelle wie Dashboard/TeamDashboard, per
+  // calls-Realtime aktuell. `null` = lädt noch.
+  const monthCalls = useMonthCalls((s) => s.calls);
 
   const agentCallVolume = useMemo(
     () => (monthCalls ? callVolumeStats(monthCalls, agentKey) : null),

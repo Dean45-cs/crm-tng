@@ -4140,6 +4140,29 @@ tr.schedule-coverage .cov-sep { color: var(--text-tertiary); margin: 0 3px; }
   margin-top: 5px;
   letter-spacing: 0.05px;
 }
+/* Aktueller Betriebskontext (Tier 2): heutige Schicht/Kampagne des Users, live
+   aus useShifts.todayShift. Farben über die Akzent-Palette → respektiert das
+   gewählte Theme automatisch. */
+.dash-shift-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--tng-blue-50);
+  color: var(--tng-blue);
+  border: 1px solid var(--tng-blue-100);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+.dash-shift-context-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
 .dash-report-pill {
   display: inline-flex;
   align-items: center;

@@ -20,6 +20,8 @@ import { useStore } from './store/useStore';
 import { useStatus } from './store/useStatus';
 import { useCalls } from './store/useCalls';
 import { useShifts } from './store/useShifts';
+import { useMonthCalls } from './store/useMonthCalls';
+import { subscribeAppearance } from './lib/appearanceSync';
 import { isConfigured, onConfigChange } from './lib/supabase';
 
 // Seiten werden bei Bedarf nachgeladen (Code-Splitting). Das hält das
@@ -270,6 +272,13 @@ export default function App() {
   // Subscription. Welche Woche geladen wird, entscheidet die Schichtplan-Seite.
   const subscribeShifts = useShifts((s) => s.subscribeRealtime);
   const resetShifts = useShifts((s) => s.reset);
+  const loadShiftContext = useShifts((s) => s.loadContext);
+
+  // Monats-Anrufe (Reporting): beim Login laden + live halten, damit
+  // Dashboard/TeamDashboard/AgentDetail sofort aktuelle Zahlen zeigen.
+  const loadMonthCalls = useMonthCalls((s) => s.load);
+  const subscribeMonthCalls = useMonthCalls((s) => s.subscribeRealtime);
+  const resetMonthCalls = useMonthCalls((s) => s.reset);
 
   const [configured, setConfigured] = useState(isConfigured());
 
@@ -291,20 +300,29 @@ export default function App() {
       resetStatus();
       resetCalls();
       resetShifts();
+      resetMonthCalls();
       return;
     }
     loadAll();
     loadStatus();
     loadCalls();
+    loadMonthCalls();
+    loadShiftContext(currentUserKey);
     const unsub = subscribeRealtime();
     const unsubStatus = subscribeStatus();
     const unsubCalls = subscribeCalls();
     const unsubShifts = subscribeShifts();
+    const unsubMonthCalls = subscribeMonthCalls();
+    // Optik (Theme/Palette) surface-übergreifend: Pull + Seed + Realtime auf die
+    // eigene user_settings-Zeile. localStorage bleibt der Sofort-Cache.
+    const unsubAppearance = subscribeAppearance(currentUserKey);
     return () => {
       unsub();
       unsubStatus();
       unsubCalls();
       unsubShifts();
+      unsubMonthCalls();
+      unsubAppearance();
     };
   }, [
     configured,
@@ -320,6 +338,10 @@ export default function App() {
     resetCalls,
     subscribeShifts,
     resetShifts,
+    loadShiftContext,
+    loadMonthCalls,
+    subscribeMonthCalls,
+    resetMonthCalls,
   ]);
 
   useEffect(() => onConfigChange(() => setConfigured(isConfigured())), []);

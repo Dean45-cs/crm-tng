@@ -14,6 +14,7 @@ import {
   type PaletteState,
   type PaletteRole,
 } from '../lib/palette';
+import { pushThemePref, pushPalette } from '../lib/appearanceSync';
 import type {
   ProductCategory,
   TariffChangeType,
@@ -55,6 +56,8 @@ export function Settings() {
 
   const { getCurrentUser, setLeaderboardOptIn } = useAuth();
   const currentUser = getCurrentUser();
+  // key === UUID (siehe supabaseApi mapUser) — die user_settings-Zeile.
+  const userId = currentUser?.key;
 
   const [target, setTarget] = useState(settings.monthlyTarget);
   const [syncedTarget, setSyncedTarget] = useState(settings.monthlyTarget);
@@ -64,6 +67,7 @@ export function Settings() {
   const chooseTheme = (t: ThemePref) => {
     setTheme(t);
     setThemeState(t);
+    if (userId) pushThemePref(userId, t); // in die geteilte Wahrheit (Tier 3)
   };
 
   const [palette, setPaletteState] = useState<PaletteState>(getStoredPalette());
@@ -72,17 +76,21 @@ export function Settings() {
     const next: PaletteState = { presetId, overrides: palette.overrides };
     setPalette(next);
     setPaletteState(next);
+    if (userId) pushPalette(userId, next);
   };
 
   const changePaletteColor = (role: PaletteRole, value: string) => {
     const next: PaletteState = { ...palette, overrides: { ...palette.overrides, [role]: value } };
     setPalette(next);
     setPaletteState(next);
+    if (userId) pushPalette(userId, next);
   };
 
   const resetPaletteChoice = () => {
     resetPalette();
-    setPaletteState(getStoredPalette());
+    const next = getStoredPalette();
+    setPaletteState(next);
+    if (userId) pushPalette(userId, next);
   };
 
   const paletteColors = resolvePaletteColors(palette);

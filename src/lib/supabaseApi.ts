@@ -580,6 +580,44 @@ export async function upsertSharedSettings(
   if (error) throw error;
 }
 
+// ---- Appearance (Theme/Palette) — surface-übergreifend über user_settings ----
+// Bewusst getrennt von fetchSettings/upsertUserSettings gehalten: Optik ist eine
+// eigene Achse (UI, nicht Geschäfts-Settings) und wird über einen dedizierten
+// Realtime-Kanal + localStorage-Cache synchronisiert (Migration 022, Tier 3).
+
+/** Rohwerte der gespeicherten Optik; null = noch nie gesetzt (→ Seed vom Client). */
+export async function fetchUserAppearance(userId: string): Promise<{
+  themePref: string | null;
+  palette: unknown | null;
+}> {
+  const { data, error } = await getSupabase()
+    .from('user_settings')
+    .select('theme_pref, palette')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as { theme_pref: string | null; palette: unknown } | null;
+  return { themePref: row?.theme_pref ?? null, palette: row?.palette ?? null };
+}
+
+/** Partieller Upsert nur der Optik-Spalten — andere user_settings-Spalten
+ *  bleiben unangetastet (onConflict aktualisiert nur die übergebenen Felder). */
+export async function upsertUserAppearance(
+  userId: string,
+  patch: { themePref?: string; palette?: unknown },
+): Promise<void> {
+  const payload: Record<string, unknown> = {
+    user_id: userId,
+    updated_at: new Date().toISOString(),
+  };
+  if (patch.themePref !== undefined) payload.theme_pref = patch.themePref;
+  if (patch.palette !== undefined) payload.palette = patch.palette;
+  const { error } = await getSupabase()
+    .from('user_settings')
+    .upsert(payload, { onConflict: 'user_id' });
+  if (error) throw error;
+}
+
 // ============================================================================
 // Incentives
 // ============================================================================
@@ -790,6 +828,23 @@ export async function upsertShift(s: {
 export async function deleteShiftRow(id: string): Promise<void> {
   const { error } = await getSupabase().from('shifts').delete().eq('id', id);
   if (error) throw error;
+}
+
+/**
+ * Die Schicht eines einzelnen Users an einem Tag — Grundlage des „aktuellen
+ * Kontexts" (welche Kampagne/welchen Call-Typ fahre ich gerade). Spiegelt
+ * fetchCurrentShift() aus extension/src/supabase.js, damit CRM und Extension
+ * dieselbe Ableitung nutzen. null = keine Schicht an dem Tag.
+ */
+export async function fetchShiftForUserDay(userId: string, dateKey: string): Promise<Shift | null> {
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('shift_date', dateKey)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapShift(data as ShiftRow) : null;
 }
 
 // ============================================================================

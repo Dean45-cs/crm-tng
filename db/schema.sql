@@ -222,6 +222,8 @@ create table if not exists public.user_settings (
   sp_tenant_id text default '',
   sp_file_path text default '',
   sp_sheet_name text default 'Tabelle1',
+  theme_pref text,          -- Hell/Dunkel-Präferenz, surface-übergreifend (Migration 022)
+  palette jsonb,            -- Farb-Palette {presetId, overrides} (Migration 022)
   updated_at timestamptz default now()
 );
 
@@ -855,3 +857,4 @@ alter publication supabase_realtime add table public.user_status;
 alter publication supabase_realtime add table public.status_log;
 alter publication supabase_realtime add table public.campaigns;
 alter publication supabase_realtime add table public.shifts;
+alter publication supabase_realtime add table public.user_settings;
