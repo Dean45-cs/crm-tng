@@ -33,6 +33,16 @@
     // im State, weil geteilte Helfer (shared.callStatusMeta, callModeMeta) ihn
     // erwarten; ein Richtungsschalter existiert nicht mehr.
     callMode: "outbound",
+    // Call-Typ-Routing (Outbound-Umbau): bestimmt Leitfaden & Einwandkarten.
+    //   shift    — aus fetchCurrentShift() geladene Kampagne (call_type) der
+    //              heutigen Schicht; null = keine Schicht/Kampagne hinterlegt.
+    //   override — manuell im Cockpit gewählter Typ; hat Vorrang vor der Schicht,
+    //              damit der Bearbeiter bei Bedarf abweichen kann.
+    // Effektiver Typ via activeCallType(): override ?? shift.callType ?? "churn".
+    shift: { loaded: false, callType: null, campaignId: null, campaignName: null, shiftType: null },
+    callTypeOverride: null,
+    // Abgehakte Welcome-Checklisten-Schritte (nur lokal, pro Sitzung).
+    checkedPhases: {},
     // Eigene Rückrufliste (Wiedervorlage). Getrennt von timios Anrufliste:
     // hier stehen nur selbst vereinbarte Rückrufe.
     callbacks: [],
@@ -1042,17 +1052,26 @@
       </section>`;
   }
 
-  // Aktiver Leitfaden bzw. aktive Einwandkarten. Beide Listen sind
-  // modusabhängig – die Kopier-Buttons indizieren deshalb bewusst in genau
-  // diese Funktionen und nicht mehr in eine feste Config-Liste.
+  // Effektiver Call-Typ: manueller Override zuerst, sonst die Kampagne der
+  // heutigen Schicht, sonst "churn" als sicherer Standard (Kündiger-
+  // Rückgewinnung ist der häufigere und heiklere Fall). "other"-Kampagnen
+  // haben keinen eigenen Leitfaden und fallen ebenfalls auf churn zurück.
+  function activeCallType() {
+    const raw = state.callTypeOverride || (state.shift && state.shift.callType) || "churn";
+    return raw === "welcome" ? "welcome" : "churn";
+  }
+
+  // Aktiver Leitfaden bzw. aktive Einwandkarten — nach Call-Typ (churn/welcome)
+  // statt nach Richtung. Die Kopier-Buttons indizieren bewusst in genau diese
+  // Funktionen und nicht in eine feste Config-Liste.
   function activeCallPhases() {
     const guides = CONFIG.callGuides || {};
-    return (outboundMode() ? guides.outbound : guides.inbound) || [];
+    return guides[activeCallType()] || [];
   }
 
   function activeObjectionCards() {
     const cards = CONFIG.objectionCards || {};
-    return (outboundMode() ? cards.outbound : cards.inbound) || [];
+    return cards[activeCallType()] || [];
   }
 
   // --- Gesprächsvorbereitung (lokale KI) -------------------------------------
@@ -1514,25 +1533,61 @@
       </section>`;
   }
 
+  // Kopfzeile mit Call-Typ-Badge: zeigt den aktiven Typ und woher er stammt
+  // (Kampagne der Schicht oder manuell), plus einen Umschalter als Override.
+  function renderCallTypeBadge() {
+    const type = activeCallType();
+    const overridden = Boolean(state.callTypeOverride);
+    const shift = state.shift || {};
+    let source;
+    if (overridden) {
+      source = "manuell gewählt";
+    } else if (shift.callType && shift.campaignName) {
+      source = `Kampagne: ${escapeHtml(shift.campaignName)}`;
+    } else if (shift.loaded) {
+      source = "keine Kampagne heute – Standard";
+    } else {
+      source = "Schicht wird geladen …";
+    }
+    const btn = (id, label) =>
+      `<button class="sc-calltype-toggle ${type === id ? "is-active" : ""}" type="button" data-action="set-call-type" data-call-type="${id}" aria-pressed="${type === id}">${label}</button>`;
+    return `
+      <div class="sc-calltype">
+        <div class="sc-calltype-switch">${btn("churn", "Churn")}${btn("welcome", "Welcome")}</div>
+        <span class="sc-calltype-source">${source}</span>
+      </div>`;
+  }
+
   function renderCallGuide() {
     const phases = activeCallPhases();
     const cards = activeObjectionCards();
-    const noteTemplate = outboundMode()
-      ? "Angerufen: [Kundenname]\nAnlass: [Warum habe ich angerufen?]\nBesprochen: [Wichtigste Punkte]\nErgebnis: [Was wurde geklärt / zugesagt?]\nNächster Schritt: [Wer macht was bis wann?]"
-      : "Gespräch mit: [Kundenname]\nAnliegen: [Worum ging es?]\nBesprochen: [Wichtigste Punkte]\nErgebnis: [Was wurde geklärt / zugesagt?]\nNächster Schritt: [Wer macht was bis wann?]";
+    const type = activeCallType();
+    const isChecklist = type === "welcome";
+    const noteTemplate =
+      "Angerufen: [Kundenname]\nAnlass: [Warum habe ich angerufen?]\nBesprochen: [Wichtigste Punkte]\nErgebnis: [Was wurde geklärt / zugesagt?]\nNächster Schritt: [Wer macht was bis wann?]";
+    // Bei Welcome-Calls Fortschrittsanzeige der Checkliste.
+    const checkedCount = phases.filter((_, i) => state.checkedPhases[`${type}:${i}`]).length;
     return `
       <section class="sc-section">
         <div class="sc-section-title-row">
-          <h3>Gesprächsleitfaden${outboundMode() ? " (ausgehend)" : ""}</h3>
+          <h3>Gesprächsleitfaden</h3>
           <button class="sc-icon-button" type="button" data-action="copy-call-note" title="Notizvorlage kopieren" aria-label="Notizvorlage kopieren">⧉</button>
         </div>
+        ${renderCallTypeBadge()}
+        ${isChecklist ? `<p class="sc-checklist-progress">${checkedCount} von ${phases.length} Punkten erledigt</p>` : ""}
         <div class="sc-call-list">
-          ${phases.map((phase, index) => `
-            <details class="sc-call-phase" ${index === 0 ? "open" : ""}>
-              <summary>${escapeHtml(phase.title)}</summary>
+          ${phases.map((phase, index) => {
+            const checked = Boolean(state.checkedPhases[`${type}:${index}`]);
+            const checkbox = isChecklist
+              ? `<button class="sc-checklist-box ${checked ? "is-checked" : ""}" type="button" data-action="toggle-phase" data-phase-index="${index}" aria-pressed="${checked}" title="Abhaken">${checked ? "✓" : ""}</button>`
+              : "";
+            return `
+            <details class="sc-call-phase ${checked ? "is-done" : ""}" ${index === 0 ? "open" : ""}>
+              <summary>${checkbox}${escapeHtml(phase.title)}</summary>
               <p>${escapeHtml(phase.prompt)}</p>
               <button class="sc-text-button" type="button" data-action="copy-call-phase" data-phase-index="${index}">Satz kopieren</button>
-            </details>`).join("")}
+            </details>`;
+          }).join("")}
         </div>
       </section>
       <section class="sc-section">
@@ -2446,6 +2501,22 @@
       case "use-call-draft": useCallDraft(); return;
       case "copy-call-phase": { const phase = activeCallPhases()[Number(control.dataset.phaseIndex)]; if (phase) copyText(phase.prompt, "Gesprächsbaustein kopiert."); return; }
       case "copy-objection": { const card = activeObjectionCards()[Number(control.dataset.objectionIndex)]; if (card) copyText(card.text, "Antwort kopiert."); return; }
+      case "set-call-type": {
+        const next = control.dataset.callType === "welcome" ? "welcome" : "churn";
+        // Override nur setzen, wenn er von der Schicht abweicht — deckt sich der
+        // Klick mit der Kampagne, wird der Override gelöscht (zurück zu „auto").
+        const fromShift = (state.shift && state.shift.callType) || "churn";
+        state.callTypeOverride = next === fromShift ? null : next;
+        render();
+        return;
+      }
+      case "toggle-phase": {
+        const type = activeCallType();
+        const key = `${type}:${Number(control.dataset.phaseIndex)}`;
+        state.checkedPhases[key] = !state.checkedPhases[key];
+        render();
+        return;
+      }
       case "search-customer": openCustomerSearch(control.dataset.customer); return;
       case "generate-call-prep": generateCallPrep(); return;
       case "copy-call-prep": copyText(callPrepAsText(), "Gesprächsvorbereitung kopiert."); return;
@@ -2628,6 +2699,28 @@
     container.addEventListener("pointerdown", startCockpitDrag);
     bindPaletteHotkey();
 
+    // Prozessweit gebundene Listener/Timer (nur EINMAL, siehe unten).
+    bindGlobalListenersOnce();
+
+    loadCapabilities();
+    loadShift();
+  }
+
+  // Bug-Historie: die folgenden Registrierungen standen früher direkt in
+  // mount(). Da content.js bei jeder Jira-SPA-Navigation weg vom Ticket
+  // removePanel() (löscht den DOM-Root) und beim Zurückkehren erneut mount()
+  // aufruft, wurde bei JEDEM Ticketwechsel ein weiterer storage.onChanged-
+  // Listener und ein weiterer setInterval registriert — ohne Teardown. Über
+  // einen Arbeitstag akkumulierten sich N Listener; ein einzelnes in timio
+  // geklicktes Gesprächsergebnis feuerte applyOutcome() dann N-fach (doppelter
+  // Notiztext, doppelte/hochgezählte Rückrufe). Diese Registrierungen hängen
+  // nicht am DOM-Root (render()/tickActiveCallTimer() no-open, wenn kein Root
+  // da ist), gehören also genau einmal pro Seiten-Kontext gebunden.
+  let globalListenersBound = false;
+  function bindGlobalListenersOnce() {
+    if (globalListenersBound) return;
+    globalListenersBound = true;
+
     if (chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== "local") return;
@@ -2679,16 +2772,47 @@
         }
         // Supabase-Session kann auch im anderen Cockpit (timio-Seite hat
         // keine eigene UI dafür, aber ein zweiter Jira-Tab) an-/abgemeldet
-        // worden sein.
+        // worden sein. Bei Login die Schicht (neu) laden.
         if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.supabaseSession)) {
-          state.supabaseSession = changes[CONFIG.storageKeys.supabaseSession].newValue || null;
+          const nextSession = changes[CONFIG.storageKeys.supabaseSession].newValue || null;
+          const wasLoggedIn = Boolean(state.supabaseSession);
+          state.supabaseSession = nextSession;
+          if (nextSession && !wasLoggedIn) loadShift();
           if (state.settingsOpen) render();
         }
       });
     }
     window.setInterval(tickActiveCallTimer, 1000);
+  }
 
-    loadCapabilities();
+  // Lädt die heutige Schicht + Kampagne des eingeloggten Agenten und leitet
+  // daraus den Call-Typ fürs Skript-Routing ab (siehe activeCallType()).
+  // Best-effort: ohne Login/Schicht bleibt state.shift.callType null und das
+  // Cockpit fällt auf den Standard (churn) bzw. den manuellen Umschalter zurück.
+  async function loadShift() {
+    if (!supabaseClient || !state.supabaseSession) {
+      state.shift.loaded = true;
+      render();
+      return;
+    }
+    try {
+      const res = await supabaseClient.fetchCurrentShift();
+      if (res && res.ok) {
+        const d = res.data || {};
+        state.shift = {
+          loaded: true,
+          callType: d.callType || null,
+          campaignId: d.campaignId || null,
+          campaignName: d.campaignName || null,
+          shiftType: d.shiftType || null
+        };
+      } else {
+        state.shift.loaded = true;
+      }
+    } catch (error) {
+      state.shift.loaded = true;
+    }
+    render();
   }
 
   app.ui = {

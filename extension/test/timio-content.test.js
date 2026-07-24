@@ -56,7 +56,10 @@ function run() {
   assert.ok(env.getOverlay().innerHTML.includes("Klingelt"), "während des Klingelns wird die Anrufkarte gezeigt, nicht das Idle-Widget");
 
   // 5) Anruf endet, Seite wird wieder idle -> Idle-Widget erscheint erneut.
+  // Zwei Ticks: die Klingel-Phase toleriert einen einzelnen leeren Tick gegen
+  // DOM-Flackern (RINGING_TOLERANCE_TICKS, Bug B), erst der zweite verwirft sie.
   env.setPageText("Willkommen");
+  env.tick();
   env.tick();
   assert.ok(env.getOverlay(), "Idle-Widget erscheint nach Anrufende wieder");
   assert.ok(env.getOverlay().innerHTML.includes("Wartefeld"), "das wiedererschienene Widget ist das Idle-Wartefeld-Widget");
@@ -78,7 +81,10 @@ function run() {
     "Kundennummer: 12345"
   ].join("\n"));
   env.tick();
+  // Zwei leere Ticks (Klingel-Toleranz, Bug B), damit der Zustand vollständig
+  // auf idle zurückfällt, bevor der nächste Abschnitt beginnt.
   env.setPageText("Willkommen");
+  env.tick();
   env.tick();
   assert.ok(env.getOverlay(), "Idle-Widget erscheint nach einem frischen Idle-Abschnitt wieder, auch nach vorherigem Dismiss");
 
@@ -165,6 +171,69 @@ function run() {
   env.clickControl("outcome", { outcome: "gibt-es-nicht" });
   assert.strictEqual(env.storage[KEYS.callOutcome], null, "eine unbekannte Ergebnis-ID wird ignoriert");
 
+  // --- Bug A: "Beendet" weit weg von der Anrufkarte -------------------------
+  // Ein laufendes Gespräch (Kundennummer sichtbar) darf NICHT beendet werden,
+  // nur weil weiter oben auf der Seite (z. B. "Meine letzten Unterhaltungen")
+  // ein altes "Beendet" steht. Erst zurück auf idle, dann das Szenario.
+  env.setPageText("Willkommen");
+  env.tick();
+  env.tick();
+  env.setPageText([
+    "Meine letzten Unterhaltungen",
+    "Max Mustermann",
+    "Beendet",           // gehört zu einem ALTEN Anruf in der Liste
+    "0:59",
+    "irgendwas",
+    "noch eine Zeile",
+    "Trennzeile eins",
+    "Trennzeile zwei",
+    "Trennzeile drei",
+    "Trennzeile vier",
+    "Trennzeile fünf",
+    "Trennzeile sechs",
+    "AB",
+    "Anna Beispiel",
+    "+49 (176) 34573586",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Kundennummer: 12345"   // aktives Gespräch, weit weg vom "Beendet" oben
+  ].join("\n"));
+  env.tick();
+  assert.strictEqual(
+    env.storage[KEYS.activeCall].status, "connected",
+    "ein weit entferntes \"Beendet\" beendet den laufenden Anruf nicht (Bug A)"
+  );
+
+  // --- Bug B: einzelner Flacker-Tick beim Klingeln --------------------------
+  // Zurück auf idle, dann klingeln lassen.
+  env.setPageText("Willkommen");
+  env.tick();
+  env.tick();
+  env.setPageText([
+    "CD", "Carla Demo", "+49 (176) 11112222",
+    "Eingehender Anruf",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Kundennummer: 55555"
+  ].join("\n"));
+  env.tick();
+  assert.strictEqual(env.storage[KEYS.activeCall].status, "ringing", "der Anruf klingelt");
+  const ringCallId = env.storage[KEYS.activeCall].callId;
+  // Ein einzelner leerer Tick (Flackern) darf die Klingel-Phase NICHT verwerfen.
+  env.setPageText("");
+  env.tick();
+  assert.strictEqual(env.storage[KEYS.activeCall].status, "ringing", "ein einzelner leerer Tick wird toleriert (Bug B)");
+  // Marker wieder da -> gleiche callId, kein doppelter Anruf.
+  env.setPageText([
+    "CD", "Carla Demo", "+49 (176) 11112222",
+    "Eingehender Anruf",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Kundennummer: 55555"
+  ].join("\n"));
+  env.tick();
+  assert.strictEqual(
+    env.storage[KEYS.activeCall].callId, ringCallId,
+    "nach dem Flackern läuft derselbe Anruf weiter – keine neue callId (Bug B)"
+  );
+
   console.log("timio-content.test.js: alle Szenarien bestanden.");
 }
 
@@ -248,7 +317,11 @@ async function runCallsWritePath() {
   await flush();
   assert.strictEqual(startCalls.length, 2, "der zweite Anruf löst einen eigenen startCall() aus");
 
+  // Zwei leere Ticks: der erste wird als Flackern der Klingel-Phase toleriert
+  // (Bug B, RINGING_TOLERANCE_TICKS), erst der zweite schließt den Anruf ab.
   env.setPageText("Willkommen");
+  env.tick();
+  await flush();
   env.tick();
   await flush();
   assert.strictEqual(endCalls.length, 2, "ein abgebrochener Anruf ohne Beendet-Screen wird beim Idle-Reset best-effort abgeschlossen");

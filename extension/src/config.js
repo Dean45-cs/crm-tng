@@ -223,13 +223,21 @@
       // KONZEPT-INTEGRATION.md) für einen echten CRM-Eintrag — nur bei
       // Optionen mit echtem Gesprächsinhalt; wer niemanden erreicht hat
       // (Mailbox, kein Abheben, falsche Nummer), hat nichts zu dokumentieren.
+      // Jedes Ergebnis trägt zusätzlich eine "disposition" (Migration 021):
+      // die strukturierte Werteliste, die im calls-Datensatz landet und die
+      // Save-Rate-/Kündigungsgrund-Auswertung im Team-Dashboard speist.
+      // "needsReason: true" verlangt beim Abschluss einen Kündigungsgrund
+      // (nur beim Ergebnis "gekündigt"). Ergebnisse ohne echtes Gespräch
+      // (Mailbox, nicht erreicht, falsche Nummer) tragen bewusst keine
+      // disposition — sie zählen in der Auswertung als "nicht entschieden".
       outcomes: [
-        { id: "reached-done", label: "Erreicht & geklärt", followUp: false, opensPanel: true, seed: "Kunde telefonisch erreicht. Anliegen besprochen und geklärt. Ergebnis: [ergänzen]." },
-        { id: "reached-callback", label: "Erreicht – Rückruf vereinbart", followUp: true, opensPanel: true, seed: "Kunde telefonisch erreicht. Rückruf vereinbart für [Datum] um [Uhrzeit]. Offener Punkt: [ergänzen]." },
+        { id: "reached-done", label: "Erreicht & geklärt", followUp: false, opensPanel: true, disposition: "gehalten", seed: "Kunde telefonisch erreicht. Anliegen besprochen und geklärt. Ergebnis: [ergänzen]." },
+        { id: "reached-callback", label: "Erreicht – Rückruf vereinbart", followUp: true, opensPanel: true, disposition: "rueckruf", seed: "Kunde telefonisch erreicht. Rückruf vereinbart für [Datum] um [Uhrzeit]. Offener Punkt: [ergänzen]." },
+        { id: "cancelled", label: "Gekündigt / verloren", followUp: false, opensPanel: true, disposition: "gekuendigt", needsReason: true, seed: "Kunde hält an der Kündigung fest. Kündigungsgrund: [ergänzen]." },
         { id: "mailbox", label: "Mailbox", followUp: true, opensPanel: false, seed: "Kunde telefonisch nicht erreicht, Mailbox erreicht. Keine Nachricht hinterlassen / Nachricht hinterlassen: [ergänzen]. Erneuter Kontaktversuch geplant." },
         { id: "not-reached", label: "Nicht erreicht", followUp: true, opensPanel: false, seed: "Kunde telefonisch nicht erreicht (kein Abheben). Erneuter Kontaktversuch geplant." },
         { id: "wrong-number", label: "Falsche Nummer", followUp: false, opensPanel: false, seed: "Hinterlegte Rufnummer ist nicht korrekt bzw. gehört nicht zum Kunden. Aktuelle Kontaktdaten müssen ermittelt werden." },
-        { id: "no-interest", label: "Kein Interesse / später", followUp: false, opensPanel: false, seed: "Kunde wünscht aktuell keine weitere Besprechung des Anliegens. Begründung: [ergänzen]." }
+        { id: "no-interest", label: "Kein Interesse / später", followUp: false, opensPanel: false, disposition: "kein-interesse", seed: "Kunde wünscht aktuell keine weitere Besprechung des Anliegens. Begründung: [ergänzen]." }
       ],
       // Abstand bis zum nächsten Versuch, gestaffelt nach Anzahl der bisherigen
       // Versuche: 2 Stunden, 1 Tag, 3 Tage. Danach ist Telefonieren erkennbar
@@ -314,50 +322,102 @@
       }
     },
 
-    // Gesprächsleitfaden fürs ausgehende Gespräch: der Bearbeiter muss zuerst
-    // erklären, wer er ist und warum er anruft – und sich die Zeit des Kunden
-    // abholen. (Der frühere Inbound-Leitfaden entfällt mit dem Support-Betrieb.)
+    // Gesprächsleitfäden je Call-Typ (Outbound-Umbau). Welchen der Bearbeiter
+    // sieht, bestimmt die Kampagne seiner aktuellen Schicht (call_type,
+    // Migration 019/020) — mit manuellem Umschalter im Cockpit als Override.
+    //   churn   — Kündiger-Rückgewinnung: Anlass klären, Grund verstehen,
+    //             Halteangebot, Abschluss.
+    //   welcome — Willkommensanruf: Schritt-für-Schritt-Checkliste, damit kein
+    //             Onboarding-Punkt vergessen wird (checklist: true rendert je
+    //             Schritt eine abhakbare Checkbox).
     callGuides: {
-      outbound: [
+      churn: [
         {
           title: "1. Eigenvorstellung & Anlass",
-          prompt: "Guten Tag, mein Name ist [Name] von [Unternehmen]. Spreche ich mit [Kundenname]? Ich rufe an wegen [Anlass / Vorgang]."
+          prompt: "Guten Tag, mein Name ist [Name] von [Unternehmen]. Spreche ich mit [Kundenname]? Ich rufe an, weil bei uns Ihre Kündigung zu [Vertrag/Tarif] eingegangen ist."
         },
         {
-          title: "2. Erlaubnis & Zeit abholen",
-          prompt: "Passt es Ihnen gerade kurz – haben Sie zwei Minuten? Sonst melde ich mich gern zu einem Zeitpunkt, der Ihnen besser passt."
+          title: "2. Kündigungsgrund verstehen",
+          prompt: "Damit ich Sie richtig verstehe: Was hat den Ausschlag gegeben, dass Sie kündigen möchten? [zuhören, nicht sofort argumentieren]"
         },
         {
-          title: "3. Sachstand nennen",
-          prompt: "Zum aktuellen Stand: [Sachstand]. Damit Sie wissen, wo wir stehen und was seitdem passiert ist."
+          title: "3. Auf den Grund eingehen",
+          prompt: "Das kann ich nachvollziehen. Zu [genannter Grund] kann ich Ihnen Folgendes anbieten: [passendes Argument / Halteangebot]."
         },
         {
-          title: "4. Ziel des Anrufs klären",
-          prompt: "Mein Anliegen an Sie heute: [offene Frage / benötigte Information]. Können Sie mir dazu weiterhelfen?"
+          title: "4. Halteangebot machen",
+          prompt: "Konkret könnte ich Ihnen [Angebot: Tarifwechsel / Konditionen / Zusatzleistung] anbieten, damit sich das für Sie wieder lohnt. Wäre das für Sie interessant?"
         },
         {
           title: "5. Ergebnis & nächsten Schritt bestätigen",
           prompt: "Ich halte fest: [Ergebnis]. Als Nächstes [Aktion] bis [Datum/Uhrzeit]. Vielen Dank für Ihre Zeit."
         }
+      ],
+      // Willkommensanruf: als Checkliste — jeder Punkt wird beim Durchgehen
+      // abgehakt, damit gerade neue Bearbeiter:innen nichts vergessen.
+      welcome: [
+        {
+          title: "1. Begrüßung & Willkommen",
+          prompt: "Guten Tag, mein Name ist [Name] von [Unternehmen]. Herzlich willkommen bei uns! Ich rufe kurz an, um alles Wichtige zu Ihrem neuen Anschluss mit Ihnen durchzugehen.",
+          checklist: true
+        },
+        {
+          title: "2. Vertrag bestätigen",
+          prompt: "Zur Sicherheit gehen wir Ihren Vertrag kurz durch: [Tarif], Laufzeit [Laufzeit], Startdatum [Datum]. Passt das alles so für Sie?",
+          checklist: true
+        },
+        {
+          title: "3. Geräteeinrichtung / Technik",
+          prompt: "Zur Technik: Haben Sie Ihre Zugangsdaten und das Gerät erhalten? Brauchen Sie Unterstützung bei der Einrichtung oder beim Anschalttermin?",
+          checklist: true
+        },
+        {
+          title: "4. Zusatzservices anbieten",
+          prompt: "Ergänzend hätten wir noch [Zusatzservice, z.B. TV / Mobilfunk] — möchten Sie dazu Informationen, oder passt Ihr Paket erstmal so?",
+          checklist: true
+        },
+        {
+          title: "5. Feedback & Abschluss",
+          prompt: "Gibt es zum Start noch offene Fragen von Ihrer Seite? Vielen Dank und viel Freude mit Ihrem Anschluss — bei Bedarf sind wir jederzeit für Sie da.",
+          checklist: true
+        }
       ]
     },
     objectionCards: {
-      outbound: [
+      churn: [
+        {
+          title: "„Ist mir einfach zu teuer geworden.“",
+          text: "Das verstehe ich. Lassen Sie uns gemeinsam schauen: Für Ihre Nutzung gibt es womöglich einen passenderen Tarif oder bessere Konditionen — dann bleiben Sie zu einem Preis, der für Sie stimmt."
+        },
+        {
+          title: "„Ich habe ein besseres Angebot woanders.“",
+          text: "Darf ich fragen, was der Wettbewerber Ihnen konkret bietet? Oft können wir das mit einem Treueangebot ausgleichen — und Sie behalten Ihren gewohnten Anschluss ohne Wechselaufwand."
+        },
+        {
+          title: "„Ich ziehe um / brauche das nicht mehr.“",
+          text: "Kein Problem — in vielen Fällen können wir Ihren Vertrag an die neue Adresse mitnehmen. Sagen Sie mir Ihre neue Anschrift, dann prüfe ich die Verfügbarkeit direkt."
+        },
         {
           title: "„Ich habe gerade keine Zeit.“",
-          text: "Kein Problem, das verstehe ich. Wann darf ich Sie kurz zurückrufen – heute Nachmittag oder lieber morgen früh? Es geht nur um [Anlass] und dauert wenige Minuten."
+          text: "Verstehe ich. Es geht nur um Ihre Kündigung und dauert zwei Minuten. Wann passt es Ihnen besser — heute Nachmittag oder morgen früh? Ich melde mich genau dann."
+        }
+      ],
+      welcome: [
+        {
+          title: "„Ich habe gerade keine Zeit.“",
+          text: "Kein Problem, das dauert nur zwei Minuten. Sonst melde ich mich gern später — wann passt es Ihnen? Es geht nur darum, dass Ihr Start reibungslos läuft."
         },
         {
-          title: "„Woher haben Sie meine Nummer?“",
-          text: "Ihre Rufnummer liegt uns aus Ihrem Vorgang [Ticketnummer] vor, den Sie bei uns angelegt haben. Ich rufe ausschließlich deswegen an."
+          title: "„Ich komme mit der Technik nicht klar.“",
+          text: "Dafür bin ich da — wir gehen das jetzt Schritt für Schritt zusammen durch. Sagen Sie mir einfach, was gerade angezeigt wird, dann finden wir das gemeinsam."
         },
         {
-          title: "„Das hatte ich doch schon geschrieben.“",
-          text: "Danke, das steht mir auch so vor. Ich rufe an, weil sich [offener Punkt] am Telefon schneller klären lässt als schriftlich – dann sind wir in zwei Minuten durch."
+          title: "„Brauche ich die Zusatzangebote wirklich?“",
+          text: "Überhaupt kein Muss — Ihr Paket funktioniert komplett ohne. Ich nenne es nur der Vollständigkeit halber, falls es für Sie interessant ist. Sonst lassen wir das gern so."
         },
         {
-          title: "„Rufen Sie später nochmal an.“",
-          text: "Mache ich gern. Damit ich Sie nicht wieder störe: Wann passt es Ihnen am besten? Ich notiere den Termin fest und melde mich genau dann."
+          title: "„Warum rufen Sie überhaupt an?“",
+          text: "Reiner Willkommensanruf — wir wollen sichergehen, dass bei Ihrem Start alles passt und Sie wissen, an wen Sie sich wenden können. Kein Verkaufsgespräch."
         }
       ]
     }

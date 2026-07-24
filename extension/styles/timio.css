@@ -214,6 +214,17 @@
   font-weight: 700;
 }
 
+#sc-timio-cockpit .tc-recording-warning {
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border: 1px solid #f4c37a;
+  border-radius: 8px;
+  background: #fff7e8;
+  color: #8a5a00;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 #sc-timio-cockpit .tc-ticket {
   padding-top: 2px;
   border-top: 1px dashed #dfe1e6;

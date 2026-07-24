@@ -29,6 +29,11 @@ import type {
   AccessRequestStatus,
   UserStatus,
   StatusLogEntry,
+  CallDisposition,
+  Campaign,
+  CampaignCallType,
+  Shift,
+  ShiftType,
 } from '../types';
 import type { AuthUser } from '../store/useAuth';
 
@@ -660,6 +665,134 @@ export async function deleteIncentiveRow(id: string): Promise<void> {
 }
 
 // ============================================================================
+// Kampagnen (Migration 019) — fester, vom Chef gepflegter Katalog. call_type
+// bestimmt in der Extension automatisch Skript & Einwandkarten.
+// ============================================================================
+
+interface CampaignRow {
+  id: string;
+  name: string;
+  call_type: CampaignCallType;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+}
+
+const mapCampaign = (r: CampaignRow): Campaign => ({
+  id: r.id,
+  name: r.name,
+  callType: r.call_type,
+  active: r.active,
+  createdBy: r.created_by ?? undefined,
+  createdAt: r.created_at,
+});
+
+export async function fetchCampaigns(): Promise<Campaign[]> {
+  const { data, error } = await getSupabase()
+    .from('campaigns')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as CampaignRow[]).map(mapCampaign);
+}
+
+export async function insertCampaign(
+  c: Omit<Campaign, 'id' | 'createdAt'>,
+): Promise<Campaign> {
+  const payload = {
+    name: c.name,
+    call_type: c.callType,
+    active: c.active,
+    created_by: c.createdBy ?? null,
+  };
+  const { data, error } = await getSupabase()
+    .from('campaigns')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return mapCampaign(data as CampaignRow);
+}
+
+export async function updateCampaignRow(id: string, patch: Partial<Campaign>): Promise<void> {
+  const payload: Record<string, unknown> = {};
+  if (patch.name !== undefined) payload.name = patch.name;
+  if (patch.callType !== undefined) payload.call_type = patch.callType;
+  if (patch.active !== undefined) payload.active = patch.active;
+  const { error } = await getSupabase().from('campaigns').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+export async function setCampaignActive(id: string, active: boolean): Promise<void> {
+  await updateCampaignRow(id, { active });
+}
+
+// ============================================================================
+// Schichtplan (Migration 020) — geteilter Wochenplan (Früh/Spät/frei je
+// Agent:in und Tag), optional mit Kampagnen-Zuordnung. Nur Chefs schreiben,
+// alle aktiven Nutzer lesen den vollständigen Plan (siehe RLS in schema.sql).
+// ============================================================================
+
+interface ShiftRow {
+  id: string;
+  user_id: string;
+  shift_date: string;
+  shift_type: ShiftType;
+  campaign_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const mapShift = (r: ShiftRow): Shift => ({
+  id: r.id,
+  userId: r.user_id,
+  shiftDate: r.shift_date,
+  shiftType: r.shift_type,
+  campaignId: r.campaign_id ?? undefined,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+/** Alle Schichten einer Woche (weekStart/weekEnd als 'YYYY-MM-DD'), für alle Agent:innen. */
+export async function fetchShiftsForWeek(weekStart: string, weekEnd: string): Promise<Shift[]> {
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .select('*')
+    .gte('shift_date', weekStart)
+    .lte('shift_date', weekEnd);
+  if (error) throw error;
+  return (data as ShiftRow[]).map(mapShift);
+}
+
+/** Legt die Schicht eines Tages an oder überschreibt sie (unique user_id+shift_date). */
+export async function upsertShift(s: {
+  userId: string;
+  shiftDate: string;
+  shiftType: ShiftType;
+  campaignId?: string | null;
+}): Promise<Shift> {
+  const payload = {
+    user_id: s.userId,
+    shift_date: s.shiftDate,
+    shift_type: s.shiftType,
+    campaign_id: s.campaignId ?? null,
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .upsert(payload, { onConflict: 'user_id,shift_date' })
+    .select()
+    .single();
+  if (error) throw error;
+  return mapShift(data as ShiftRow);
+}
+
+export async function deleteShiftRow(id: string): Promise<void> {
+  const { error } = await getSupabase().from('shifts').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ============================================================================
 // Leads
 // ============================================================================
 
@@ -909,6 +1042,9 @@ interface CallRow {
   ended_at: string | null;
   duration_s: number | null;
   agent_id: string;
+  disposition: CallDisposition | null;
+  cancellation_reason: string | null;
+  campaign_id: string | null;
 }
 
 const mapCall = (r: CallRow): Call => ({
@@ -922,6 +1058,9 @@ const mapCall = (r: CallRow): Call => ({
   endedAt: r.ended_at ?? undefined,
   durationS: r.duration_s ?? undefined,
   agentId: r.agent_id,
+  disposition: r.disposition ?? undefined,
+  cancellationReason: r.cancellation_reason ?? undefined,
+  campaignId: r.campaign_id ?? undefined,
 });
 
 /** Anrufe, die noch nicht beendet sind — Grundlage der Live-Anrufleiste. */

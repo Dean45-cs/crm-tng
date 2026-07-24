@@ -1,4 +1,4 @@
-import type { Call, Contract, TariffChange, Lead, Note } from '../types';
+import type { Call, Contract, TariffChange, Lead, Note, Campaign, CallDisposition } from '../types';
 
 export interface CallVolumeStats {
   /** Anrufe im übergebenen Zeitraum (Aufrufer filtert die calls-Liste bereits nach Datum) */
@@ -122,4 +122,112 @@ export function conversionStats(links: CallLink[]): ConversionStats {
       ? Math.round(linked.reduce((sum, l) => sum + (l.minutesToOutcome ?? 0), 0) / linkedCount)
       : null;
   return { conversionPct, avgMinutesToOutcome, linkedCount, totalCount };
+}
+
+// ============================================================================
+// Disposition-basierte Kennzahlen (Migration 021) — Save-Rate,
+// Kündigungsgründe und Kampagnen-Performance fürs Team-Dashboard.
+// ============================================================================
+
+export interface SaveRateStats {
+  /** Gehaltene Kunden (disposition === 'gehalten'). */
+  saved: number;
+  /** Endgültig gekündigt (disposition === 'gekuendigt'). */
+  cancelled: number;
+  /** Anteil gehaltener an (gehalten + gekündigt), in %. null ohne entschiedene Fälle. */
+  saveRatePct: number | null;
+}
+
+/**
+ * Save-Rate über alle Anrufe mit entschiedener Disposition. Bewusst nur
+ * 'gehalten' vs. 'gekuendigt' — Rückrufe/kein-Interesse/sonstige sind noch
+ * nicht entschieden und würden die Quote verwässern. Der Aufrufer filtert
+ * die Calls-Liste bereits nach Zeitraum (und optional Kampagne).
+ */
+export function saveRateStats(calls: Call[]): SaveRateStats {
+  const saved = calls.filter((c) => c.disposition === 'gehalten').length;
+  const cancelled = calls.filter((c) => c.disposition === 'gekuendigt').length;
+  const decided = saved + cancelled;
+  return {
+    saved,
+    cancelled,
+    saveRatePct: decided > 0 ? Math.round((saved / decided) * 100) : null,
+  };
+}
+
+export interface CancellationReason {
+  reason: string;
+  count: number;
+}
+
+/**
+ * Häufigkeit je Kündigungsgrund über alle gekündigten Anrufe, absteigend
+ * sortiert. Nur Anrufe mit disposition === 'gekuendigt' und nicht-leerem
+ * cancellation_reason zählen; leere Gründe werden als „Ohne Angabe" gebündelt.
+ */
+export function cancellationReasonBreakdown(calls: Call[]): CancellationReason[] {
+  const counts = new Map<string, number>();
+  for (const c of calls) {
+    if (c.disposition !== 'gekuendigt') continue;
+    const reason = (c.cancellationReason ?? '').trim() || 'Ohne Angabe';
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+export interface CampaignPerformance {
+  campaignId: string;
+  campaignName: string;
+  callType: Campaign['callType'];
+  totalCalls: number;
+  saved: number;
+  cancelled: number;
+  saveRatePct: number | null;
+  avgDurationS: number;
+}
+
+/**
+ * Performance je Kampagne: Anrufvolumen, Save-Rate und Ø-Gesprächsdauer,
+ * gruppiert über calls.campaign_id. Anrufe ohne Kampagnen-Zuordnung werden
+ * ignoriert. Absteigend nach Anrufvolumen sortiert.
+ */
+export function campaignPerformance(calls: Call[], campaigns: Campaign[]): CampaignPerformance[] {
+  const byCampaign = new Map<string, Call[]>();
+  for (const c of calls) {
+    if (!c.campaignId) continue;
+    const list = byCampaign.get(c.campaignId);
+    if (list) list.push(c);
+    else byCampaign.set(c.campaignId, [c]);
+  }
+
+  const rows: CampaignPerformance[] = [];
+  for (const [campaignId, group] of byCampaign) {
+    const campaign = campaigns.find((k) => k.id === campaignId);
+    const rate = saveRateStats(group);
+    rows.push({
+      campaignId,
+      campaignName: campaign?.name ?? 'Unbekannte Kampagne',
+      callType: campaign?.callType ?? 'other',
+      totalCalls: group.length,
+      saved: rate.saved,
+      cancelled: rate.cancelled,
+      saveRatePct: rate.saveRatePct,
+      avgDurationS: callVolumeStats(group).avgDurationS,
+    });
+  }
+  return rows.sort((a, b) => b.totalCalls - a.totalCalls);
+}
+
+/** Verteilung der Dispositionen (für eine kompakte Übersicht/Pie). */
+export function dispositionBreakdown(calls: Call[]): { disposition: CallDisposition; count: number }[] {
+  const counts = new Map<CallDisposition, number>();
+  for (const c of calls) {
+    if (!c.disposition) continue;
+    counts.set(c.disposition, (counts.get(c.disposition) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([disposition, count]) => ({ disposition, count }))
+    .sort((a, b) => b.count - a.count);
 }

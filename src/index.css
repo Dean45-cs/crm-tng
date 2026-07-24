@@ -660,6 +660,41 @@ table.crm-table td[style*="text-align: right"] {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- Schichtplan ---------- */
+table.schedule-table tr.row-self td:first-child { font-weight: 600; }
+.shift-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 4px;
+  border: none;
+  background: none;
+  cursor: default;
+  border-radius: 8px;
+}
+.shift-cell.editable { cursor: pointer; }
+.shift-cell.editable:hover { background: var(--bg-card-hover); }
+.shift-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.shift-badge-frueh { background: rgba(0, 163, 224, 0.14); color: #0088b8; }
+.shift-badge-spaet { background: rgba(167, 139, 250, 0.16); color: #7c5cf0; }
+.shift-badge-frei { background: rgba(148, 163, 184, 0.16); color: var(--text-tertiary); }
+.shift-campaign {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- Badges & chips ---------- */
 .badge {
   display: inline-flex;

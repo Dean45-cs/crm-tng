@@ -18,6 +18,7 @@ import {
   Clock,
   CalendarClock,
   Phone,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -38,7 +39,14 @@ import { useRouter } from '../router';
 import { formatCurrency, formatDate } from '../lib/utils';
 import { agentStats, attainmentPct, teamKpis, monthlySeries, trendPct } from '../lib/teamStats';
 import { fetchCallsSince } from '../lib/supabaseApi';
-import { callVolumeStats, linkCallsToOutcomes, conversionStats } from '../lib/callStats';
+import {
+  callVolumeStats,
+  linkCallsToOutcomes,
+  conversionStats,
+  saveRateStats,
+  cancellationReasonBreakdown,
+  campaignPerformance,
+} from '../lib/callStats';
 import { SkeletonTable } from '../components/Skeleton';
 import { StatusInsights } from '../components/StatusInsights';
 import { KpiTile } from '../components/KpiTile';
@@ -89,7 +97,7 @@ interface AgentRow {
 }
 
 export function TeamDashboard() {
-  const { contracts, tariffChanges, leads, notes, settings, loaded } = useStore();
+  const { contracts, tariffChanges, leads, notes, settings, campaigns, loaded } = useStore();
   const { users, isManager } = useAuth();
   const { navigate } = useRouter();
 
@@ -118,6 +126,18 @@ export function TeamDashboard() {
     if (!monthCalls) return null;
     return conversionStats(linkCallsToOutcomes(monthCalls, contracts, tariffChanges, leads, notes));
   }, [monthCalls, contracts, tariffChanges, leads, notes]);
+
+  // Disposition-basierte Kennzahlen (Migration 021): Save-Rate über gehaltene
+  // vs. gekündigte Anrufe, häufigste Kündigungsgründe, Performance je Kampagne.
+  const teamSaveRate = useMemo(() => (monthCalls ? saveRateStats(monthCalls) : null), [monthCalls]);
+  const churnReasons = useMemo(
+    () => (monthCalls ? cancellationReasonBreakdown(monthCalls).slice(0, 6) : []),
+    [monthCalls],
+  );
+  const campaignRows = useMemo(
+    () => (monthCalls ? campaignPerformance(monthCalls, campaigns) : []),
+    [monthCalls, campaigns],
+  );
 
   // Einzige Quelle für Pro-Mitarbeiter-Provision/Abschlüsse ist agentStats()
   // (teamStats.ts) — vorher baute diese Seite dieselbe Aggregation komplett
@@ -328,7 +348,106 @@ export function TeamDashboard() {
               : 'noch keine Verknüpfung diesen Monat'
           }
         />
+        <KpiTile
+          icon={<ShieldCheck size={15} />}
+          accent="green"
+          label="Save-Rate (Churn)"
+          value={teamSaveRate?.saveRatePct == null ? '–' : `${teamSaveRate.saveRatePct} %`}
+          sub={
+            teamSaveRate && teamSaveRate.saved + teamSaveRate.cancelled > 0
+              ? `${teamSaveRate.saved} gehalten · ${teamSaveRate.cancelled} gekündigt`
+              : 'noch kein entschiedenes Gespräch'
+          }
+        />
       </div>
+
+      {(churnReasons.length > 0 || campaignRows.length > 0) && (
+        <>
+          <div className="team-kpis-subhead">Outbound-Auswertung</div>
+          <div className="grid-2" style={{ marginBottom: 10 }}>
+            <div className="widget">
+              <div className="row between" style={{ marginBottom: 10 }}>
+                <h3 className="widget-title" style={{ margin: 0 }}>
+                  Häufigste Kündigungsgründe
+                </h3>
+                <span className="muted">aktueller Monat</span>
+              </div>
+              {churnReasons.length === 0 ? (
+                <div className="empty-inline">
+                  <span>Noch keine gekündigten Gespräche erfasst.</span>
+                </div>
+              ) : (
+                <div style={{ width: '100%', height: Math.max(140, churnReasons.length * 34 + 20) }}>
+                  <ResponsiveContainer>
+                    <BarChart
+                      data={churnReasons}
+                      layout="vertical"
+                      margin={{ top: 4, right: 16, left: 8, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" horizontal={false} />
+                      <XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
+                      <YAxis
+                        type="category"
+                        dataKey="reason"
+                        width={120}
+                        axisLine={false}
+                        tickLine={false}
+                        fontSize={12}
+                        stroke="var(--text-tertiary)"
+                      />
+                      <Tooltip cursor={{ fill: 'rgba(255,59,48,0.05)' }} contentStyle={TOOLTIP_STYLE} />
+                      <Bar dataKey="count" name="Kündigungen" fill="#ff3b30" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            <div className="widget">
+              <div className="row between" style={{ marginBottom: 10 }}>
+                <h3 className="widget-title" style={{ margin: 0 }}>
+                  Save-Rate je Kampagne
+                </h3>
+                <span className="muted">aktueller Monat</span>
+              </div>
+              {campaignRows.length === 0 ? (
+                <div className="empty-inline">
+                  <span>Noch keine Anrufe mit Kampagnen-Zuordnung.</span>
+                </div>
+              ) : (
+                <div className="table-wrap">
+                  <table className="crm-table">
+                    <thead>
+                      <tr>
+                        <th>Kampagne</th>
+                        <th style={{ textAlign: 'right' }}>Anrufe</th>
+                        <th style={{ textAlign: 'right' }}>Gehalten</th>
+                        <th style={{ textAlign: 'right' }}>Save-Rate</th>
+                        <th style={{ textAlign: 'right' }}>Ø Dauer</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {campaignRows.map((c) => (
+                        <tr key={c.campaignId}>
+                          <td>{c.campaignName}</td>
+                          <td style={{ textAlign: 'right' }}>{c.totalCalls}</td>
+                          <td style={{ textAlign: 'right' }}>{c.saved}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                            {c.saveRatePct == null ? '–' : `${c.saveRatePct} %`}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            {c.avgDurationS > 0 ? `${Math.round(c.avgDurationS / 60)} min` : '–'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="team-kpis-subhead">Qualität &amp; Pipeline</div>
       <div className="team-kpis">

@@ -343,11 +343,27 @@
     }
   }
 
+  // Genau EIN Refresh gleichzeitig. Supabase/GoTrue rotiert Refresh-Tokens
+  // (jeder ist einmalig einlösbar) — feuern mehrere Aufrufer im selben Tick
+  // (z. B. maybeLookupCustomer + maybeStartCall + maybeEndCall in einem
+  // timio-content.js-Tick) parallel refreshSession(), löst nur der erste den
+  // Token ein; der zweite bekommt vom Server einen Fehler und würde in
+  // refreshSession() clearSession() aufrufen — und damit die Sitzung löschen,
+  // die der erste gerade frisch gespeichert hat. Folge: sporadisches
+  // "not-logged-in" beim nächsten Schreibvorgang, obwohl niemand ausgeloggt
+  // ist. Das gemeinsame In-Flight-Promise verhindert genau diesen Wettlauf.
+  let refreshInFlight = null;
+
   async function ensureFreshSession() {
     const session = await loadSession();
     if (!session) return null;
     if (!isSessionExpired(session)) return session;
-    return refreshSession(session);
+    if (!refreshInFlight) {
+      refreshInFlight = refreshSession(session).finally(() => {
+        refreshInFlight = null;
+      });
+    }
+    return refreshInFlight;
   }
 
   // Zentraler Lookup für die Kundenakte. Strukturierte Rückgabe statt Throw,
@@ -470,6 +486,116 @@
         return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
       }
       return { ok: true };
+    } catch (error) {
+      return { ok: false, reason: "network", error: String((error && error.message) || error) };
+    }
+  }
+
+  // Gesprächsergebnis auf einen bereits angelegten Anruf schreiben (Migration
+  // 021): disposition (gehalten/gekündigt/…), Kündigungsgrund und Kampagne.
+  // Ergänzt endCall() um die strukturierten Auswertungsfelder — bewusst
+  // getrennt, weil die Disposition erst beim Abschluss durch den Bearbeiter
+  // feststeht, endCall() aber schon beim Auflegen läuft. Best-effort wie
+  // endCall(): scheitert es, bleibt der Anruf ohne Disposition (zählt dann in
+  // der Auswertung als „nicht entschieden"), stört aber nichts.
+  async function patchCallDisposition(callId, { disposition, cancellationReason, campaignId }) {
+    if (!callId) return { ok: false, reason: "error", error: "Keine Anruf-ID." };
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    const body = {};
+    if (disposition !== undefined) body.disposition = disposition || null;
+    if (cancellationReason !== undefined) body.cancellation_reason = cancellationReason || null;
+    if (campaignId !== undefined) body.campaign_id = campaignId || null;
+
+    try {
+      const res = await fetch(`${config.url}/rest/v1/calls?id=eq.${encodeURIComponent(callId)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: config.anonKey,
+          Authorization: `Bearer ${session.accessToken}`
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (res.status === 401) {
+        clearSession();
+        return { ok: false, reason: "not-logged-in" };
+      }
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, reason: "network", error: String((error && error.message) || error) };
+    }
+  }
+
+  // Aktuelle Schicht + Kampagne des eingeloggten Agenten (Outbound-Umbau,
+  // Migration 019/020). Bestimmt den Call-Typ (churn/welcome/other) für das
+  // automatische Skript-Routing im Cockpit. Liest die shifts-Zeile für heute
+  // und joint über den PostgREST-Embed die zugehörige campaign. Strukturierte
+  // Rückgabe statt Throw, damit das Cockpit ohne Schicht (kein Eintrag,
+  // Migration noch nicht eingespielt) einfach auf den manuellen Umschalter
+  // zurückfällt. `dateKey` optional (Testbarkeit) — Default ist heute lokal.
+  function localDateKey(d) {
+    const dt = d || new Date();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${dt.getFullYear()}-${mm}-${dd}`;
+  }
+
+  async function fetchCurrentShift(dateKey) {
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    const day = dateKey || localDateKey();
+    const query =
+      `select=shift_type,shift_date,campaign_id,campaigns(id,name,call_type,active)` +
+      `&user_id=eq.${encodeURIComponent(session.userId || "")}` +
+      `&shift_date=eq.${encodeURIComponent(day)}` +
+      `&limit=1`;
+
+    try {
+      const res = await fetch(`${config.url}/rest/v1/shifts?${query}`, {
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${session.accessToken}`
+        }
+      });
+
+      if (res.status === 401) {
+        clearSession();
+        return { ok: false, reason: "not-logged-in" };
+      }
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
+      }
+
+      const rows = await res.json().catch(() => null);
+      const row = Array.isArray(rows) && rows[0];
+      if (!row) return { ok: true, data: null };
+
+      const campaign = row.campaigns || null;
+      return {
+        ok: true,
+        data: {
+          shiftType: row.shift_type || null,
+          campaignId: row.campaign_id || null,
+          campaignName: (campaign && campaign.name) || null,
+          // call_type bestimmt Skript/Einwandkarten; ohne Kampagne kein Typ.
+          callType: (campaign && campaign.call_type) || null
+        }
+      };
     } catch (error) {
       return { ok: false, reason: "network", error: String((error && error.message) || error) };
     }
@@ -935,6 +1061,8 @@
     customerCard,
     startCall,
     endCall,
+    patchCallDisposition,
+    fetchCurrentShift,
     insertNote,
     upsertTicketSummaryNote,
     insertLead,

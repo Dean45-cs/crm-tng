@@ -14,6 +14,18 @@
   const POLL_MS = CALL_CONFIG.pollMs || 1000;
   const HEARTBEAT_MS = CALL_CONFIG.heartbeatMs || 4000;
   const CONNECTED_GRACE_MS = CALL_CONFIG.connectedGraceMs || 20000;
+  // Wie viele aufeinanderfolgende Ticks ohne sichtbare Marker die Klingel-Phase
+  // toleriert, bevor sie als abgebrochen gilt. 2 = ein einzelner Flacker-Tick
+  // (timio-Neuzeichnung) wird ausgesessen; erst der zweite leere Tick verwirft
+  // den klingelnden Anruf. Verhindert, dass ein Flackern eine neue callId mintet
+  // (doppelte/verwaiste calls-Zeile) — bewusst tick- statt zeitbasiert, damit
+  // das Verhalten deterministisch und ohne echte Uhr testbar bleibt.
+  const RINGING_TOLERANCE_TICKS = CALL_CONFIG.ringingToleranceTicks || 2;
+  // Wie viele (getrimmte, nicht-leere) Zeilen ein "Beendet" höchstens von der
+  // Kundennummer der Anrufkarte entfernt sein darf, um als Gesprächsende dieser
+  // Karte zu zählen. Ein "Beendet" weiter weg (z. B. in „Meine letzten
+  // Unterhaltungen") gehört zu einem anderen, längst beendeten Anruf.
+  const BEENDET_CARD_PROXIMITY = CALL_CONFIG.beendetCardProximity || 10;
   const QUEUE_HEARTBEAT_MS = CALL_CONFIG.queueHeartbeatMs || 10000;
   const QUEUE_STALE_MS = CALL_CONFIG.queueStaleAfterMs || 30000;
   const ENDED_OVERLAY_MS = CALL_CONFIG.endedOverlayMs || 12000;
@@ -137,12 +149,30 @@
     return best;
   }
 
-  // Reihenfolge wichtig: Der "Beendet"-Screen enthält weiterhin "Kundennummer:",
-  // muss also vor der Connected-Prüfung erkannt werden.
+  // Zustand aus den Textmarkern. Wichtig (Bug-Historie): Der "Beendet"-Screen
+  // enthält weiterhin "Kundennummer:", ein globales /beendet/ vor der
+  // Connected-Prüfung würde deshalb einen laufenden Anruf fälschlich beenden,
+  // sobald IRGENDWO auf der Seite "Beendet" steht — etwa in „Meine letzten
+  // Unterhaltungen". Deshalb wird "Beendet" auf die Anrufkarte GESCOPT: es zählt
+  // nur als Gesprächsende, wenn es nahe der Kundennummer der aktiven Karte steht.
   function detectRawStatus(text) {
     if (/eingehender anruf/i.test(text)) return STATUS.RINGING;
-    if (/\bbeendet\b/i.test(text)) return STATUS.ENDED;
-    if (/kundennummer\s*:/i.test(text)) return STATUS.CONNECTED;
+
+    const lines = pageLines(text);
+    const kundennummerIdx = lines.findIndex((line) => /kundennummer\s*:/i.test(line));
+    const beendetIdx = lines.findIndex((line) => /\bbeendet\b/i.test(line));
+
+    if (beendetIdx >= 0) {
+      // Ohne sichtbare Kundennummer ist "Beendet" der Ended-Screen selbst.
+      if (kundennummerIdx < 0) return STATUS.ENDED;
+      // "Beendet" nahe der Anrufkarte → dieser Anruf ist beendet.
+      if (Math.abs(beendetIdx - kundennummerIdx) <= BEENDET_CARD_PROXIMITY) return STATUS.ENDED;
+      // "Beendet" gehört zu einem anderen Bereich der Seite → der Anruf mit
+      // sichtbarer Kundennummer läuft weiter.
+      return STATUS.CONNECTED;
+    }
+
+    if (kundennummerIdx >= 0) return STATUS.CONNECTED;
     return STATUS.IDLE;
   }
 
@@ -172,6 +202,9 @@
   //   eine Schonfrist "verbunden" statt sofort auf idle zu fallen.
   let publicStatus = STATUS.IDLE;
   let graceUntil = 0;
+  // Zähler aufeinanderfolgender Ticks ohne Marker während RINGING (Bug B,
+  // siehe RINGING_TOLERANCE_TICKS). Wird bei jedem sichtbaren Marker genullt.
+  let missingRingTicks = 0;
   let lastDetails = null;
   let callId = null;
   // Zuletzt vergebene callId. Date.now() hat nur Millisekunden-Auflösung —
@@ -206,9 +239,28 @@
       if (raw === STATUS.RINGING) cameFromRinging = true;
       publicStatus = raw;
       graceUntil = 0;
+      missingRingTicks = 0;
       endedAt = null;
       lastDetails = readCallDetails(text, raw);
       if (raw === STATUS.CONNECTED && !connectedAt) connectedAt = Date.now();
+      // Selektor-Selbstcheck (Bug C): ist ein Gespräch verbunden, aber weder
+      // Kundennummer noch Rufnummer lesbar, greifen vermutlich die timio-
+      // Selektoren nicht mehr (Label umbenannt o. Ä.). Nach ein paar Ticks
+      // Warnung statt stillem Datenverlust.
+      if (raw === STATUS.CONNECTED && !lastDetails.customerNumber && !lastDetails.callerNumber) {
+        noFieldTicks += 1;
+        if (noFieldTicks === SELECTOR_WARN_TICKS) {
+          recordingWarning = "Anruferdaten werden gerade nicht erkannt – bitte timio-Ansicht prüfen (die automatische Erfassung greift evtl. nicht).";
+          // Signatur erzwingen, sonst zeigt der signaturbasierte Render den
+          // neuen Hinweis erst beim nächsten echten Zustandswechsel.
+          lastOverlaySignature = null;
+        }
+      } else if (raw === STATUS.CONNECTED) {
+        noFieldTicks = 0;
+        // Nur den Selektor-Hinweis zurücknehmen, einen echten Speicherfehler
+        // (startCall) NICHT — der bleibt bis zum Idle-Reset stehen.
+        if (recordingWarning.indexOf("Anruferdaten") === 0) recordingWarning = "";
+      }
       return lastDetails;
     }
 
@@ -217,6 +269,7 @@
         if (publicStatus !== STATUS.ENDED) endedAt = Date.now();
         publicStatus = STATUS.ENDED;
         graceUntil = 0;
+        missingRingTicks = 0;
         const details = readCallDetails(text, STATUS.ENDED);
         // Anruferdaten vom Gespräch behalten, falls der End-Screen sie nicht
         // mehr vollständig anzeigt.
@@ -233,10 +286,24 @@
     }
 
     // Keine Call-Marker sichtbar.
+    // Laufendes Gespräch: zeitbasierte Schonfrist gegen DOM-Flackern (der
+    // Bearbeiter kann während des Gesprächs den Tab wechseln, die Marker sind
+    // dann minutenlang weg, ohne dass der Anruf endet).
     if (publicStatus === STATUS.CONNECTED) {
       if (!graceUntil) graceUntil = Date.now() + CONNECTED_GRACE_MS;
       if (Date.now() < graceUntil) {
         return { ...(lastDetails || {}), status: STATUS.CONNECTED };
+      }
+    }
+    // Klingel-Phase: ein einzelner leerer Tick ist meist nur eine
+    // timio-Neuzeichnung. Erst nach RINGING_TOLERANCE_TICKS aufeinanderfolgenden
+    // leeren Ticks gilt der Anruf als abgebrochen — sonst würde der nächste Tick
+    // mit erneut sichtbarem "Eingehender Anruf" eine NEUE callId minten und eine
+    // verwaiste/doppelte calls-Zeile erzeugen (Bug B).
+    if (publicStatus === STATUS.RINGING) {
+      missingRingTicks += 1;
+      if (missingRingTicks < RINGING_TOLERANCE_TICKS) {
+        return { ...(lastDetails || {}), status: STATUS.RINGING };
       }
     }
     if (!wasIdle) idleDismissed = false;
@@ -254,6 +321,9 @@
     }
     publicStatus = STATUS.IDLE;
     graceUntil = 0;
+    missingRingTicks = 0;
+    noFieldTicks = 0;
+    recordingWarning = "";
     lastDetails = null;
     connectedAt = null;
     callId = null;
@@ -305,6 +375,32 @@
   let dbCallId = null;
   let callStartedForId = null;
   let callEndedForId = null;
+
+  // Bug C: sichtbares Warnsignal, wenn ein Anruf nicht erfasst werden konnte
+  // (startCall fehlgeschlagen) oder wenn die timio-Selektoren offenbar nicht
+  // mehr greifen (verbunden, aber weder Kundennummer noch Rufnummer lesbar).
+  // Leerer String = kein Hinweis. Wird beim Idle-Reset wieder geleert.
+  let recordingWarning = "";
+  let noFieldTicks = 0;
+  const SELECTOR_WARN_TICKS = (CONFIG.call && CONFIG.call.selectorWarnTicks) || 4;
+
+  // Aktuelle Schicht/Kampagne des eingeloggten Agenten (Outbound-Umbau,
+  // Migration 019/020). Wird einmalig geladen und liefert die campaign_id, die
+  // beim Gesprächsabschluss am calls-Datensatz landet (Kampagnen-Auswertung im
+  // Team-Dashboard). null, solange nichts geladen/hinterlegt ist.
+  let shiftState = { campaignId: null, callType: null };
+  async function loadShift() {
+    if (!supabaseClient) return;
+    try {
+      const res = await supabaseClient.fetchCurrentShift();
+      if (res && res.ok && res.data) {
+        shiftState = { campaignId: res.data.campaignId || null, callType: res.data.callType || null };
+      }
+    } catch (error) {
+      // Best-effort: ohne Schicht bleibt campaignId null, der Abschluss
+      // funktioniert weiterhin, nur ohne Kampagnen-Zuordnung.
+    }
+  }
 
   // Abschluss-Panel (Stufe 3, KONZEPT-INTEGRATION.md): { callId, entryType:
   // "notiz"|"lead"|"vertrag"|"tarifwechsel", fields, status: "idle"|"saving"|
@@ -396,8 +492,26 @@
       // Anruf ist inzwischen vorbei oder ein neuer hat begonnen — die
       // zurückkommende ID gehört dann nicht mehr zum aktuellen Gespräch.
       if (stopped || callId !== startedCallId) return;
-      if (res.ok) dbCallId = res.id;
-    }).catch(() => {});
+      if (res.ok) {
+        dbCallId = res.id;
+        recordingWarning = "";
+      } else {
+        // Bug C: schlägt startCall fehl, blieb dbCallId früher stillschweigend
+        // null — maybeEndCall no-opt dann, der Anruf landet nie in der Historie,
+        // ohne jedes sichtbare Signal. Jetzt bekommt der Bearbeiter einen
+        // klaren Hinweis, statt dass Anrufe unbemerkt verschwinden.
+        recordingWarning = res.reason === "not-logged-in"
+          ? "Nicht bei Supabase angemeldet – dieser Anruf wird gerade nicht in der Historie erfasst."
+          : "Dieser Anruf konnte nicht in der Historie gespeichert werden (Verbindungsproblem).";
+        lastOverlaySignature = null;
+        renderOverlay(lastDetails || { status: STATUS.IDLE });
+      }
+    }).catch((error) => {
+      if (stopped || callId !== startedCallId) return;
+      recordingWarning = "Dieser Anruf konnte nicht in der Historie gespeichert werden (Verbindungsproblem).";
+      lastOverlaySignature = null;
+      renderOverlay(lastDetails || { status: STATUS.IDLE });
+    });
   }
 
   // Schließt die Anruf-Zeile ab, sobald der "Beendet"-Screen eine feste
@@ -587,10 +701,27 @@
         createdAt: Date.now()
       }
     });
+    // Gesprächsergebnis auf den calls-Datensatz schreiben (Migration 021):
+    // die strukturierte disposition + Kampagne fürs Team-Dashboard. Nur bei
+    // Ergebnissen mit disposition und einem bereits angelegten Anruf (dbCallId);
+    // Kündigungsgrund folgt ggf. beim Abschluss (submitCloseout, needsReason).
+    if (outcome.disposition && dbCallId && supabaseClient) {
+      supabaseClient.patchCallDisposition(dbCallId, {
+        disposition: outcome.disposition,
+        campaignId: shiftState.campaignId || undefined
+      }).catch(() => {});
+    }
     // "Ergebnis festhalten" öffnet für Optionen mit echtem Gesprächsinhalt
     // zusätzlich das Abschluss-Panel — das ist das "fehlende Ziel" des
-    // Staffelstabs (KONZEPT-INTEGRATION.md, Stufe 3).
-    if (outcome.opensPanel) openCloseout("notiz", call, outcome.seed);
+    // Staffelstabs (KONZEPT-INTEGRATION.md, Stufe 3). needsReason (Kündigung)
+    // blendet dort zusätzlich das Kündigungsgrund-Feld ein.
+    if (outcome.opensPanel) {
+      openCloseout("notiz", call, outcome.seed);
+      if (closeoutState && closeoutState.callId === callId) {
+        closeoutState.disposition = outcome.disposition || null;
+        closeoutState.needsReason = Boolean(outcome.needsReason);
+      }
+    }
     lastOverlaySignature = null;
     renderOverlay(call);
   }
@@ -639,7 +770,10 @@
       newProduct: "",
       changeDate: todayIso(),
       notes: "",
-      jiraTicket: ticketKey
+      jiraTicket: ticketKey,
+      // Kündigungsgrund (Migration 021) — nur relevant, wenn die gewählte
+      // Ergebnis-Option „gekündigt" war (closeoutState.needsReason).
+      cancellationReason: ""
     };
   }
 
@@ -726,6 +860,20 @@
     else if (entryType === "vertrag") res = await supabaseClient.insertContract(fields);
     else if (entryType === "tarifwechsel") res = await supabaseClient.insertTariffChange(fields);
     else return;
+
+    // Kündigungsgrund nachtragen (Migration 021): war das Ergebnis „gekündigt",
+    // wird der im Panel erfasste Grund zusätzlich auf den calls-Datensatz
+    // geschrieben. Best-effort, unabhängig vom Erfolg des CRM-Eintrags.
+    if (closeoutState && closeoutState.needsReason && dbCallId && supabaseClient) {
+      const reason = (fields.cancellationReason || "").trim();
+      if (reason) {
+        supabaseClient.patchCallDisposition(dbCallId, {
+          disposition: closeoutState.disposition || "gekuendigt",
+          cancellationReason: reason,
+          campaignId: shiftState.campaignId || undefined
+        }).catch(() => {});
+      }
+    }
 
     // Anruf ist inzwischen vorbei oder ein neuer hat begonnen — das Ergebnis
     // gehört dann nicht mehr zum aktuell sichtbaren Panel.
@@ -886,6 +1034,10 @@
           <input type="text" data-role="closeout-customer-number" value="${escapeHtml(fields.customerNumber)}">
         </label>
         ${fieldsMarkup}
+        ${closeoutState && closeoutState.needsReason ? `
+        <label class="tc-closeout-label">Kündigungsgrund
+          <input type="text" data-role="closeout-cancellation-reason" value="${escapeHtml(fields.cancellationReason || "")}" placeholder="z.B. zu teuer, Umzug, Wettbewerber">
+        </label>` : ""}
         <label class="tc-closeout-label">Jira-Ticket
           <input type="text" data-role="closeout-jira-ticket" value="${escapeHtml(fields.jiraTicket)}">
         </label>
@@ -1205,6 +1357,7 @@
           ${headButtons}
         </div>
         <div class="tc-body">
+          ${recordingWarning ? `<p class="tc-recording-warning">⚠ ${escapeHtml(recordingWarning)}</p>` : ""}
           <div class="tc-caller">
             <strong>${escapeHtml(nameLine)}</strong>
             ${subLine ? `<p>${escapeHtml(subLine)}</p>` : ""}
@@ -1386,6 +1539,7 @@
       case "closeout-topic": f.topic = value; break;
       case "closeout-notes": f.notes = value; break;
       case "closeout-jira-ticket": f.jiraTicket = value; break;
+      case "closeout-cancellation-reason": f.cancellationReason = value; break;
       case "closeout-old-product": f.oldProduct = value; break;
       case "closeout-new-product": f.newProduct = value; break;
       case "closeout-followup-date": f.followUpDate = value; break;
@@ -1558,6 +1712,10 @@
   // Befehlspalette: einmalig registriert, unabhängig vom Call-Cockpit-Overlay
   // (dessen eigene Listener erst beim ersten Rendern des Overlays entstehen).
   document.addEventListener("keydown", onGlobalKeydown);
+
+  // Schicht/Kampagne einmalig laden (best-effort, für die Kampagnen-Zuordnung
+  // beim Gesprächsabschluss).
+  loadShift();
 
   intervalId = window.setInterval(tick, POLL_MS);
   tick();

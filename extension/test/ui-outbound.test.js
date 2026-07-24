@@ -44,28 +44,46 @@ async function run() {
     assert.ok(env.html().includes('data-action="generate-call-prep"'), "die Gesprächsvorbereitung steht im Vorbereitungs-Tab");
   }
 
-  // --- Outbound-Leitfaden und Einwandkarten --------------------------------
+  // --- Leitfaden und Einwandkarten (Standard: Churn) -----------------------
   {
     const { env, CONFIG } = await mountPanel();
     const escapeHtml = env.sandbox.StadtnetzCRM.shared.escapeHtml;
     env.click("switch-tab", { tab: "talk" });
 
-    assert.ok(env.html().includes(escapeHtml(CONFIG.callGuides.outbound[0].title)), "der Outbound-Leitfaden steht im Gespräch-Tab");
-    assert.ok(env.html().includes(escapeHtml(CONFIG.objectionCards.outbound[0].title)), "auch die Einwandkarten sind da");
+    // Ohne geladene Schicht ist der Call-Typ der Standard „churn".
+    assert.ok(env.html().includes(escapeHtml(CONFIG.callGuides.churn[0].title)), "der Churn-Leitfaden steht im Gespräch-Tab");
+    assert.ok(env.html().includes(escapeHtml(CONFIG.objectionCards.churn[0].title)), "auch die Churn-Einwandkarten sind da");
   }
 
-  // --- Kopier-Buttons greifen in den Outbound-Leitfaden --------------------
+  // --- Umschalten auf Welcome tauscht Leitfaden & Karten -------------------
+  {
+    const { env, CONFIG } = await mountPanel();
+    const escapeHtml = env.sandbox.StadtnetzCRM.shared.escapeHtml;
+    env.click("switch-tab", { tab: "talk" });
+    env.click("set-call-type", { callType: "welcome" });
+
+    assert.ok(env.html().includes(escapeHtml(CONFIG.callGuides.welcome[0].title)), "nach dem Umschalten steht der Welcome-Leitfaden da");
+    assert.ok(env.html().includes(escapeHtml(CONFIG.objectionCards.welcome[0].title)), "und die Welcome-Einwandkarten");
+    // Welcome rendert die Checkliste inkl. Fortschrittsanzeige.
+    assert.ok(env.html().includes("von") && env.html().includes("Punkten erledigt"), "die Checklisten-Fortschrittsanzeige ist sichtbar");
+
+    // Ein Punkt abhaken erhöht den Fortschritt.
+    env.click("toggle-phase", { phaseIndex: "0" });
+    assert.ok(env.html().includes("1 von"), "ein abgehakter Punkt zählt im Fortschritt mit");
+  }
+
+  // --- Kopier-Buttons greifen in den aktiven Leitfaden ---------------------
   {
     const { env, CONFIG } = await mountPanel();
     env.click("switch-tab", { tab: "talk" });
 
     env.click("copy-call-phase", { phaseIndex: "0" });
     await new Promise((resolve) => setImmediate(resolve));
-    assert.strictEqual(env.copied.slice(-1)[0], CONFIG.callGuides.outbound[0].prompt, "kopiert wird der Outbound-Gesprächsbaustein");
+    assert.strictEqual(env.copied.slice(-1)[0], CONFIG.callGuides.churn[0].prompt, "kopiert wird der Churn-Gesprächsbaustein");
 
     env.click("copy-objection", { objectionIndex: "0" });
     await new Promise((resolve) => setImmediate(resolve));
-    assert.strictEqual(env.copied.slice(-1)[0], CONFIG.objectionCards.outbound[0].text, "dasselbe gilt für die Einwandkarten");
+    assert.strictEqual(env.copied.slice(-1)[0], CONFIG.objectionCards.churn[0].text, "dasselbe gilt für die Einwandkarten");
   }
 
   // --- Rückrufliste ---------------------------------------------------------
@@ -135,6 +153,33 @@ async function run() {
     assert.strictEqual(items[0].phone, "+49 176 34573586", "die Rufnummer aus dem Gespräch wird übernommen");
     // Der Staffelstab enthält Anrufdaten und wird nach der Übernahme entfernt.
     assert.ok(!env.storage[KEYS.callOutcome], "der Staffelstab wird nach der Übernahme wieder aufgeräumt");
+  }
+
+  // --- Bug D: Remount dupliziert die Listener nicht -------------------------
+  // content.js baut das Panel bei jeder Jira-Navigation ab (removePanel) und
+  // beim Zurückkehren neu auf (mount). Früher registrierte jeder mount einen
+  // weiteren storage.onChanged-Listener, sodass ein einzelnes in timio
+  // geklicktes Ergebnis applyOutcome N-fach feuerte (doppelter Notiztext,
+  // hochgezählte Rückrufe). Jetzt gilt: egal wie oft neu gemountet wird, ein
+  // Ergebnis wird genau einmal verarbeitet.
+  {
+    const { env, KEYS } = await mountPanel();
+    const ui = env.sandbox.StadtnetzCRM.ui;
+
+    // Zwei Board→Ticket-Zyklen simulieren: Root entfernen und neu mounten.
+    env.root().remove();
+    await ui.mount();
+    env.root().remove();
+    await ui.mount();
+
+    // Ein einziges Ergebnis aus timio (Staffelstab über den Storage).
+    env.sandbox.chrome.storage.local.set({
+      [KEYS.callOutcome]: { outcomeId: "not-reached", callerNumber: "+49 176 34573586", customerNumber: "287246", createdAt: Date.now() }
+    });
+
+    const items = (env.storage[KEYS.callbacks] || {}).items || [];
+    assert.strictEqual(items.length, 1, "trotz mehrfachem Remount entsteht genau eine Wiedervorlage (kein Duplikat)");
+    assert.strictEqual(items[0].attempts, 1, "der Versuchszähler wird nur einmal erhöht (applyOutcome lief genau einmal)");
   }
 
   // --- Kundennummer-Suche ---------------------------------------------------

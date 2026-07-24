@@ -1,6 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { callVolumeStats, linkCallsToOutcomes, conversionStats } from './callStats';
+import {
+  callVolumeStats,
+  linkCallsToOutcomes,
+  conversionStats,
+  saveRateStats,
+  cancellationReasonBreakdown,
+  campaignPerformance,
+  dispositionBreakdown,
+} from './callStats';
 import { makeCall, makeContract, makeTariff, makeLead, makeNote } from '../test/fixtures';
+import type { Campaign } from '../types';
+
+const makeCampaign = (over: Partial<Campaign> = {}): Campaign => ({
+  id: 'camp-1',
+  name: 'Kündiger Q3',
+  callType: 'churn',
+  active: true,
+  createdAt: '2024-06-01T00:00:00.000Z',
+  ...over,
+});
 
 describe('callVolumeStats', () => {
   it('zählt Anrufe ohne agentKey über alle Mitarbeiter:innen', () => {
@@ -145,5 +163,91 @@ describe('conversionStats', () => {
     const stats = conversionStats(links);
     expect(stats.conversionPct).toBe(0);
     expect(stats.avgMinutesToOutcome).toBeNull();
+  });
+});
+
+describe('saveRateStats', () => {
+  it('berechnet die Save-Rate nur aus gehalten vs. gekündigt', () => {
+    const calls = [
+      makeCall({ disposition: 'gehalten' }),
+      makeCall({ disposition: 'gehalten' }),
+      makeCall({ disposition: 'gekuendigt' }),
+      makeCall({ disposition: 'rueckruf' }), // zählt nicht in die Quote
+      makeCall({ disposition: undefined }), // ohne Ergebnis, ignoriert
+    ];
+    const s = saveRateStats(calls);
+    expect(s.saved).toBe(2);
+    expect(s.cancelled).toBe(1);
+    expect(s.saveRatePct).toBe(67); // 2 / 3 gerundet
+  });
+
+  it('liefert null statt NaN ohne entschiedene Fälle', () => {
+    const s = saveRateStats([makeCall({ disposition: 'rueckruf' })]);
+    expect(s.saveRatePct).toBeNull();
+  });
+});
+
+describe('cancellationReasonBreakdown', () => {
+  it('zählt Gründe nur bei gekündigten Anrufen, absteigend', () => {
+    const calls = [
+      makeCall({ disposition: 'gekuendigt', cancellationReason: 'Zu teuer' }),
+      makeCall({ disposition: 'gekuendigt', cancellationReason: 'Zu teuer' }),
+      makeCall({ disposition: 'gekuendigt', cancellationReason: 'Umzug' }),
+      makeCall({ disposition: 'gehalten', cancellationReason: 'sollte ignoriert werden' }),
+    ];
+    const rows = cancellationReasonBreakdown(calls);
+    expect(rows).toEqual([
+      { reason: 'Zu teuer', count: 2 },
+      { reason: 'Umzug', count: 1 },
+    ]);
+  });
+
+  it('bündelt leere Gründe als „Ohne Angabe"', () => {
+    const rows = cancellationReasonBreakdown([
+      makeCall({ disposition: 'gekuendigt', cancellationReason: '  ' }),
+      makeCall({ disposition: 'gekuendigt', cancellationReason: undefined }),
+    ]);
+    expect(rows).toEqual([{ reason: 'Ohne Angabe', count: 2 }]);
+  });
+});
+
+describe('campaignPerformance', () => {
+  it('gruppiert nach Kampagne und rechnet Save-Rate + Ø-Dauer', () => {
+    const camp = makeCampaign({ id: 'camp-1', name: 'Kündiger Q3' });
+    const calls = [
+      makeCall({ campaignId: 'camp-1', disposition: 'gehalten', durationS: 100 }),
+      makeCall({ campaignId: 'camp-1', disposition: 'gekuendigt', durationS: 300 }),
+      makeCall({ campaignId: undefined, disposition: 'gehalten', durationS: 999 }), // ohne Kampagne, ignoriert
+    ];
+    const rows = campaignPerformance(calls, [camp]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      campaignId: 'camp-1',
+      campaignName: 'Kündiger Q3',
+      callType: 'churn',
+      totalCalls: 2,
+      saved: 1,
+      cancelled: 1,
+      saveRatePct: 50,
+      avgDurationS: 200,
+    });
+  });
+
+  it('kennzeichnet Anrufe einer gelöschten Kampagne als unbekannt', () => {
+    const rows = campaignPerformance([makeCall({ campaignId: 'weg' })], []);
+    expect(rows[0].campaignName).toBe('Unbekannte Kampagne');
+  });
+});
+
+describe('dispositionBreakdown', () => {
+  it('zählt gesetzte Dispositionen, ignoriert leere', () => {
+    const rows = dispositionBreakdown([
+      makeCall({ disposition: 'gehalten' }),
+      makeCall({ disposition: 'gehalten' }),
+      makeCall({ disposition: 'gekuendigt' }),
+      makeCall({ disposition: undefined }),
+    ]);
+    expect(rows[0]).toEqual({ disposition: 'gehalten', count: 2 });
+    expect(rows).toHaveLength(2);
   });
 });

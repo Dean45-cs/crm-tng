@@ -42,6 +42,8 @@ const IncentiveManager = lazy(() => import('./pages/IncentiveManager').then((m) 
 const Leads = lazy(() => import('./pages/Leads').then((m) => ({ default: m.Leads })));
 const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m.AuditLog })));
 const NettoRechner = lazy(() => import('./pages/NettoRechner').then((m) => ({ default: m.NettoRechner })));
+const Schedule = lazy(() => import('./pages/Schedule').then((m) => ({ default: m.Schedule })));
+const CampaignManager = lazy(() => import('./pages/CampaignManager').then((m) => ({ default: m.CampaignManager })));
 
 const TITLES: Record<RouteName, string> = {
   dashboard: 'Dashboard',
@@ -62,6 +64,8 @@ const TITLES: Record<RouteName, string> = {
   leads: 'Leads',
   auditlog: 'Audit-Log',
   netto: 'Netto-Rechner',
+  schedule: 'Schichtplan',
+  campaignmanager: 'Kampagnen-Verwaltung',
 };
 
 function PageFallback() {
@@ -101,6 +105,8 @@ function prefetchAllPages() {
       import('./pages/Leads'),
       import('./pages/AuditLog'),
       import('./pages/NettoRechner'),
+      import('./pages/Schedule'),
+      import('./pages/CampaignManager'),
     ]);
   });
 }
@@ -171,6 +177,8 @@ function Shell() {
               {route.name === 'leads' && <Leads />}
               {route.name === 'auditlog' && <AuditLog />}
               {route.name === 'netto' && <NettoRechner />}
+              {route.name === 'schedule' && <Schedule />}
+              {route.name === 'campaignmanager' && <CampaignManager />}
             </Suspense>
           </div>
         </div>

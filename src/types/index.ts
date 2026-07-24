@@ -125,6 +125,9 @@ export interface Customer {
   createdBy?: string;
 }
 
+/** Gesprächsergebnis, vom Abschluss-Panel der Extension gesetzt (Migration 021) */
+export type CallDisposition = 'gehalten' | 'gekuendigt' | 'rueckruf' | 'kein-interesse' | 'sonstige';
+
 /** Anruf-Historie (Migration 018) – von der Extension automatisch geschrieben */
 export interface Call {
   id: string;
@@ -137,6 +140,42 @@ export interface Call {
   endedAt?: string;
   durationS?: number;
   agentId: string;
+  /** Gesprächsergebnis (Migration 021) */
+  disposition?: CallDisposition;
+  /** Nur sinnvoll befüllt bei disposition === 'gekuendigt' */
+  cancellationReason?: string;
+  /** Kampagne, die zum Zeitpunkt des Anrufs lief (Migration 021) */
+  campaignId?: string;
+}
+
+// ============================================================================
+// KAMPAGNEN & SCHICHTPLAN — Outbound-Umbau
+// ============================================================================
+
+/** Bestimmt in der Extension automatisch Skript & Einwandkarten. */
+export type CampaignCallType = 'churn' | 'welcome' | 'other';
+
+/** Fester, vom Chef gepflegter Kampagnen-Katalog (Migration 019). */
+export interface Campaign {
+  id: string;
+  name: string;
+  callType: CampaignCallType;
+  active: boolean;
+  createdBy?: string;
+  createdAt: string;
+}
+
+export type ShiftType = 'frueh' | 'spaet' | 'frei';
+
+/** Ein Tag im geteilten Wochen-Schichtplan (Migration 020). */
+export interface Shift {
+  id: string;
+  userId: string;
+  shiftDate: string;
+  shiftType: ShiftType;
+  campaignId?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Wer einen Kunden besitzt und mit wem er geteilt wird */

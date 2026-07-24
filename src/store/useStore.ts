@@ -13,6 +13,7 @@ import type {
   Lead,
   LeadActivity,
   CustomerAccessRequest,
+  Campaign,
 } from '../types';
 import { useAuth } from './useAuth';
 import { useCalls } from './useCalls';
@@ -42,6 +43,9 @@ import {
   insertIncentive,
   updateIncentiveRow,
   deleteIncentiveRow,
+  fetchCampaigns,
+  insertCampaign,
+  updateCampaignRow,
   fetchLeads,
   insertLead,
   updateLeadRow,
@@ -111,6 +115,8 @@ interface StoreState {
   settings: Settings;
   customerOwners: Record<string, CustomerOwnership>;
   incentives: Incentive[];
+  /** Fester Kampagnen-Katalog (Migration 019) — bestimmt in der Extension Skript & Einwandkarten. */
+  campaigns: Campaign[];
   leads: Lead[];
   /** Aktivitäten pro Lead, absteigend nach created_at */
   leadActivities: Record<string, LeadActivity[]>;
@@ -157,6 +163,9 @@ interface StoreState {
   addIncentive: (i: Omit<Incentive, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateIncentive: (id: string, i: Partial<Incentive>) => Promise<void>;
   deleteIncentive: (id: string) => Promise<void>;
+
+  addCampaign: (c: Omit<Campaign, 'id' | 'createdAt'>) => Promise<void>;
+  updateCampaign: (id: string, c: Partial<Campaign>) => Promise<void>;
 
   addLead: (l: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateLead: (id: string, l: Partial<Lead>) => Promise<void>;
@@ -206,6 +215,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   customers: [],
   customerOwners: {},
   incentives: [],
+  campaigns: [],
   leads: [],
   leadActivities: {},
   accessRequests: [],
@@ -215,7 +225,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   loadAll: async () => {
     const uid = useAuth.getState().currentUserKey;
     try {
-      const [contracts, tariffChanges, notes, owners, incentives, leads, activities, accessRequests, customers, settingsRes] = await Promise.all([
+      const [contracts, tariffChanges, notes, owners, incentives, campaigns, leads, activities, accessRequests, customers, settingsRes] = await Promise.all([
         fetchContracts(),
         fetchTariffChanges(),
         fetchNotes(),
@@ -223,6 +233,8 @@ export const useStore = create<StoreState>()((set, get) => ({
         // Fehlt die Tabelle noch (Migration 003 nicht eingespielt), darf das
         // nicht den ganzen Datenload abbrechen — dann eben keine Incentives.
         fetchIncentives().catch(() => [] as Incentive[]),
+        // Ebenso für Kampagnen (Migration 019).
+        fetchCampaigns().catch(() => [] as Campaign[]),
         // Ebenso für Leads (Migration 005).
         fetchLeads().catch(() => [] as Lead[]),
         // Lead-Aktivitäten (Migration 006).
@@ -280,6 +292,7 @@ export const useStore = create<StoreState>()((set, get) => ({
         customers,
         customerOwners: owners,
         incentives,
+        campaigns,
         leads,
         leadActivities,
         accessRequests,
@@ -300,6 +313,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       customers: [],
       customerOwners: {},
       incentives: [],
+      campaigns: [],
       leads: [],
       leadActivities: {},
       accessRequests: [],
@@ -326,6 +340,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     });
     const reloadIncentives = debounce(() => {
       fetchIncentives().then((rows) => set({ incentives: rows })).catch(() => {});
+    });
+    const reloadCampaigns = debounce(() => {
+      fetchCampaigns().then((rows) => set({ campaigns: rows })).catch(() => {});
     });
     const reloadLeads = debounce(() => {
       fetchLeads().then((rows) => set({ leads: rows })).catch(() => {});
@@ -356,6 +373,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, reloadNotes)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_ownerships' }, reloadOwners)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incentives' }, reloadIncentives)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'campaigns' }, reloadCampaigns)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, reloadLeads)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_activities' }, reloadActivities)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_access_requests' }, reloadAccessRequests)
@@ -686,6 +704,27 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (e) {
       fail('Löschen fehlgeschlagen – Incentive wiederhergestellt.', e);
       set({ incentives: prev });
+    }
+  },
+
+  addCampaign: async (c) => {
+    try {
+      const created = await insertCampaign({ ...c, createdBy: c.createdBy ?? currentUserKey() });
+      set((s) => ({ campaigns: [created, ...s.campaigns] }));
+      toast.success('Kampagne erstellt.');
+    } catch (e) {
+      fail('Kampagne konnte nicht erstellt werden.', e);
+    }
+  },
+  updateCampaign: async (id, c) => {
+    const prev = get().campaigns;
+    set({ campaigns: prev.map((x) => (x.id === id ? { ...x, ...c } : x)) });
+    try {
+      await updateCampaignRow(id, c);
+      toast.success('Kampagne aktualisiert.');
+    } catch (e) {
+      fail('Änderung fehlgeschlagen – Kampagne wurde zurückgesetzt.', e);
+      set({ campaigns: prev });
     }
   },
 

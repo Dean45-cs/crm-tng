@@ -45,13 +45,50 @@ create table if not exists public.customers (
 create index if not exists idx_customers_last_contact on public.customers(last_contact_at desc);
 
 -- ------------------------------------------------------------
+-- CAMPAIGNS
+-- ------------------------------------------------------------
+-- Fester, vom Chef gepflegter Kampagnen-Katalog (Migration 019,
+-- Outbound-Umbau). call_type bestimmt in der Extension automatisch Skript
+-- und Einwandkarten (siehe extension/src/config.js).
+-- ------------------------------------------------------------
+create table if not exists public.campaigns (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  call_type text not null check (call_type in ('churn', 'welcome', 'other')),
+  active boolean not null default true,
+  created_at timestamptz default now(),
+  created_by uuid references public.users(id) on delete set null
+);
+
+-- ------------------------------------------------------------
+-- SHIFTS
+-- ------------------------------------------------------------
+-- Wochenraster Früh/Spät/frei je Agent:in und Tag, optional mit
+-- Kampagnen-Zuordnung (Migration 020). Für alle aktiven Nutzer lesbar
+-- (geteilter Plan), Schreiben bleibt Chef-Sache — siehe RLS unten.
+-- ------------------------------------------------------------
+create table if not exists public.shifts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  shift_date date not null,
+  shift_type text not null check (shift_type in ('frueh', 'spaet', 'frei')),
+  campaign_id uuid references public.campaigns(id) on delete set null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (user_id, shift_date)
+);
+create index if not exists idx_shifts_date on public.shifts(shift_date);
+create index if not exists idx_shifts_user_date on public.shifts(user_id, shift_date);
+
+-- ------------------------------------------------------------
 -- CALLS
 -- ------------------------------------------------------------
 -- Anruf-Historie (Migration 018): von der Stadtnetz-CRM-Copilot-Extension über
 -- ihre eigene Supabase-Session automatisch geschrieben. customer_number ist
--- nullable — nicht jeder Anrufer ist zuzuordnen. outcome/note/jira_ticket
--- sind für Stufe 3 vorgesehen (gemeinsame Erfassung am Gesprächsende) und
--- werden hier nur als Spalten angelegt.
+-- nullable — nicht jeder Anrufer ist zuzuordnen. disposition/cancellation_reason/
+-- campaign_id (Migration 021) werden vom Abschluss-Panel der Extension am
+-- Gesprächsende gesetzt und tragen die Save-Rate-/Kündigungsgrund-Auswertung
+-- im Team-Dashboard (siehe src/lib/callStats.ts).
 -- ------------------------------------------------------------
 create table if not exists public.calls (
   id uuid primary key default gen_random_uuid(),
@@ -67,12 +104,17 @@ create table if not exists public.calls (
   outcome text,
   note text,
   jira_ticket text,
+  disposition text check (disposition in ('gehalten', 'gekuendigt', 'rueckruf', 'kein-interesse', 'sonstige')),
+  cancellation_reason text,
+  campaign_id uuid references public.campaigns(id) on delete set null,
   created_at timestamptz not null default now()
 );
 create index if not exists idx_calls_customer on public.calls(customer_number);
 create index if not exists idx_calls_agent on public.calls(agent_id);
 create index if not exists idx_calls_started on public.calls(started_at desc);
 create index if not exists idx_calls_active on public.calls(started_at) where ended_at is null;
+create index if not exists idx_calls_campaign on public.calls(campaign_id);
+create index if not exists idx_calls_disposition on public.calls(disposition);
 
 -- ------------------------------------------------------------
 -- CONTRACTS
@@ -535,6 +577,28 @@ create policy "calls update own or manager" on public.calls
 create policy "calls delete manager" on public.calls
   for delete using (public.auth_is_manager());
 
+-- CAMPAIGNS: alle aktiven Nutzer lesen (Extension braucht sie fürs
+-- Call-Typ-Routing, Agenten sehen sie im Schichtplan). Schreiben nur Chefs.
+create policy "campaigns read all" on public.campaigns
+  for select using (public.auth_is_active());
+create policy "campaigns insert manager" on public.campaigns
+  for insert with check (public.auth_is_manager());
+create policy "campaigns update manager" on public.campaigns
+  for update using (public.auth_is_manager());
+create policy "campaigns delete manager" on public.campaigns
+  for delete using (public.auth_is_manager());
+
+-- SHIFTS: alle aktiven Nutzer lesen den kompletten Plan (geteilte Ansicht,
+-- kein user_id = auth.uid()-Filter). Schreiben/Ändern/Löschen nur Chefs.
+create policy "shifts read all" on public.shifts
+  for select using (public.auth_is_active());
+create policy "shifts insert manager" on public.shifts
+  for insert with check (public.auth_is_manager());
+create policy "shifts update manager" on public.shifts
+  for update using (public.auth_is_manager());
+create policy "shifts delete manager" on public.shifts
+  for delete using (public.auth_is_manager());
+
 -- CONTRACTS / TARIFF / NOTES: aktive Nutzer lesen alles.
 -- Bearbeiten/Löschen nur, wenn der User den Datensatz selbst erfasst hat,
 -- Owner/Co-Owner des zugehörigen Kunden ODER ein Chef (role = 'manager') ist.
@@ -789,3 +853,5 @@ alter publication supabase_realtime add table public.audit_log;
 alter publication supabase_realtime add table public.customer_access_requests;
 alter publication supabase_realtime add table public.user_status;
 alter publication supabase_realtime add table public.status_log;
+alter publication supabase_realtime add table public.campaigns;
+alter publication supabase_realtime add table public.shifts;

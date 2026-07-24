@@ -401,6 +401,101 @@ async function runTicketSummaryNote() {
   console.log("supabase.test.js (upsertTicketSummaryNote): alle Szenarien bestanden.");
 }
 
+// Bug E: ensureFreshSession() darf bei parallelen Aufrufen mit abgelaufener
+// Session nur EINEN Refresh-Request auslösen. Sonst löst der zweite Aufruf den
+// bereits rotierten Refresh-Token ein, scheitert und ruft clearSession() auf —
+// und löscht damit die Session, die der erste gerade frisch gespeichert hat.
+async function runRefreshMutex() {
+  const env = makeSandbox();
+  loadScripts(env.sandbox, ["src/config.js", "src/shared.js", "src/supabase.js"]);
+  const sb = env.sandbox.StadtnetzCRM.supabaseClient;
+  const CONFIG = env.sandbox.StadtnetzCRM.CONFIG;
+
+  env.storage[CONFIG.storageKeys.settings] = { supabaseUrl: "https://x.supabase.co", supabaseAnonKey: "anon-key" };
+  // Bereits abgelaufene Session -> ensureFreshSession() muss refreshen.
+  env.storage[CONFIG.storageKeys.supabaseSession] = {
+    accessToken: "at-alt", refreshToken: "rt-alt", expiresAt: Date.now() - 1000, userId: "u1", displayName: "Max"
+  };
+
+  let refreshCalls = 0;
+  env.sandbox.fetch = async (url) => {
+    if (url.includes("/token?")) {
+      refreshCalls += 1;
+      // Der Server rotiert den Token: ein zweiter Aufruf mit demselben alten
+      // Refresh-Token würde in der Realität scheitern. Hier zählen wir nur, wie
+      // oft überhaupt refreshed wird.
+      return {
+        ok: true, status: 200,
+        json: async () => ({ access_token: "at-neu", refresh_token: "rt-neu", expires_in: 3600, user: { id: "u1" } })
+      };
+    }
+    return { ok: false, status: 404, json: async () => ({ message: `unerwartet: ${url}` }) };
+  };
+
+  // Zwei gleichzeitige Aufrufe (wie maybeLookupCustomer + maybeStartCall im
+  // selben Tick).
+  const [a, b] = await Promise.all([sb.ensureFreshSession(), sb.ensureFreshSession()]);
+  assert.strictEqual(refreshCalls, 1, "zwei parallele ensureFreshSession() lösen nur EINEN Refresh aus (Bug E)");
+  assert.ok(a && a.accessToken === "at-neu", "der erste Aufruf bekommt die frische Session");
+  assert.ok(b && b.accessToken === "at-neu", "der zweite Aufruf bekommt dieselbe frische Session, kein null");
+  assert.ok(env.storage[CONFIG.storageKeys.supabaseSession], "die Session bleibt gespeichert, wird nicht durch einen Wettlauf gelöscht");
+
+  // Ein späterer Aufruf mit der jetzt gültigen Session refresht nicht erneut.
+  await sb.ensureFreshSession();
+  assert.strictEqual(refreshCalls, 1, "eine gültige Session löst keinen weiteren Refresh aus");
+
+  console.log("supabase.test.js (ensureFreshSession-Mutex): alle Szenarien bestanden.");
+}
+
+// fetchCurrentShift() — die heutige Schicht+Kampagne des Agenten fürs
+// Call-Typ-Routing (Outbound-Umbau). Prüft URL-Aufbau, Join-Auswertung und
+// sauberes Degradieren ohne Schicht.
+async function runFetchCurrentShift() {
+  function setup(handler) {
+    const env = makeSandbox();
+    loadScripts(env.sandbox, ["src/config.js", "src/shared.js", "src/supabase.js"]);
+    const CONFIG = env.sandbox.StadtnetzCRM.CONFIG;
+    env.storage[CONFIG.storageKeys.settings] = { supabaseUrl: "https://x.supabase.co", supabaseAnonKey: "anon-key" };
+    env.storage[CONFIG.storageKeys.supabaseSession] = {
+      accessToken: "at-1", refreshToken: "rt-1", expiresAt: Date.now() + 3600000, userId: "u1", displayName: "Max"
+    };
+    const calls = [];
+    env.sandbox.fetch = async (url) => { calls.push(url); return handler(url); };
+    return { env, sb: env.sandbox.StadtnetzCRM.supabaseClient, calls };
+  }
+
+  // --- Schicht mit Kampagne -> Call-Typ wird geliefert -----------------------
+  {
+    const { sb, calls } = setup(() => ({
+      ok: true, status: 200,
+      json: async () => [{
+        shift_type: "frueh", shift_date: "2026-07-24", campaign_id: "c1",
+        campaigns: { id: "c1", name: "Kündiger Q3", call_type: "churn", active: true }
+      }]
+    }));
+    const res = await sb.fetchCurrentShift("2026-07-24");
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.data.callType, "churn", "der Call-Typ kommt aus der gejointen Kampagne");
+    assert.strictEqual(res.data.campaignName, "Kündiger Q3");
+    assert.strictEqual(res.data.shiftType, "frueh");
+    assert.ok(calls[0].includes("user_id=eq.u1"), "gefragt wird nach der eigenen Schicht");
+    assert.ok(calls[0].includes("shift_date=eq.2026-07-24"), "für den übergebenen Tag");
+    assert.ok(calls[0].includes("campaigns"), "die Kampagne wird per Embed mitgeladen");
+  }
+
+  // --- Keine Schicht heute -> data ist null, kein Fehler ---------------------
+  {
+    const { sb } = setup(() => ({ ok: true, status: 200, json: async () => [] }));
+    const res = await sb.fetchCurrentShift("2026-07-24");
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.data, null, "ohne Schicht liefert fetchCurrentShift ok:true und data:null (sauberes Degradieren)");
+  }
+
+  console.log("supabase.test.js (fetchCurrentShift): alle Szenarien bestanden.");
+}
+
 run();
 runSearchWorkspace();
 runTicketSummaryNote();
+runRefreshMutex();
+runFetchCurrentShift();

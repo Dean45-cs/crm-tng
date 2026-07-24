@@ -786,6 +786,68 @@
   gap: 6px;
 }
 
+/* Call-Typ-Badge (Churn/Welcome) über dem Leitfaden */
+#stadtnetzcrm-root .sc-calltype {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+#stadtnetzcrm-root .sc-calltype-switch {
+  display: inline-flex;
+  border: 1px solid var(--sc-line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+#stadtnetzcrm-root .sc-calltype-toggle {
+  padding: 4px 12px;
+  border: 0;
+  background: #fff;
+  color: #44546f;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#stadtnetzcrm-root .sc-calltype-toggle.is-active {
+  background: var(--sc-blue);
+  color: #fff;
+}
+#stadtnetzcrm-root .sc-calltype-source {
+  color: #44546f;
+  font-size: 11px;
+}
+#stadtnetzcrm-root .sc-checklist-progress {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sc-blue);
+}
+#stadtnetzcrm-root .sc-checklist-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 7px;
+  border: 1.5px solid var(--sc-line);
+  border-radius: 4px;
+  background: #fff;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  vertical-align: middle;
+}
+#stadtnetzcrm-root .sc-checklist-box.is-checked {
+  background: #34c759;
+  border-color: #34c759;
+}
+#stadtnetzcrm-root .sc-call-phase.is-done summary {
+  color: #6b7a90;
+  text-decoration: line-through;
+}
+
 #stadtnetzcrm-root .sc-call-phase {
   border: 1px solid var(--sc-line);
   border-radius: 7px;

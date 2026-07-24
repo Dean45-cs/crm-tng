@@ -15,6 +15,8 @@ import {
   Download,
   ShieldCheck,
   Calculator,
+  CalendarDays,
+  Megaphone,
 } from 'lucide-react';
 import { useRouter, type Route, type RouteName } from '../router';
 import { useAuth } from '../store/useAuth';
@@ -36,6 +38,7 @@ function buildSections(showChef: boolean): { title: string; items: NavItemDef[] 
         { id: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={16} /> },
         { id: 'incentives', label: 'Incentives', icon: <Gift size={16} /> },
         { id: 'netto', label: 'Netto-Rechner', icon: <Calculator size={16} /> },
+        { id: 'schedule', label: 'Schichtplan', icon: <CalendarDays size={16} /> },
       ],
     },
     {
@@ -62,6 +65,7 @@ function buildSections(showChef: boolean): { title: string; items: NavItemDef[] 
         { id: 'teamdashboard', label: 'Team-Dashboard', icon: <BarChart3 size={16} /> },
         { id: 'teammanager', label: 'Team-Verwaltung', icon: <UsersRound size={16} /> },
         { id: 'incentivemanager', label: 'Incentive-Verwaltung', icon: <Award size={16} /> },
+        { id: 'campaignmanager', label: 'Kampagnen-Verwaltung', icon: <Megaphone size={16} /> },
         { id: 'auditlog', label: 'Audit-Log', icon: <ShieldCheck size={16} /> },
       ],
     });
