@@ -661,13 +661,104 @@ table.crm-table td[style*="text-align: right"] {
 }
 
 /* ---------- Schichtplan ---------- */
-table.schedule-table tr.row-self td:first-child { font-weight: 600; }
+
+/* Werkzeugleiste */
+.schedule-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.schedule-toolbar-spacer { flex: 1 1 auto; }
+.schedule-tools {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--surface-2);
+  border-radius: 10px;
+}
+.schedule-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.schedule-tool:hover { background: var(--bg-card-hover); }
+.schedule-tool.is-active {
+  background: var(--bg-card);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.schedule-tool.tool-frueh.is-active { color: #0088b8; }
+.schedule-tool.tool-spaet.is-active { color: #7c5cf0; }
+.schedule-tool.tool-frei.is-active { color: var(--text-secondary); }
+.schedule-tool.tool-clear.is-active { color: var(--red); }
+.schedule-campaign-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.schedule-campaign-pick select { min-width: 150px; }
+
+/* Tabelle */
+table.schedule-table { table-layout: fixed; }
+table.schedule-table th.schedule-corner { width: 150px; }
+table.schedule-table tr.row-self > th.schedule-agent {
+  font-weight: 700;
+  color: var(--tng-blue);
+}
+.schedule-day {
+  text-align: center;
+  cursor: default;
+  transition: background 0.12s ease;
+}
+.schedule-day-date { font-weight: 400; font-size: 11px; color: var(--text-tertiary); }
+.schedule-day.is-weekend { background: var(--surface-2); }
+.schedule-day.is-today { box-shadow: inset 0 -2px 0 var(--tng-blue); }
+.schedule-day.is-fillable { cursor: pointer; }
+.schedule-day.is-fillable:hover { background: var(--bg-card-hover); }
+.schedule-sum-head { width: 42px; text-align: center; color: var(--text-tertiary); }
+
+th.schedule-agent {
+  text-align: left;
+  font-weight: 600;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+th.schedule-agent.is-fillable { cursor: pointer; }
+th.schedule-agent.is-fillable:hover { background: var(--bg-card-hover); }
+
+.schedule-cell { text-align: center; padding: 3px !important; }
+.schedule-cell.is-weekend { background: rgba(148, 163, 184, 0.05); }
+
+.widget.is-busy { opacity: 0.6; pointer-events: none; }
+
 .shift-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
+  min-height: 44px;
+  justify-content: center;
   padding: 6px 4px;
   border: none;
   background: none;
@@ -676,24 +767,86 @@ table.schedule-table tr.row-self td:first-child { font-weight: 600; }
 }
 .shift-cell.editable { cursor: pointer; }
 .shift-cell.editable:hover { background: var(--bg-card-hover); }
+.shift-cell.paintable:hover { box-shadow: inset 0 0 0 2px var(--tng-blue); }
+.shift-cell .shift-empty {
+  color: var(--text-tertiary);
+  opacity: 0;
+  font-size: 15px;
+  font-weight: 600;
+  transition: opacity 0.12s ease;
+}
+.shift-cell.editable:hover .shift-empty { opacity: 0.55; }
 .shift-badge {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 2px 9px;
   border-radius: 20px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
 }
 .shift-badge-frueh { background: rgba(0, 163, 224, 0.14); color: #0088b8; }
 .shift-badge-spaet { background: rgba(167, 139, 250, 0.16); color: #7c5cf0; }
 .shift-badge-frei { background: rgba(148, 163, 184, 0.16); color: var(--text-tertiary); }
 .shift-campaign {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 10.5px;
-  color: var(--text-tertiary);
-  max-width: 90px;
+  color: var(--text-secondary);
+  max-width: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.shift-campaign-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+/* Besetzungs-Fußzeile */
+tr.schedule-coverage th,
+tr.schedule-coverage td {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  border-top: 2px solid var(--border);
+  background: var(--surface-2);
+}
+tr.schedule-coverage th { text-align: left; font-size: 12px; color: var(--text-secondary); }
+tr.schedule-coverage .cov-frueh { color: #0088b8; font-weight: 700; }
+tr.schedule-coverage .cov-spaet { color: #7c5cf0; font-weight: 700; }
+tr.schedule-coverage .cov-sep { color: var(--text-tertiary); margin: 0 3px; }
+.schedule-sum { text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Legende */
+.schedule-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 12px;
+  padding: 0 2px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.schedule-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.schedule-legend-divider { width: 1px; height: 16px; background: var(--border); }
+.schedule-legend-hint { margin-left: auto; color: var(--text-tertiary); font-size: 11.5px; }
+
+/* Schicht-Auswahl im Detail-Formular */
+.shift-type-choice { display: flex; gap: 8px; }
+.shift-type-btn {
+  flex: 1;
+  padding: 9px 6px;
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-card);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.shift-type-btn.is-active { border-color: currentColor; box-shadow: inset 0 0 0 1px currentColor; }
 
 /* ---------- Badges & chips ---------- */
 .badge {
@@ -3137,7 +3290,7 @@ table.schedule-table tr.row-self td:first-child { font-weight: 600; }
 .share-name {
   font-size: 13.5px;
   font-weight: 500;
-  color: var(--text-primary);
+  color: var(--text);
 }
 .share-status {
   font-size: 11.5px;
