@@ -68,7 +68,12 @@
       // { <Rolle>: "#hex", ... } }. Siehe src/theme.js. Fehlt der Schlüssel,
       // bleibt es beim heutigen Standard (Jira-Theme, keine Overrides) — rein
       // opt-in, bleibt lokal.
-      theme: "stadtnetzCrm.theme"
+      theme: "stadtnetzCrm.theme",
+      // Persönliches Widget-Layout der Tabs: { tabs: { <tabId>: { order: [ids],
+      // hidden: [ids] } } }. Erlaubt, einzelne Abschnitte (Widgets) im Panel
+      // auszublenden und umzusortieren. Fehlt der Schlüssel, gilt die
+      // Standard-Reihenfolge, nichts ausgeblendet — rein opt-in, bleibt lokal.
+      layout: "stadtnetzCrm.layout"
     },
 
     // Cache der KI-Ergebnisse pro Ticket, damit ein bereits besuchtes Ticket

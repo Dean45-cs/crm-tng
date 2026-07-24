@@ -12,7 +12,20 @@
   const AI = CONFIG.ai;
   const localAi = app.localAi;
   const supabaseClient = app.supabaseClient;
-  const themeEngine = app.themeEngine;
+  // theme.js ist eine eigene Datei im Ladepfad (manifest.json / index.html).
+  // Fehlt sie aus irgendeinem Grund (unvollständiges Paket, alter Cache), darf
+  // das NICHT das ganze Panel lahmlegen – ohne diesen Fallback würde mount()
+  // an themeEngine.* werfen und das HUD/Panel bliebe leer. Dann eben ohne
+  // Theme-Anpassung weiterlaufen (Standardfarben aus dem Stylesheet).
+  const themeEngine = app.themeEngine || {
+    ROLE_TO_VAR: {},
+    resolveThemeColors: () => ({}),
+    applyTheme: () => {},
+    normalizeThemeState: (raw) =>
+      (raw && typeof raw === "object" && raw.presetId
+        ? { presetId: raw.presetId, overrides: (raw.overrides && typeof raw.overrides === "object") ? raw.overrides : {} }
+        : { presetId: "jira", overrides: {} })
+  };
   const S = (localAi && localAi.STATUS) || {};
 
   // Auto-Aufräumen der Gesprächsnotizen: erst nach einer Tipppause, nie
@@ -33,6 +46,10 @@
     // Getrennt von state.settings, weil saveSettings() dessen Objekt komplett
     // neu aufbaut statt zu mergen — Theme-Werte würden das nicht überleben.
     theme: { presetId: "jira", overrides: {} },
+    // Widget-Layout der Tabs (Phase 3). `customizeMode` ist der transiente
+    // Bearbeitungsmodus (nicht persistiert). `tabs[tabId]` = { order, hidden }
+    // hält die persönliche Reihenfolge/Sichtbarkeit; leer = Standard.
+    layout: { customizeMode: false, tabs: {} },
     activeCall: null, // Signal von timio-content.js über chrome.storage, siehe currentActiveCall()
     // Arbeitsrichtung ist im reinen Outbound-Betrieb konstant. Der Wert bleibt
     // im State, weil geteilte Helfer (shared.callStatusMeta, callModeMeta) ihn
@@ -154,6 +171,12 @@
 
   function persistTheme() {
     safeLocalSet({ [CONFIG.storageKeys.theme]: state.theme });
+  }
+
+  function persistLayout() {
+    // Nur die persönliche Reihenfolge/Sichtbarkeit sichern, nicht den transienten
+    // Bearbeitungsmodus.
+    safeLocalSet({ [CONFIG.storageKeys.layout]: { tabs: state.layout.tabs } });
   }
 
   // Veröffentlicht das aktuell geöffnete Ticket (inkl. KI-Zusammenfassung)
@@ -1029,11 +1052,13 @@
   // Einwände), der Ein-Klick-Sprung von der Kundennummer zum Ticket und die
   // optionale Netz-Auskunft. timio wählt selbst, also muss das hier fertig
   // stehen, bevor verbunden wird.
-  function renderPrep() {
+  // Ticketkontext als eigenständiges Widget (Phase 3), damit es ein-/ausblendbar
+  // und umsortierbar ist wie die übrigen Prep-Abschnitte.
+  function renderTicketContextWidget() {
     const ticket = state.ticket;
-    const ref = ticket && known(ticket.customerReference) ? ticket.customerReference.trim() : "";
+    if (!ticket) return "";
+    const ref = known(ticket.customerReference) ? ticket.customerReference.trim() : "";
     return `
-      ${renderAiBanner()}
       <section class="sc-section" aria-label="Ticketkontext">
         <div class="sc-issue-heading">
           <span class="sc-ticket-key">${escapeHtml(ticket.key)}</span>
@@ -1050,9 +1075,7 @@
           ${ticketRow("Kundenname", ticket.customerName)}
         </div>
         ${ref ? `<button class="sc-secondary-button" type="button" data-action="search-customer" data-customer="${escapeHtml(ref)}">Ticket zu Kundennummer ${escapeHtml(ref)} suchen</button>` : ""}
-      </section>
-      ${renderCallPrep()}
-      ${renderNetzauskunft()}`;
+      </section>`;
   }
 
   // ---------------------------------------------------------------------------
@@ -1663,16 +1686,6 @@
       </section>`;
   }
 
-  // Tab „Gespräch": Kontext des laufenden Anrufs, Leitfaden + Einwandkarten,
-  // das Mitschreib-Notizfeld (→ lokale KI formuliert die interne Notiz) und die
-  // Ergebnis-Leiste nach dem Auflegen.
-  function renderTalk() {
-    return `
-      ${renderActiveCallCard()}
-      ${renderCallGuide()}
-      ${renderCallDraft()}`;
-  }
-
   // Tab „Abschluss": der CRM-Eintrag zum Gespräch (Notiz/Lead/Vertrag/
   // Tarifwechsel). Ein Gesprächsergebnis mit Inhalt öffnet das Panel
   // automatisch; ohne offenes Panel bieten wir den manuellen Einstieg an.
@@ -1863,6 +1876,7 @@
     state.settings = { ...CONFIG.settingsDefaults };
     state.theme = { presetId: "jira", overrides: {} };
     themeEngine.applyTheme(root(), state.theme);
+    state.layout = { customizeMode: false, tabs: {} };
     state.activeCall = null;
     state.callOverlay = { mode: "full", pos: null, dismissedForCallId: null };
     state.callMode = "outbound";
@@ -1879,12 +1893,147 @@
     toast("Alle lokalen Daten wurden gelöscht.");
   }
 
+  // ---------------------------------------------------------------------------
+  // Widget-Layout (Phase 3): die Tabs „prep" und „talk" bestehen aus mehreren
+  // eigenständigen Abschnitten. Im Anpassen-Modus lassen sie sich ausblenden und
+  // umsortieren. Standard = Reihenfolge unten, nichts ausgeblendet — wer nichts
+  // anpasst, sieht exakt die bisherige Ansicht.
+  // ---------------------------------------------------------------------------
+
+  const WIDGET_REGISTRY = {
+    prep: [
+      { id: "ticket-context", label: "Ticketkontext", render: renderTicketContextWidget },
+      { id: "call-prep", label: "Gesprächsvorbereitung", render: renderCallPrep },
+      { id: "netzauskunft", label: "Netz-Auskunft", render: renderNetzauskunft }
+    ],
+    talk: [
+      { id: "active-call", label: "Aktiver Anruf", render: renderActiveCallCard },
+      { id: "call-guide", label: "Leitfaden & Einwände", render: renderCallGuide },
+      { id: "call-draft", label: "Notizen → interne Notiz", render: renderCallDraft }
+    ]
+  };
+
+  function widgetById(tabId, id) {
+    return (WIDGET_REGISTRY[tabId] || []).find((w) => w.id === id) || null;
+  }
+
+  // Auflösung: gespeicherte Reihenfolge zuerst (nur bekannte Ids), neue Widgets
+  // hinten angehängt, ausgeblendete gefiltert. Robust gegen später entfernte
+  // oder hinzugefügte Widgets.
+  function resolveTabLayout(tabId) {
+    const registry = WIDGET_REGISTRY[tabId] || [];
+    const ids = registry.map((w) => w.id);
+    const stored = state.layout && state.layout.tabs && state.layout.tabs[tabId];
+    const order = [];
+    if (stored && Array.isArray(stored.order)) {
+      stored.order.forEach((id) => { if (ids.indexOf(id) >= 0 && order.indexOf(id) < 0) order.push(id); });
+    }
+    ids.forEach((id) => { if (order.indexOf(id) < 0) order.push(id); });
+    const hidden = (stored && Array.isArray(stored.hidden)) ? stored.hidden.filter((id) => ids.indexOf(id) >= 0) : [];
+    return { order, hidden };
+  }
+
+  function setTabLayout(tabId, next) {
+    state.layout.tabs[tabId] = { order: next.order.slice(), hidden: next.hidden.slice() };
+    persistLayout();
+    render();
+  }
+
+  function moveWidget(tabId, id, dir) {
+    const s = resolveTabLayout(tabId);
+    const i = s.order.indexOf(id);
+    const j = dir === "up" ? i - 1 : i + 1;
+    if (i < 0 || j < 0 || j >= s.order.length) return;
+    const order = s.order.slice();
+    const tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+    setTabLayout(tabId, { order, hidden: s.hidden });
+  }
+
+  function hideWidget(tabId, id) {
+    const s = resolveTabLayout(tabId);
+    if (s.hidden.indexOf(id) < 0) s.hidden.push(id);
+    setTabLayout(tabId, s);
+  }
+
+  function showWidget(tabId, id) {
+    const s = resolveTabLayout(tabId);
+    setTabLayout(tabId, { order: s.order, hidden: s.hidden.filter((x) => x !== id) });
+  }
+
+  function resetLayout() {
+    state.layout.tabs = {};
+    persistLayout();
+    render();
+  }
+
+  // Ein Widget im Anpassen-Modus mit Werkzeugleiste (verschieben/ausblenden)
+  // umhüllen; außerhalb des Modus unverändert das nackte Markup ausliefern,
+  // damit die Standardansicht pixelgleich bleibt.
+  function wrapWidget(tabId, w, editing) {
+    const html = w.render();
+    if (!editing) return html || "";
+    const body = html || `<section class="sc-section sc-widget-empty">Zurzeit ohne Inhalt.</section>`;
+    return `
+      <div class="sc-widget-shell" data-widget-id="${w.id}">
+        <div class="sc-widget-bar">
+          <span class="sc-widget-name">${escapeHtml(w.label)}</span>
+          <span class="sc-widget-tools">
+            <button class="sc-widget-tool" type="button" data-action="widget-move" data-tab="${tabId}" data-widget="${w.id}" data-dir="up" title="Nach oben" aria-label="Nach oben">↑</button>
+            <button class="sc-widget-tool" type="button" data-action="widget-move" data-tab="${tabId}" data-widget="${w.id}" data-dir="down" title="Nach unten" aria-label="Nach unten">↓</button>
+            <button class="sc-widget-tool sc-widget-tool--hide" type="button" data-action="widget-hide" data-tab="${tabId}" data-widget="${w.id}" title="Ausblenden" aria-label="Ausblenden">✕</button>
+          </span>
+        </div>
+        ${body}
+      </div>`;
+  }
+
+  // Kopfleiste des Anpassen-Modus: erklärt den Modus und bietet ausgeblendete
+  // Widgets zum Wieder-Einblenden sowie „Zurücksetzen" / „Fertig".
+  function renderWidgetEditor(tabId) {
+    const { hidden } = resolveTabLayout(tabId);
+    const chips = hidden.map((id) => {
+      const w = widgetById(tabId, id);
+      return w ? `<button class="sc-widget-readd" type="button" data-action="widget-show" data-tab="${tabId}" data-widget="${w.id}">+ ${escapeHtml(w.label)}</button>` : "";
+    }).join("");
+    return `
+      <div class="sc-widget-editor">
+        <div class="sc-widget-editor-head">
+          <span>Layout anpassen: Widgets verschieben (↑↓) oder ausblenden (✕).</span>
+          <div class="sc-inline-actions">
+            <button class="sc-text-button" type="button" data-action="reset-layout">Zurücksetzen</button>
+            <button class="sc-primary-button" type="button" data-action="toggle-customize">Fertig</button>
+          </div>
+        </div>
+        ${hidden.length ? `<div class="sc-widget-hidden-tray"><span class="sc-eyebrow">Ausgeblendet</span>${chips}</div>` : ""}
+      </div>`;
+  }
+
+  // Baut einen Tab aus seinem Widget-Registry zusammen (Reihenfolge/Sichtbarkeit
+  // aus state.layout). `leading` ist optionaler Inhalt vor den Widgets (z. B. der
+  // KI-Statusbanner im Prep-Tab), der nicht anpassbar ist.
+  function renderTabWidgets(tabId, leading) {
+    const editing = state.layout.customizeMode;
+    const { order, hidden } = resolveTabLayout(tabId);
+    const parts = order
+      .filter((id) => hidden.indexOf(id) < 0)
+      .map((id) => { const w = widgetById(tabId, id); return w ? wrapWidget(tabId, w, editing) : ""; })
+      .join("");
+    return `${editing ? renderWidgetEditor(tabId) : ""}${leading || ""}${parts}`;
+  }
+
+  // Hinweis im Anpassen-Modus für Tabs ohne anpassbare Widgets.
+  function customizeNote() {
+    return state.layout.customizeMode
+      ? `<div class="sc-widget-editor"><div class="sc-widget-editor-head"><span>Dieser Bereich hat keine anpassbaren Widgets.</span><button class="sc-primary-button" type="button" data-action="toggle-customize">Fertig</button></div></div>`
+      : "";
+  }
+
   function activeContent() {
     switch (state.activeTab) {
-      case "talk": return renderTalk();
-      case "close": return renderClose();
-      case "callbacks": return renderCallbacksTab();
-      default: return renderPrep();
+      case "talk": return renderTabWidgets("talk");
+      case "close": return customizeNote() + renderClose();
+      case "callbacks": return customizeNote() + renderCallbacksTab();
+      default: return renderTabWidgets("prep", renderAiBanner());
     }
   }
 
@@ -1903,6 +2052,7 @@
             <strong>Anrufen. Abschließen.</strong>
           </div>
           <div class="sc-header-actions">
+            ${state.settingsOpen ? "" : `<button class="sc-icon-button ${state.layout.customizeMode ? "is-active" : ""}" type="button" data-action="toggle-customize" title="Layout anpassen" aria-label="Layout anpassen">▦</button>`}
             <button class="sc-icon-button ${state.settingsOpen ? "is-active" : ""}" type="button" data-action="toggle-settings" title="Einstellungen" aria-label="Einstellungen">⚙</button>
             <button class="sc-icon-button" type="button" data-action="refresh" title="Ticketdaten aktualisieren" aria-label="Ticketdaten aktualisieren">↻</button>
             <button class="sc-icon-button" type="button" data-action="close-panel" title="Panel minimieren" aria-label="Panel minimieren">×</button>
@@ -2584,6 +2734,15 @@
         render();
         return;
       }
+      case "toggle-customize":
+        state.layout.customizeMode = !state.layout.customizeMode;
+        if (state.layout.customizeMode) state.settingsOpen = false;
+        render();
+        return;
+      case "widget-move": moveWidget(control.dataset.tab, control.dataset.widget, control.dataset.dir); return;
+      case "widget-hide": hideWidget(control.dataset.tab, control.dataset.widget); return;
+      case "widget-show": showWidget(control.dataset.tab, control.dataset.widget); return;
+      case "reset-layout": resetLayout(); return;
       case "supabase-login": await handleSupabaseLogin(); return;
       case "supabase-logout": handleSupabaseLogout(); return;
       case "enable-ai": enableAi(); return;
@@ -2768,7 +2927,8 @@
       CONFIG.storageKeys.customerCard,
       CONFIG.storageKeys.lookupResult,
       CONFIG.storageKeys.bridgeState,
-      CONFIG.storageKeys.theme
+      CONFIG.storageKeys.theme,
+      CONFIG.storageKeys.layout
     ]);
     if (typeof saved[CONFIG.storageKeys.isOpen] === "boolean") state.isOpen = saved[CONFIG.storageKeys.isOpen];
     if (CONFIG.tabs.some((tab) => tab.id === saved[CONFIG.storageKeys.activeTab])) state.activeTab = saved[CONFIG.storageKeys.activeTab];
@@ -2794,6 +2954,10 @@
     state.bridgeState = saved[CONFIG.storageKeys.bridgeState] || null;
     state.theme = themeEngine.normalizeThemeState(saved[CONFIG.storageKeys.theme]);
     themeEngine.applyTheme(container, state.theme);
+    const savedLayout = saved[CONFIG.storageKeys.layout];
+    if (savedLayout && typeof savedLayout === "object" && savedLayout.tabs && typeof savedLayout.tabs === "object") {
+      state.layout.tabs = savedLayout.tabs;
+    }
 
     state.ticket = jiraReader.read();
     hydrateAiFromCache(state.ticket);

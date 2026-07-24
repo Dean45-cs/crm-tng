@@ -12,6 +12,8 @@ import {
   Users,
   Phone,
   Percent,
+  LayoutGrid,
+  Check,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -42,6 +44,8 @@ import { SkeletonDashboard } from '../components/Skeleton';
 import { IncentiveWidget } from '../components/IncentiveWidget';
 import { ExpiryRadarWidget } from '../components/ExpiryRadarWidget';
 import { AccessRequestInbox } from '../components/AccessRequests';
+import { CustomizableGrid } from '../components/CustomizableGrid';
+import type { WidgetDef } from '../lib/gridLayout';
 import { useRouter } from '../router';
 
 type Scope = 'mine' | 'all';
@@ -59,6 +63,7 @@ export function Dashboard() {
   const { navigate } = useRouter();
 
   const [scope, setScope] = useState<Scope>('mine');
+  const [editingLayout, setEditingLayout] = useState(false);
   const userKey = currentUser?.key;
 
   // Anrufe leben nicht im globalen Store (siehe useCalls.ts, Anrufvolumen
@@ -256,6 +261,13 @@ export function Dashboard() {
             </button>
           </div>
           <button
+            className={`dash-report-pill${editingLayout ? ' is-active' : ''}`}
+            onClick={() => setEditingLayout((v) => !v)}
+            title="Dashboard-Layout anpassen (Widgets verschieben, Größe ändern, ausblenden)"
+          >
+            {editingLayout ? <><Check size={13} /> Fertig</> : <><LayoutGrid size={13} /> Anpassen</>}
+          </button>
+          <button
             className="dash-report-pill"
             onClick={() => navigate({ name: 'report' })}
             title="Druckansicht des Monatsabschlusses öffnen"
@@ -265,142 +277,183 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="widget-row hero-row">
-        <TargetWidget
-          monthCommission={monthCommission}
-          target={target}
-          progress={targetProgress}
-          daysLeft={daysLeftInMonth}
-          remaining={remainingToTarget}
-        />
-
-        <div className="widget-mini-grid">
-          <KpiWidget
-            icon={<TrendingUp size={14} />}
-            accent="blue"
-            label="Provision gesamt"
-            value={formatCurrency(totalCommission)}
-            delta={`${contracts.length + tariffChanges.length} Vorgänge`}
-          />
-          <KpiWidget
-            icon={<FileSignature size={14} />}
-            accent="orange"
-            label="Aktive Verträge"
-            value={`${activeContracts.length}`}
-            delta={`${offenCount} offen`}
-          />
-          <KpiWidget
-            icon={<ArrowLeftRight size={14} />}
-            accent="purple"
-            label="Tarifwechsel"
-            value={`${tariffChanges.length}`}
-            delta={`${monthTariff.length} diesen Monat`}
-          />
-          <KpiWidget
-            icon={<Sparkles size={14} />}
-            accent="green"
-            label="vs. Vormonat"
-            value={`${trend > 0 ? '+' : ''}${trend} %`}
-            delta={formatCurrency(prevMonthCommission) + ' im Vormonat'}
-            trend={trend > 0 ? 'positive' : trend < 0 ? 'negative' : undefined}
-          />
-          <KpiWidget
-            icon={<Phone size={14} />}
-            accent="blue"
-            label="Anrufe diesen Monat"
-            value={callVolume === null ? '–' : `${callVolume.count}`}
-            delta="von der Extension automatisch erfasst"
-          />
-          <KpiWidget
-            icon={<Percent size={14} />}
-            accent="orange"
-            label="Abschlussquote (Anruf → Vertrag/Tarifwechsel)"
-            value={callConversion?.conversionPct == null ? '–' : `${callConversion.conversionPct} %`}
-            delta={
-              callConversion?.linkedCount
-                ? `${callConversion.linkedCount} von ${callConversion.totalCount} Anrufen`
-                : 'noch keine Verknüpfung diesen Monat'
-            }
-          />
-        </div>
-      </div>
-
+      {/* Bedingte Info-Boxen bleiben außerhalb des Grids (blenden sich selbst
+          aus, wenn leer) und immer über volle Breite. */}
       <AccessRequestInbox />
       <IncentiveWidget />
       <ExpiryRadarWidget />
 
-      <div className="grid-2" style={{ marginBottom: 10 }}>
-        <div className="widget">
-          <div className="row between" style={{ marginBottom: 10 }}>
-            <h3 className="widget-title" style={{ margin: 0 }}>
-              Provision pro Monat
-            </h3>
-            <span className="muted">Letzte 6 Monate</span>
-          </div>
-          <div style={{ width: '100%', height: 200 }}>
-            <ResponsiveContainer>
-              <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
-                <YAxis axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
-                <Tooltip
-                  cursor={{ fill: 'rgba(0,102,179,0.05)' }}
-                  contentStyle={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 12,
-                    fontSize: 12,
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
-                  }}
-                  formatter={(value) => formatCurrency(Number(value ?? 0))}
+      <CustomizableGrid
+        storageKey="crm-dashboard-layout"
+        editing={editingLayout}
+        widgets={[
+          {
+            id: 'target',
+            title: 'Monatsziel',
+            defaultW: 5,
+            minW: 4,
+            render: () => (
+              <TargetWidget
+                monthCommission={monthCommission}
+                target={target}
+                progress={targetProgress}
+                daysLeft={daysLeftInMonth}
+                remaining={remainingToTarget}
+              />
+            ),
+          },
+          {
+            id: 'kpis',
+            title: 'Kennzahlen',
+            defaultW: 7,
+            minW: 4,
+            render: () => (
+              <div className="widget-mini-grid">
+                <KpiWidget
+                  icon={<TrendingUp size={14} />}
+                  accent="blue"
+                  label="Provision gesamt"
+                  value={formatCurrency(totalCommission)}
+                  delta={`${contracts.length + tariffChanges.length} Vorgänge`}
                 />
-                <Bar dataKey="Neuvertrag" stackId="a" fill="#0066b3" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Tarifwechsel" stackId="a" fill="#00a3e0" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <FollowUpInbox />
-      </div>
-
-      <div className="grid-2" style={{ marginBottom: 10 }}>
-        <div className="widget">
-          <h3 className="widget-title">Zuletzt erfasst</h3>
-          {recent.length === 0 ? (
-            <div className="empty-inline">
-              <span>Noch keine Vorgänge.</span>
-            </div>
-          ) : (
-            <div className="recent-list">
-              {recent.map((r) => (
-                <button
-                  key={`${r.kind}-${r.id}`}
-                  className="recent-item"
-                  onClick={() => navigate({ name: 'customer', kdnr: r.kdnr })}
-                >
-                  <div className={`recent-bullet ${r.type === 'Vertrag' ? 'bullet-blue' : 'bullet-orange'}`} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="row between" style={{ gap: 8 }}>
-                      <div className="recent-name">{r.customer}</div>
-                      <div className="recent-amount">{formatCurrency(r.commission)}</div>
-                    </div>
-                    <div className="recent-meta">
-                      <span className="muted" style={{ fontSize: 11.5 }}>
-                        {formatDate(r.date)} · {r.product}
-                      </span>
-                      {r.jira && <JiraLink ticket={r.jira} />}
-                      <StatusBadge status={r.status} />
-                    </div>
+                <KpiWidget
+                  icon={<FileSignature size={14} />}
+                  accent="orange"
+                  label="Aktive Verträge"
+                  value={`${activeContracts.length}`}
+                  delta={`${offenCount} offen`}
+                />
+                <KpiWidget
+                  icon={<ArrowLeftRight size={14} />}
+                  accent="purple"
+                  label="Tarifwechsel"
+                  value={`${tariffChanges.length}`}
+                  delta={`${monthTariff.length} diesen Monat`}
+                />
+                <KpiWidget
+                  icon={<Sparkles size={14} />}
+                  accent="green"
+                  label="vs. Vormonat"
+                  value={`${trend > 0 ? '+' : ''}${trend} %`}
+                  delta={formatCurrency(prevMonthCommission) + ' im Vormonat'}
+                  trend={trend > 0 ? 'positive' : trend < 0 ? 'negative' : undefined}
+                />
+                <KpiWidget
+                  icon={<Phone size={14} />}
+                  accent="blue"
+                  label="Anrufe diesen Monat"
+                  value={callVolume === null ? '–' : `${callVolume.count}`}
+                  delta="von der Extension automatisch erfasst"
+                />
+                <KpiWidget
+                  icon={<Percent size={14} />}
+                  accent="orange"
+                  label="Abschlussquote (Anruf → Vertrag/Tarifwechsel)"
+                  value={callConversion?.conversionPct == null ? '–' : `${callConversion.conversionPct} %`}
+                  delta={
+                    callConversion?.linkedCount
+                      ? `${callConversion.linkedCount} von ${callConversion.totalCount} Anrufen`
+                      : 'noch keine Verknüpfung diesen Monat'
+                  }
+                />
+              </div>
+            ),
+          },
+          {
+            id: 'chart',
+            title: 'Provision pro Monat',
+            defaultW: 6,
+            minW: 4,
+            render: () => (
+              <div className="widget">
+                <div className="row between" style={{ marginBottom: 10 }}>
+                  <h3 className="widget-title" style={{ margin: 0 }}>
+                    Provision pro Monat
+                  </h3>
+                  <span className="muted">Letzte 6 Monate</span>
+                </div>
+                <div style={{ width: '100%', height: 200 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
+                      <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
+                      <YAxis axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
+                      <Tooltip
+                        cursor={{ fill: 'rgba(0,102,179,0.05)' }}
+                        contentStyle={{
+                          background: 'var(--bg-card)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 12,
+                          fontSize: 12,
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                        }}
+                        formatter={(value) => formatCurrency(Number(value ?? 0))}
+                      />
+                      <Bar dataKey="Neuvertrag" stackId="a" fill="#0066b3" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="Tarifwechsel" stackId="a" fill="#00a3e0" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ),
+          },
+          {
+            id: 'followups',
+            title: 'Wiedervorlagen',
+            defaultW: 6,
+            minW: 4,
+            render: () => <FollowUpInbox />,
+          },
+          {
+            id: 'recent',
+            title: 'Zuletzt erfasst',
+            defaultW: 6,
+            minW: 4,
+            render: () => (
+              <div className="widget">
+                <h3 className="widget-title">Zuletzt erfasst</h3>
+                {recent.length === 0 ? (
+                  <div className="empty-inline">
+                    <span>Noch keine Vorgänge.</span>
                   </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <TopProductsWidget items={topProducts} max={topMax} />
-      </div>
+                ) : (
+                  <div className="recent-list">
+                    {recent.map((r) => (
+                      <button
+                        key={`${r.kind}-${r.id}`}
+                        className="recent-item"
+                        onClick={() => navigate({ name: 'customer', kdnr: r.kdnr })}
+                      >
+                        <div className={`recent-bullet ${r.type === 'Vertrag' ? 'bullet-blue' : 'bullet-orange'}`} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="row between" style={{ gap: 8 }}>
+                            <div className="recent-name">{r.customer}</div>
+                            <div className="recent-amount">{formatCurrency(r.commission)}</div>
+                          </div>
+                          <div className="recent-meta">
+                            <span className="muted" style={{ fontSize: 11.5 }}>
+                              {formatDate(r.date)} · {r.product}
+                            </span>
+                            {r.jira && <JiraLink ticket={r.jira} />}
+                            <StatusBadge status={r.status} />
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ),
+          },
+          {
+            id: 'topproducts',
+            title: 'Top-Produkte',
+            defaultW: 6,
+            minW: 4,
+            render: () => <TopProductsWidget items={topProducts} max={topMax} />,
+          },
+        ] as WidgetDef[]}
+      />
     </div>
   );
 }
