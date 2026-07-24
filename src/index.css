@@ -7513,6 +7513,80 @@ table.crm-table tbody tr:hover td:first-child {
 .theme-seg-hint { font-size: 11.5px; color: var(--text-tertiary); }
 .theme-seg-btn.active .theme-seg-hint { color: var(--tng-blue-light); }
 
+/* Kompaktes Erscheinungsbild: Modus + Farbschema nebeneinander, darunter eine
+   schmale Reihe Farb-Swatches statt gestapelter Formularfelder. */
+.appearance-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 28px;
+  margin-bottom: 12px;
+}
+.appearance-block { display: flex; flex-direction: column; gap: 6px; }
+.appearance-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.seg-compact {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.seg-compact-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.seg-compact-btn:hover { color: var(--text); }
+.seg-compact-btn.active {
+  background: var(--bg-card);
+  color: var(--tng-blue);
+  box-shadow: var(--shadow-xs);
+}
+.palette-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.palette-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px 4px 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.palette-swatch:hover { border-color: var(--border-strong); color: var(--text); }
+.palette-swatch input[type='color'] {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.palette-swatch input[type='color']::-webkit-color-swatch-wrapper { padding: 0; }
+.palette-swatch input[type='color']::-webkit-color-swatch { border: none; border-radius: 50%; }
+
 /* =================================================================
    Feinschliff-Layer — Typografie, Auswahl, Fokus, Zahlen
    (bewusst niedrige Spezifität via :where, überschreibt keine States)

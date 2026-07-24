@@ -99,6 +99,45 @@ export function normalizePalette(raw: unknown): PaletteState {
 // ODER eine konkrete Override-Rolle) — alle anderen bleiben unter Kontrolle
 // von index.css (removeProperty räumt einen zuvor gesetzten Wert wieder weg,
 // z. B. bei „Zurücksetzen").
+// Abgeleitete Akzent-Familie: index.css definiert Buttons, aktive Sidebar,
+// Chips und Badges NICHT über --tng-blue, sondern über hartcodierte Tokens
+// (--tng-gradient, --tng-blue-50/-100, --tng-gradient-soft, --shadow-tng). Wer
+// nur --tng-blue umsetzt, färbt darum Links, aber keine Buttons. Deshalb werden
+// diese Tokens hier zur Laufzeit aus der gewählten Akzentfarbe berechnet, damit
+// die Akzentwahl tatsächlich bis zu den Buttons durchschlägt.
+const ACCENT_DERIVED_VARS = [
+  '--tng-blue-light',
+  '--tng-blue-50',
+  '--tng-blue-100',
+  '--tng-gradient',
+  '--tng-gradient-soft',
+  '--shadow-tng',
+] as const;
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
+  if (!m) return null;
+  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+}
+
+function mixWithWhite([r, g, b]: [number, number, number], amount: number): string {
+  const mix = (c: number) => Math.round(c + (255 - c) * amount);
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
+
+function applyAccentFamily(root: HTMLElement, accent: string, accentDark: string): void {
+  const rgb = hexToRgb(accent);
+  if (!rgb) return; // nicht-hex (z. B. rgba) → Akzent-Familie unverändert lassen
+  const [r, g, b] = rgb;
+  const rgba = (a: number) => `rgba(${r}, ${g}, ${b}, ${a})`;
+  root.style.setProperty('--tng-blue-light', mixWithWhite(rgb, 0.4));
+  root.style.setProperty('--tng-blue-50', rgba(0.14));
+  root.style.setProperty('--tng-blue-100', rgba(0.22));
+  root.style.setProperty('--tng-gradient', `linear-gradient(180deg, ${accent} 0%, ${accentDark} 100%)`);
+  root.style.setProperty('--tng-gradient-soft', `linear-gradient(135deg, ${rgba(0.08)}, ${rgba(0.05)})`);
+  root.style.setProperty('--shadow-tng', `0 2px 8px ${rgba(0.2)}`);
+}
+
 export function applyPalette(state: PaletteState): void {
   const root = document.documentElement;
   const presetChanged = state.presetId !== 'crm';
@@ -108,6 +147,16 @@ export function applyPalette(state: PaletteState): void {
     if (touched) root.style.setProperty(ROLE_TO_VAR[role], colors[role]);
     else root.style.removeProperty(ROLE_TO_VAR[role]);
   });
+
+  // Akzent-Familie nur setzen, wenn Akzent tatsächlich abweicht — sonst
+  // entfernen, damit die (auch dunkelmodus-abhängigen) Defaults aus index.css
+  // wieder greifen.
+  const accentTouched =
+    presetChanged ||
+    Object.prototype.hasOwnProperty.call(state.overrides, 'accent') ||
+    Object.prototype.hasOwnProperty.call(state.overrides, 'accentDark');
+  if (accentTouched) applyAccentFamily(root, colors.accent, colors.accentDark);
+  else ACCENT_DERIVED_VARS.forEach((v) => root.style.removeProperty(v));
 }
 
 export function setPalette(state: PaletteState): void {

@@ -204,64 +204,61 @@ export function Settings() {
       </div>
 
       <div className="widget" style={{ marginBottom: 10 }}>
-        <h3 className="widget-title">Erscheinungsbild</h3>
-        <p className="muted" style={{ marginBottom: 10 }}>
-          Farbschema der App. „System" übernimmt automatisch die Einstellung deines Geräts.
-        </p>
-        <div className="theme-seg" role="group" aria-label="Farbschema">
-          {THEME_OPTIONS.map(({ value, label, icon: Icon, hint }) => (
-            <button
-              key={value}
-              type="button"
-              className={`theme-seg-btn${theme === value ? ' active' : ''}`}
-              aria-pressed={theme === value}
-              onClick={() => chooseTheme(value)}
-            >
-              <Icon size={18} strokeWidth={1.8} />
-              <span className="theme-seg-label">{label}</span>
-              <span className="theme-seg-hint">{hint}</span>
-            </button>
-          ))}
+        <div className="appearance-row">
+          <div className="appearance-block">
+            <span className="appearance-label">Modus</span>
+            <div className="seg-compact" role="group" aria-label="Hell/Dunkel">
+              {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`seg-compact-btn${theme === value ? ' active' : ''}`}
+                  aria-pressed={theme === value}
+                  onClick={() => chooseTheme(value)}
+                  title={label}
+                >
+                  <Icon size={15} strokeWidth={1.8} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="appearance-block">
+            <span className="appearance-label">Farbschema</span>
+            <div className="seg-compact" role="group" aria-label="Farbschema-Preset">
+              <button
+                type="button"
+                className={`seg-compact-btn${palette.presetId === 'crm' ? ' active' : ''}`}
+                aria-pressed={palette.presetId === 'crm'}
+                onClick={() => choosePreset('crm')}
+              >
+                CRM
+              </button>
+              <button
+                type="button"
+                className={`seg-compact-btn${palette.presetId === 'jira' ? ' active' : ''}`}
+                aria-pressed={palette.presetId === 'jira'}
+                onClick={() => choosePreset('jira')}
+              >
+                Jira
+              </button>
+              <button type="button" className="seg-compact-btn" onClick={resetPaletteChoice}>
+                Zurücksetzen
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div className="widget" style={{ marginBottom: 10 }}>
-        <h3 className="widget-title">Farbschema</h3>
-        <p className="muted" style={{ marginBottom: 10 }}>
-          Preset wählen oder einzelne Farben frei anpassen. Ohne Änderung bleibt alles beim heutigen Standard (CRM-Theme).
-        </p>
-        <div className="theme-seg" role="group" aria-label="Farbschema-Preset" style={{ marginBottom: 12 }}>
-          <button
-            type="button"
-            className={`theme-seg-btn${palette.presetId === 'crm' ? ' active' : ''}`}
-            aria-pressed={palette.presetId === 'crm'}
-            onClick={() => choosePreset('crm')}
-          >
-            <span className="theme-seg-label">CRM-Theme</span>
-          </button>
-          <button
-            type="button"
-            className={`theme-seg-btn${palette.presetId === 'jira' ? ' active' : ''}`}
-            aria-pressed={palette.presetId === 'jira'}
-            onClick={() => choosePreset('jira')}
-          >
-            <span className="theme-seg-label">Jira-Theme</span>
-          </button>
-          <button type="button" className="theme-seg-btn" onClick={resetPaletteChoice}>
-            <span className="theme-seg-label">Zurücksetzen</span>
-          </button>
-        </div>
-        <div className="form-grid">
+        <div className="palette-swatches">
           {PALETTE_FIELDS.map(({ role, label }) => (
-            <div className="field" key={role}>
-              <label>{label}</label>
+            <label className="palette-swatch" key={role} title={label}>
               <input
                 type="color"
                 value={paletteColors[role]}
                 onChange={(e) => changePaletteColor(role, e.target.value)}
-                style={{ width: 44, height: 30, padding: 0, cursor: 'pointer' }}
+                aria-label={label}
               />
-            </div>
+              <span>{label}</span>
+            </label>
           ))}
         </div>
       </div>

@@ -1772,16 +1772,16 @@
           <h3>Darstellung</h3>
           <span class="sc-local-label">nur lokal</span>
         </div>
-        <p class="sc-section-intro">Wähle ein Farbschema oder passe einzelne Farben frei an. Rührst du hier nichts an, bleibt alles beim heutigen Standard (Jira-Theme).</p>
-        <div class="sc-inline-actions">
-          <button class="sc-secondary-button ${theme.presetId === "jira" ? "is-active" : ""}" type="button" data-action="set-theme-preset" data-preset="jira">Jira-Theme</button>
-          <button class="sc-secondary-button ${theme.presetId === "crm" ? "is-active" : ""}" type="button" data-action="set-theme-preset" data-preset="crm">CRM-Theme</button>
-          <button class="sc-secondary-button" type="button" data-action="reset-theme">Zurücksetzen</button>
+        <div class="sc-theme-presets">
+          <button class="sc-theme-preset ${theme.presetId === "jira" ? "is-active" : ""}" type="button" data-action="set-theme-preset" data-preset="jira">Jira</button>
+          <button class="sc-theme-preset ${theme.presetId === "crm" ? "is-active" : ""}" type="button" data-action="set-theme-preset" data-preset="crm">CRM</button>
+          <button class="sc-theme-preset" type="button" data-action="reset-theme">Zurücksetzen</button>
         </div>
         <div class="sc-theme-colors">
           ${THEME_COLOR_FIELDS.map(([role, label]) => `
-            <label class="sc-input-label sc-theme-color-label">${label}
-              <input type="color" data-role="set-theme-color-${role}" value="${colors[role]}">
+            <label class="sc-theme-swatch" title="${escapeHtml(label)}">
+              <input type="color" data-role="set-theme-color-${role}" value="${colors[role]}" aria-label="${escapeHtml(label)}">
+              <span>${label}</span>
             </label>`).join("")}
         </div>
       </section>`;
