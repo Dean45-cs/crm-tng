@@ -18,6 +18,7 @@ const SCRIPTS = [
   "src/jira-reader.js",
   "src/rules.js",
   "src/local-ai.js",
+  "src/theme.js",
   "src/ui.js"
 ];
 

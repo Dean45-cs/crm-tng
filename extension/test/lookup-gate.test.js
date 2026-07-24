@@ -57,6 +57,30 @@ async function run() {
   assert.strictEqual(lookup.initSteps("churn").length, 3);
   assert.strictEqual(lookup.initSteps("quatsch").length, 0, "unbekannte Art hat keine Schritte");
 
+  // 4. Fortschrittsmeldung nach Worker-Neustart: der In-Memory-Spiegel (active)
+  //    ist leer (frischer Worker), der letzte Stand liegt nur im Storage.
+  //    applyStep muss ihn von dort holen und weiterschreiben – sonst geht der
+  //    Fortschritt verloren und das Panel hängt ewig bei „läuft".
+  {
+    const env2 = makeWorkerSandbox();
+    loadScripts(env2.sandbox, ["src/config.js", "src/shared.js", "src/lookup.js"]);
+    const lookup2 = env2.sandbox.StadtnetzCRM.lookup;
+    const KEYS2 = env2.sandbox.StadtnetzCRM.CONFIG.storageKeys;
+    env2.chrome.storage.local.set({ [KEYS2.lookupResult]: {
+      requestId: "restart-1", kind: "baustatus", status: "running",
+      steps: [{ id: "search", state: "pending" }, { id: "confirm", state: "pending" }]
+    } });
+    lookup2.applyStep("restart-1", "search", "active");
+    await new Promise((resolve) => setImmediate(resolve)); // Storage-Fallback (Microtask) durchlaufen lassen
+    const after = env2.storage[KEYS2.lookupResult];
+    assert.strictEqual(after.steps.find((s) => s.id === "search").state, "active", "Schritt nach Neustart aus dem Storage aktualisiert");
+    // Eine Meldung zu einer fremden requestId darf den Storage NICHT verändern.
+    lookup2.applyStep("fremd", "search", "done");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(env2.storage[KEYS2.lookupResult].requestId, "restart-1", "fremde requestId ändert nichts");
+    assert.strictEqual(env2.storage[KEYS2.lookupResult].steps.find((s) => s.id === "search").state, "active", "und lässt den Schritt unverändert");
+  }
+
   console.log("lookup-gate.test.js: alle Szenarien bestanden.");
 }
 

@@ -81,7 +81,11 @@
 
   try {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-      if (!message || message.type !== "sc-lookup-churn") return false;
+      if (!message) return false;
+      // Erreichbarkeits-Ping – siehe baustatus-content.js. Ein verwaistes
+      // Content-Script antwortet nicht; der Worker lädt den Tab dann neu.
+      if (message.type === "sc-ping") { sendResponse({ ok: true, pong: true, kind: "churn" }); return false; }
+      if (message.type !== "sc-lookup-churn") return false;
       runChurnLookup(message.requestId, String(message.customerNumber || "").trim())
         .then((data) => sendResponse({ ok: true, data }))
         .catch((error) => sendResponse({ ok: false, error: (error && error.message) || String(error) }));

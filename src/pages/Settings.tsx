@@ -6,6 +6,14 @@ import { useOnboarding } from '../store/useOnboarding';
 import { formatCurrency, TARIFF_CONTEXT_LABEL, TARIFF_TYPE_LABEL } from '../lib/utils';
 import { spSignOut, spGetAccount, testConnection } from '../lib/sharepointGraph';
 import { getStoredTheme, setTheme, type ThemePref } from '../lib/theme';
+import {
+  getStoredPalette,
+  setPalette,
+  resetPalette,
+  resolvePaletteColors,
+  type PaletteState,
+  type PaletteRole,
+} from '../lib/palette';
 import type {
   ProductCategory,
   TariffChangeType,
@@ -19,6 +27,19 @@ const THEME_OPTIONS: { value: ThemePref; label: string; icon: typeof Sun; hint: 
   { value: 'light', label: 'Hell', icon: Sun, hint: 'Immer heller Modus' },
   { value: 'dark', label: 'Dunkel', icon: Moon, hint: 'Immer dunkler Modus' },
   { value: 'system', label: 'System', icon: Monitor, hint: 'Folgt dem Gerät' },
+];
+
+const PALETTE_FIELDS: { role: PaletteRole; label: string }[] = [
+  { role: 'accent', label: 'Akzentfarbe' },
+  { role: 'accentDark', label: 'Akzentfarbe (dunkel)' },
+  { role: 'background', label: 'Hintergrund' },
+  { role: 'surface', label: 'Flächen / Karten' },
+  { role: 'textPrimary', label: 'Text' },
+  { role: 'textMuted', label: 'Text (gedämpft)' },
+  { role: 'border', label: 'Rahmen' },
+  { role: 'success', label: 'Erfolg' },
+  { role: 'warning', label: 'Warnung' },
+  { role: 'danger', label: 'Fehler' },
 ];
 
 export function Settings() {
@@ -44,6 +65,27 @@ export function Settings() {
     setTheme(t);
     setThemeState(t);
   };
+
+  const [palette, setPaletteState] = useState<PaletteState>(getStoredPalette());
+
+  const choosePreset = (presetId: 'crm' | 'jira') => {
+    const next: PaletteState = { presetId, overrides: palette.overrides };
+    setPalette(next);
+    setPaletteState(next);
+  };
+
+  const changePaletteColor = (role: PaletteRole, value: string) => {
+    const next: PaletteState = { ...palette, overrides: { ...palette.overrides, [role]: value } };
+    setPalette(next);
+    setPaletteState(next);
+  };
+
+  const resetPaletteChoice = () => {
+    resetPalette();
+    setPaletteState(getStoredPalette());
+  };
+
+  const paletteColors = resolvePaletteColors(palette);
 
   const [spClientId, setSpClientId] = useState(settings.spClientId);
   const [spTenantId, setSpTenantId] = useState(settings.spTenantId);
@@ -179,6 +221,47 @@ export function Settings() {
               <span className="theme-seg-label">{label}</span>
               <span className="theme-seg-hint">{hint}</span>
             </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="widget" style={{ marginBottom: 10 }}>
+        <h3 className="widget-title">Farbschema</h3>
+        <p className="muted" style={{ marginBottom: 10 }}>
+          Preset wählen oder einzelne Farben frei anpassen. Ohne Änderung bleibt alles beim heutigen Standard (CRM-Theme).
+        </p>
+        <div className="theme-seg" role="group" aria-label="Farbschema-Preset" style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            className={`theme-seg-btn${palette.presetId === 'crm' ? ' active' : ''}`}
+            aria-pressed={palette.presetId === 'crm'}
+            onClick={() => choosePreset('crm')}
+          >
+            <span className="theme-seg-label">CRM-Theme</span>
+          </button>
+          <button
+            type="button"
+            className={`theme-seg-btn${palette.presetId === 'jira' ? ' active' : ''}`}
+            aria-pressed={palette.presetId === 'jira'}
+            onClick={() => choosePreset('jira')}
+          >
+            <span className="theme-seg-label">Jira-Theme</span>
+          </button>
+          <button type="button" className="theme-seg-btn" onClick={resetPaletteChoice}>
+            <span className="theme-seg-label">Zurücksetzen</span>
+          </button>
+        </div>
+        <div className="form-grid">
+          {PALETTE_FIELDS.map(({ role, label }) => (
+            <div className="field" key={role}>
+              <label>{label}</label>
+              <input
+                type="color"
+                value={paletteColors[role]}
+                onChange={(e) => changePaletteColor(role, e.target.value)}
+                style={{ width: 44, height: 30, padding: 0, cursor: 'pointer' }}
+              />
+            </div>
           ))}
         </div>
       </div>

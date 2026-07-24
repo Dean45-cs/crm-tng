@@ -740,6 +740,39 @@
   color: var(--sc-blue);
 }
 
+#stadtnetzcrm-root .sc-secondary-button.is-active {
+  border-color: var(--sc-blue);
+  background: var(--sc-blue);
+  color: #fff;
+}
+
+#stadtnetzcrm-root .sc-theme-colors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+#stadtnetzcrm-root .sc-theme-color-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sc-muted);
+}
+
+#stadtnetzcrm-root .sc-theme-color-label input[type="color"] {
+  width: 32px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--sc-line);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
 #stadtnetzcrm-root .sc-draft-section {
   border-color: #b6c2cf;
 }

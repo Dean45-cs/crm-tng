@@ -27,12 +27,19 @@
   }
 
   function setConnected(value) {
-    connected = Boolean(value);
+    const next = Boolean(value);
+    const wasReconnected = next && !connected;
+    connected = next;
     dot.classList.toggle("is-connected", connected);
     dot.classList.toggle("is-offline", !connected);
     dot.title = connected ? "Mit Chrome verbunden" : "Chrome ist nicht verbunden";
     offline.hidden = connected;
     updateOffset();
+    // Nach einer Trennung (Chrome/Extension neu geladen o.ä.) merkt sich ui.js
+    // den offline-Status der KI-Fähigkeiten dauerhaft, bis neu geprüft wird –
+    // sonst blieben alle KI-Buttons grau, obwohl die Verbindung längst wieder
+    // steht. Bei jeder Rückkehr also einmal neu prüfen.
+    if (wasReconnected && app.ui.loadCapabilities) app.ui.loadCapabilities();
   }
 
   window.addEventListener("resize", updateOffset);

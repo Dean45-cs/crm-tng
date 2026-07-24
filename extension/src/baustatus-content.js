@@ -536,7 +536,14 @@
 
   try {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-      if (!message || message.type !== "sc-lookup-baustatus") return false;
+      if (!message) return false;
+      // Erreichbarkeits-Ping des Hintergrund-Workers: ein frisch geladenes
+      // Content-Script mit gültigem Kontext antwortet sofort. Bleibt die
+      // Antwort aus, weiß der Worker (lookup.js), dass hier ein verwaistes
+      // Script hängt (Extension neu geladen, dieser Tab aber nicht) und lädt
+      // den Tab einmal neu, statt stumm in den Timeout zu laufen.
+      if (message.type === "sc-ping") { sendResponse({ ok: true, pong: true, kind: "baustatus" }); return false; }
+      if (message.type !== "sc-lookup-baustatus") return false;
       runBaustatusLookup(message.requestId, String(message.customerNumber || "").trim())
         .then((data) => sendResponse({ ok: true, data }))
         .catch((error) => sendResponse({ ok: false, error: (error && error.message) || String(error) }));

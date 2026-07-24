@@ -43,7 +43,7 @@ async function mountPanel(inserted, options) {
   const env = makePanelSandbox(options);
   loadScripts(env.sandbox, ["src/config.js", "src/commission.js", "src/shared.js"]);
   env.sandbox.StadtnetzCRM.supabaseClient = makeStub(inserted);
-  loadScripts(env.sandbox, ["src/ai-cache.js", "src/jira-reader.js", "src/rules.js", "src/ui.js"]);
+  loadScripts(env.sandbox, ["src/ai-cache.js", "src/jira-reader.js", "src/rules.js", "src/theme.js", "src/ui.js"]);
   await env.sandbox.StadtnetzCRM.ui.mount();
   return { env, KEYS: env.sandbox.StadtnetzCRM.CONFIG.storageKeys };
 }

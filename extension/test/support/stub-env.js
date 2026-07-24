@@ -249,7 +249,7 @@ function makePanelElement(tag) {
     innerHTML: "",
     textContent: "",
     value: "",
-    style: {},
+    style: { setProperty() {}, removeProperty() {}, getPropertyValue() { return ""; } },
     dataset: {},
     children: [],
     _parent: null,

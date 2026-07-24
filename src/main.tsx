@@ -8,9 +8,11 @@ import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { initErrorReporting } from './lib/errorReporting.ts'
 import { initTheme } from './lib/theme.ts'
+import { initPalette } from './lib/palette.ts'
 
 initErrorReporting()
 initTheme()
+initPalette()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

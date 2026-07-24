@@ -63,7 +63,12 @@
       // Zustand der WebSocket-Bridge zur Desktop-/Kundenanbindung:
       // { connected, active, updatedAt }. Geschrieben von bridge.js, gelesen
       // von ui.js für das „Bridge aktiv"-Banner. Bleibt lokal.
-      bridgeState: "stadtnetzCrm.bridgeState"
+      bridgeState: "stadtnetzCrm.bridgeState",
+      // Persönliches Farbschema des Panels: { presetId: "jira"|"crm", overrides:
+      // { <Rolle>: "#hex", ... } }. Siehe src/theme.js. Fehlt der Schlüssel,
+      // bleibt es beim heutigen Standard (Jira-Theme, keine Overrides) — rein
+      // opt-in, bleibt lokal.
+      theme: "stadtnetzCrm.theme"
     },
 
     // Cache der KI-Ergebnisse pro Ticket, damit ein bereits besuchtes Ticket

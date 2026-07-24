@@ -24,7 +24,7 @@ async function mountPanel(searchImpl) {
     customerCard: async () => ({ ok: false, reason: "not-configured" }),
     searchWorkspace: searchImpl
   };
-  loadScripts(env.sandbox, ["src/ai-cache.js", "src/jira-reader.js", "src/rules.js", "src/ui.js"]);
+  loadScripts(env.sandbox, ["src/ai-cache.js", "src/jira-reader.js", "src/rules.js", "src/theme.js", "src/ui.js"]);
   await env.sandbox.StadtnetzCRM.ui.mount();
   return env;
 }

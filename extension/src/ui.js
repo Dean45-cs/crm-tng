@@ -12,6 +12,7 @@
   const AI = CONFIG.ai;
   const localAi = app.localAi;
   const supabaseClient = app.supabaseClient;
+  const themeEngine = app.themeEngine;
   const S = (localAi && localAi.STATUS) || {};
 
   // Auto-Aufräumen der Gesprächsnotizen: erst nach einer Tipppause, nie
@@ -28,6 +29,10 @@
     activeTab: "prep",
     settings: { ...CONFIG.settingsDefaults },
     settingsOpen: false,
+    // Persönliches Farbschema des Panels (Phase 1 der Layout-/Theme-Anpassung).
+    // Getrennt von state.settings, weil saveSettings() dessen Objekt komplett
+    // neu aufbaut statt zu mergen — Theme-Werte würden das nicht überleben.
+    theme: { presetId: "jira", overrides: {} },
     activeCall: null, // Signal von timio-content.js über chrome.storage, siehe currentActiveCall()
     // Arbeitsrichtung ist im reinen Outbound-Betrieb konstant. Der Wert bleibt
     // im State, weil geteilte Helfer (shared.callStatusMeta, callModeMeta) ihn
@@ -145,6 +150,10 @@
 
   function persistSettings() {
     safeLocalSet({ [CONFIG.storageKeys.settings]: state.settings });
+  }
+
+  function persistTheme() {
+    safeLocalSet({ [CONFIG.storageKeys.theme]: state.theme });
   }
 
   // Veröffentlicht das aktuell geöffnete Ticket (inkl. KI-Zusammenfassung)
@@ -642,7 +651,30 @@
   // die Timer-Texte direkt im DOM (kein Full-Render nötig), räumt verwaiste
   // Calls auf (kein frisches Update mehr – z. B. timio-Tab abgestürzt) und
   // hält die Veraltet-Anzeige der Wartefeld-Daten aktuell.
+  // Sicherheitsnetz gegen ein ewig bei „läuft" hängendes Panel: meldet sich der
+  // Hintergrund-Worker über LOOKUP_WATCHDOG_MS nicht mit Fortschritt oder
+  // Ergebnis (z. B. Worker beendet, Dashboard-Tab unerreichbar, Nachricht nie
+  // angekommen), wird der Zustand mit einer klaren, umsetzbaren Meldung auf
+  // Fehler gesetzt. Im Normallauf schreibt der Worker bei jedem Schritt
+  // (updatedAt wandert mit), sodass der Watchdog nur bei echtem Stillstand
+  // greift – nicht während eines langsamen, aber fortschreitenden Laufs.
+  const LOOKUP_WATCHDOG_MS = 60000;
+  function maybeExpireStuckLookup() {
+    const result = state.lookup.result;
+    if (!result || result.status !== "running") return;
+    const last = result.updatedAt || 0;
+    if (!last || Date.now() - last <= LOOKUP_WATCHDOG_MS) return;
+    state.lookup.result = Object.assign({}, result, {
+      status: "error",
+      error: "Zeitüberschreitung: Die Abfrage hat sich nicht mehr gemeldet. Ist der Dashboard-Tab (fttx-dash bzw. gfiz-dash) offen und bist du dort angemeldet? Bitte den Tab neu laden und erneut versuchen."
+    });
+    render();
+  }
+
   function tickActiveCallTimer() {
+    // Läuft prozessweit im Sekundentakt – zuerst der Lookup-Watchdog, damit er
+    // auch dann greift, wenn gerade kein Anruf aktiv ist (früher Rücksprung unten).
+    maybeExpireStuckLookup();
     const call = currentActiveCall();
     if (!call) {
       if (state.activeCall) {
@@ -1714,10 +1746,52 @@
       </section>`;
   }
 
+  // Sichtbare Farbrollen im Theme-Editor + deutsche Labels. amberSoft bleibt
+  // bewusst ausgeblendet (abgeleitete Hintergrundfarbe des Outbound-Akzents,
+  // ändert sich selten unabhängig von "amber").
+  const THEME_COLOR_FIELDS = [
+    ["accent", "Akzentfarbe"],
+    ["accentDark", "Akzentfarbe (dunkel)"],
+    ["surface", "Hintergrund"],
+    ["soft", "Hintergrund (weich)"],
+    ["ink", "Text"],
+    ["muted", "Text (gedämpft)"],
+    ["line", "Rahmen"],
+    ["success", "Erfolg"],
+    ["warning", "Warnung"],
+    ["danger", "Fehler"],
+    ["amber", "Outbound-Akzent"]
+  ];
+
+  function renderThemeSection() {
+    const theme = state.theme;
+    const colors = themeEngine.resolveThemeColors(theme);
+    return `
+      <section class="sc-section">
+        <div class="sc-section-title-row">
+          <h3>Darstellung</h3>
+          <span class="sc-local-label">nur lokal</span>
+        </div>
+        <p class="sc-section-intro">Wähle ein Farbschema oder passe einzelne Farben frei an. Rührst du hier nichts an, bleibt alles beim heutigen Standard (Jira-Theme).</p>
+        <div class="sc-inline-actions">
+          <button class="sc-secondary-button ${theme.presetId === "jira" ? "is-active" : ""}" type="button" data-action="set-theme-preset" data-preset="jira">Jira-Theme</button>
+          <button class="sc-secondary-button ${theme.presetId === "crm" ? "is-active" : ""}" type="button" data-action="set-theme-preset" data-preset="crm">CRM-Theme</button>
+          <button class="sc-secondary-button" type="button" data-action="reset-theme">Zurücksetzen</button>
+        </div>
+        <div class="sc-theme-colors">
+          ${THEME_COLOR_FIELDS.map(([role, label]) => `
+            <label class="sc-input-label sc-theme-color-label">${label}
+              <input type="color" data-role="set-theme-color-${role}" value="${colors[role]}">
+            </label>`).join("")}
+        </div>
+      </section>`;
+  }
+
   function renderSettings() {
     const s = state.settings;
     return `
       ${renderSupabaseLoginSection()}
+      ${renderThemeSection()}
       <section class="sc-section">
         <div class="sc-section-title-row">
           <h3>Einstellungen</h3>
@@ -1787,6 +1861,8 @@
     lastTicketContextSignature = null;
     aiCache.init(null);
     state.settings = { ...CONFIG.settingsDefaults };
+    state.theme = { presetId: "jira", overrides: {} };
+    themeEngine.applyTheme(root(), state.theme);
     state.activeCall = null;
     state.callOverlay = { mode: "full", pos: null, dismissedForCallId: null };
     state.callMode = "outbound";
@@ -2426,7 +2502,11 @@
       status: "running",
       steps: (dash.steps || []).map((step) => ({ id: step.id, state: "pending" })),
       data: null,
-      error: ""
+      error: "",
+      // Startzeitpunkt für den Watchdog (maybeExpireStuckLookup). Der Worker
+      // überschreibt updatedAt bei jedem Fortschritt; bleibt es zu lange stehen,
+      // gilt der Lauf als hängend und wird sichtbar auf Fehler gesetzt.
+      updatedAt: Date.now()
     };
     try {
       try { console.log("[Netz-Auskunft] sende sc-run-lookup an den Worker …", requestId); } catch (e) { /* egal */ }
@@ -2490,6 +2570,20 @@
         render();
         return;
       case "save-settings": saveSettings(); return;
+      case "set-theme-preset": {
+        state.theme.presetId = control.dataset.preset === "crm" ? "crm" : "jira";
+        themeEngine.applyTheme(root(), state.theme);
+        persistTheme();
+        render();
+        return;
+      }
+      case "reset-theme": {
+        state.theme = { presetId: "jira", overrides: {} };
+        themeEngine.applyTheme(root(), state.theme);
+        persistTheme();
+        render();
+        return;
+      }
       case "supabase-login": await handleSupabaseLogin(); return;
       case "supabase-logout": handleSupabaseLogout(); return;
       case "enable-ai": enableAi(); return;
@@ -2588,6 +2682,14 @@
     else if (role === "set-supabase-url") state.settings.supabaseUrl = event.target.value;
     else if (role === "set-supabase-anon-key") state.settings.supabaseAnonKey = event.target.value;
     else if (role === "set-bridge-token") state.settings.bridgeToken = event.target.value;
+    else if (role && role.indexOf("set-theme-color-") === 0) {
+      const themeRole = role.slice("set-theme-color-".length);
+      if (themeEngine.ROLE_TO_VAR[themeRole]) {
+        state.theme.overrides[themeRole] = event.target.value;
+        themeEngine.applyTheme(root(), state.theme);
+        persistTheme();
+      }
+    }
     else if (role === "lookup-customer") state.lookup.customerInput = event.target.value;
     else if (role === "sb-login-name") state.supabaseAuth.name = event.target.value;
     else if (role === "sb-login-pin") state.supabaseAuth.pin = event.target.value;
@@ -2665,7 +2767,8 @@
       CONFIG.storageKeys.supabaseSession,
       CONFIG.storageKeys.customerCard,
       CONFIG.storageKeys.lookupResult,
-      CONFIG.storageKeys.bridgeState
+      CONFIG.storageKeys.bridgeState,
+      CONFIG.storageKeys.theme
     ]);
     if (typeof saved[CONFIG.storageKeys.isOpen] === "boolean") state.isOpen = saved[CONFIG.storageKeys.isOpen];
     if (CONFIG.tabs.some((tab) => tab.id === saved[CONFIG.storageKeys.activeTab])) state.activeTab = saved[CONFIG.storageKeys.activeTab];
@@ -2689,6 +2792,8 @@
     state.customerCard = saved[CONFIG.storageKeys.customerCard] || null;
     state.lookup.result = saved[CONFIG.storageKeys.lookupResult] || null;
     state.bridgeState = saved[CONFIG.storageKeys.bridgeState] || null;
+    state.theme = themeEngine.normalizeThemeState(saved[CONFIG.storageKeys.theme]);
+    themeEngine.applyTheme(container, state.theme);
 
     state.ticket = jiraReader.read();
     hydrateAiFromCache(state.ticket);
@@ -2817,6 +2922,7 @@
 
   app.ui = {
     mount,
-    refresh: refreshTicket
+    refresh: refreshTicket,
+    loadCapabilities
   };
 })();

@@ -56,6 +56,18 @@
       catch (error) { resolve(null); }
     });
   }
+  // Lädt einen bestehenden Tab neu. Spielt das deklarative Content-Script
+  // frisch ein – der Weg, ein nach einem Extension-Reload verwaistes Script
+  // wieder ansprechbar zu machen, ohne chrome.scripting (das an der strikten
+  // CSP/Trusted-Types-Seite scheitern würde, siehe Kopfkommentar).
+  function reloadTab(tabId) {
+    return new Promise((resolve) => {
+      try {
+        if (!chrome.tabs || typeof chrome.tabs.reload !== "function") return resolve();
+        chrome.tabs.reload(tabId, { bypassCache: false }, () => { void chrome.runtime.lastError; resolve(); });
+      } catch (error) { resolve(); }
+    });
+  }
   function sendTabMessage(tabId, message) {
     return new Promise((resolve) => {
       try {
@@ -97,13 +109,30 @@
     setLocal({ [KEYS.lookupResult]: result });
   }
 
-  function applyStep(requestId, stepId, stepState) {
-    const result = active.get(requestId);
-    if (!result) return;
+  function mergeStep(result, stepId, stepState) {
+    if (!Array.isArray(result.steps)) result.steps = [];
     const step = result.steps.find((s) => s.id === stepId);
     if (step) step.state = stepState;
     else result.steps.push({ id: stepId, state: stepState });
     writeResult(result);
+  }
+
+  function applyStep(requestId, stepId, stepState) {
+    const inMemory = active.get(requestId);
+    if (inMemory) { mergeStep(inMemory, stepId, stepState); return; }
+    // Der Service-Worker ist kurzlebig: Chrome kann ihn zwischen Auftragsstart
+    // und Fortschrittsmeldung beenden und neu starten – dann ist der In-Memory-
+    // Spiegel (active) leer. Die Meldung dann einfach zu verwerfen ließ das
+    // Panel ewig bei „läuft" hängen. Stattdessen den letzten Stand aus dem
+    // Storage holen und dort weiterschreiben – aber nur, wenn er zur selben
+    // Anfrage gehört (sonst würde eine Meldung eine fremde/ältere Abfrage
+    // überschreiben).
+    getLocal([KEYS.lookupResult]).then((data) => {
+      const stored = data[KEYS.lookupResult];
+      if (!stored || stored.requestId !== requestId) return;
+      active.set(requestId, stored);
+      mergeStep(stored, stepId, stepState);
+    });
   }
 
   async function findOrOpenTab(dash) {
@@ -135,6 +164,19 @@
       return { ok: false, error: lastError };
     }
     return { ok: false, error: lastError };
+  }
+
+  // Kurzer Erreichbarkeits-Ping ans deklarative Content-Script. true nur, wenn
+  // ein Script mit gültigem Kontext im Tab hängt und sofort mit pong antwortet.
+  // Unterscheidet den Regelfall (Script da, evtl. nur noch nicht fertig) vom
+  // toten Fall (verwaistes Script nach Extension-Reload / Login-Seite ohne
+  // Script), ohne den vollen lookupTimeout abzuwarten.
+  async function pingContentScript(tabId, timeoutMs) {
+    const res = await Promise.race([
+      sendTabMessage(tabId, { type: "sc-ping" }),
+      sleep(timeoutMs || 2500).then(() => ({ __timeout: true }))
+    ]);
+    return Boolean(res && res.ok && res.pong);
   }
 
   async function runLookup(request) {
@@ -175,6 +217,32 @@
     log(`Tab bereit: id=${target.tabId} neu=${target.created} geladen=${target.complete} → ${dash.openUrl}`);
     if (!target.complete) await waitForTabLoad(target.tabId, LOOKUPS.tabLoadTimeoutMs);
     await sleep(600);
+
+    // Sicherstellen, dass im Dashboard-Tab wirklich ein ansprechbares
+    // Content-Script hängt. Häufigste Ursache für „es passiert nichts, bleibt
+    // ewig bei läuft": die Extension wurde neu geladen, der Dashboard-Tab aber
+    // nicht – dann liegt dort ein verwaistes Content-Script ohne gültigen
+    // Kontext, das die sc-lookup-Nachricht nie beantwortet, und der Worker
+    // wartet stumm bis zum lookupTimeout. Ein kurzer Ping erkennt das in
+    // Sekunden; ein einmaliges Neuladen des Tabs spielt ein frisches
+    // Content-Script ein, danach läuft der Lookup normal weiter.
+    let ready = await pingContentScript(target.tabId, 2500);
+    if (!ready) {
+      log("Dashboard-Tab antwortet nicht auf den Ping – lade ihn einmal neu (verwaistes Content-Script?).");
+      await reloadTab(target.tabId);
+      await waitForTabLoad(target.tabId, LOOKUPS.tabLoadTimeoutMs);
+      await sleep(900);
+      ready = await pingContentScript(target.tabId, 3500);
+    }
+    if (!ready) {
+      log("Dashboard-Tab bleibt auch nach dem Neuladen stumm – Abbruch mit Hinweis.");
+      const latestPing = active.get(requestId) || base;
+      writeResult(Object.assign({}, latestPing, {
+        status: "error",
+        error: `Der Dashboard-Tab „${dash.openUrl}" meldet sich nicht. Bitte prüfen, ob er offen ist und du dort angemeldet bist – der Tab wurde gerade neu geladen, einen Moment warten und erneut „Nachschlagen" drücken.`
+      }));
+      return { ok: false, error: "no-content-script", requestId };
+    }
 
     const response = await callContentScript(
       target.tabId,
