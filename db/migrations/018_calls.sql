@@ -68,7 +68,19 @@ drop policy if exists "calls delete manager" on public.calls;
 create policy "calls delete manager" on public.calls
   for delete using (public.auth_is_manager());
 
-alter publication supabase_realtime add table public.calls;
+-- Realtime-Publication nur ergänzen, wenn die Tabelle noch nicht Mitglied ist —
+-- ein blankes `alter publication ... add table` bricht sonst beim Re-Run ab.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'calls'
+  ) then
+    alter publication supabase_realtime add table public.calls;
+  end if;
+end $$;
 
 -- ----------------------------------------------------------------------------
 -- customers-Zeile auch aus Anrufen pflegen: touch_customer() (Migration 017)

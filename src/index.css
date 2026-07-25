@@ -717,7 +717,13 @@ table.crm-table td[style*="text-align: right"] {
 .schedule-campaign-pick select { min-width: 150px; }
 
 /* Tabelle */
-table.schedule-table { table-layout: fixed; }
+/* Der Wochenplan hat acht feste Spalten (Person + 7 Tage + Summe). Weil
+   .table-wrap den Überlauf abschneidet und die Tabelle ein festes Layout hat,
+   wurden die Spalten in einem schmalen Fenster so weit zusammengedrückt, dass
+   Datumszeilen und Kampagnennamen sichtbar übereinanderlagen. Unterhalb der
+   Mindestbreite wird deshalb gescrollt statt gequetscht. */
+.table-wrap.schedule-wrap { overflow-x: auto; overflow-y: hidden; }
+table.schedule-table { table-layout: fixed; min-width: 880px; }
 table.schedule-table th.schedule-corner { width: 150px; }
 table.schedule-table tr.row-self > th.schedule-agent {
   font-weight: 700;

@@ -152,6 +152,16 @@
       baseUrl: "https://crm-tng.vercel.app"
     },
 
+    // Aktuelle Schicht/Kampagne des eingeloggten Agenten (Migration 019/020).
+    // Der Chef ändert den Schichtplan im CRM, während timio- und Jira-Tab
+    // stundenlang offen bleiben — die Extension hat keinen Realtime-Kanal
+    // (kein supabase-js), deshalb wird der Kontext in diesem Takt neu gezogen.
+    // Deckt zugleich den Tageswechsel ab: über Mitternacht gilt eine andere
+    // Schicht, ohne dass sich an der Tabelle etwas ändert.
+    shift: {
+      refreshMs: 300000
+    },
+
     // Desktop-App (desktop/). Sie öffnet auf diesem Port einen lokalen
     // WebSocket-Server, der Hintergrund-Worker verbindet sich dorthin (siehe
     // src/hud-bridge.js). Nur 127.0.0.1 — nichts davon verlässt den Rechner.
@@ -240,13 +250,19 @@
       // (nur beim Ergebnis "gekündigt"). Ergebnisse ohne echtes Gespräch
       // (Mailbox, nicht erreicht, falsche Nummer) tragen bewusst keine
       // disposition — sie zählen in der Auswertung als "nicht entschieden".
+      // "outboundOnly: true" markiert Ergebnisse, die einen eigenen Wählversuch
+      // voraussetzen: bei einem eingehenden Anruf ist der Kunde per Definition
+      // dran, "Mailbox"/"Nicht erreicht"/"Falsche Nummer" ergeben dort keinen
+      // Sinn. Beide Oberflächen (Jira-Panel und timio-Cockpit) lesen DIESE eine
+      // Liste — die früher getrennte CONFIG.inbound-Liste ist entfallen und hätte
+      // Ergebnis-Ids erzeugt, die die jeweils andere Seite nicht kennt.
       outcomes: [
         { id: "reached-done", label: "Erreicht & geklärt", followUp: false, opensPanel: true, disposition: "gehalten", seed: "Kunde telefonisch erreicht. Anliegen besprochen und geklärt. Ergebnis: [ergänzen]." },
         { id: "reached-callback", label: "Erreicht – Rückruf vereinbart", followUp: true, opensPanel: true, disposition: "rueckruf", seed: "Kunde telefonisch erreicht. Rückruf vereinbart für [Datum] um [Uhrzeit]. Offener Punkt: [ergänzen]." },
         { id: "cancelled", label: "Gekündigt / verloren", followUp: false, opensPanel: true, disposition: "gekuendigt", needsReason: true, seed: "Kunde hält an der Kündigung fest. Kündigungsgrund: [ergänzen]." },
-        { id: "mailbox", label: "Mailbox", followUp: true, opensPanel: false, seed: "Kunde telefonisch nicht erreicht, Mailbox erreicht. Keine Nachricht hinterlassen / Nachricht hinterlassen: [ergänzen]. Erneuter Kontaktversuch geplant." },
-        { id: "not-reached", label: "Nicht erreicht", followUp: true, opensPanel: false, seed: "Kunde telefonisch nicht erreicht (kein Abheben). Erneuter Kontaktversuch geplant." },
-        { id: "wrong-number", label: "Falsche Nummer", followUp: false, opensPanel: false, seed: "Hinterlegte Rufnummer ist nicht korrekt bzw. gehört nicht zum Kunden. Aktuelle Kontaktdaten müssen ermittelt werden." },
+        { id: "mailbox", label: "Mailbox", followUp: true, opensPanel: false, outboundOnly: true, seed: "Kunde telefonisch nicht erreicht, Mailbox erreicht. Keine Nachricht hinterlassen / Nachricht hinterlassen: [ergänzen]. Erneuter Kontaktversuch geplant." },
+        { id: "not-reached", label: "Nicht erreicht", followUp: true, opensPanel: false, outboundOnly: true, seed: "Kunde telefonisch nicht erreicht (kein Abheben). Erneuter Kontaktversuch geplant." },
+        { id: "wrong-number", label: "Falsche Nummer", followUp: false, opensPanel: false, outboundOnly: true, seed: "Hinterlegte Rufnummer ist nicht korrekt bzw. gehört nicht zum Kunden. Aktuelle Kontaktdaten müssen ermittelt werden." },
         { id: "no-interest", label: "Kein Interesse / später", followUp: false, opensPanel: false, disposition: "kein-interesse", seed: "Kunde wünscht aktuell keine weitere Besprechung des Anliegens. Begründung: [ergänzen]." }
       ],
       // Abstand bis zum nächsten Versuch, gestaffelt nach Anzahl der bisherigen

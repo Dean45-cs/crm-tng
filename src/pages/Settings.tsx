@@ -5,12 +5,13 @@ import { useAuth } from '../store/useAuth';
 import { useOnboarding } from '../store/useOnboarding';
 import { formatCurrency, TARIFF_CONTEXT_LABEL, TARIFF_TYPE_LABEL } from '../lib/utils';
 import { spSignOut, spGetAccount, testConnection } from '../lib/sharepointGraph';
-import { getStoredTheme, setTheme, type ThemePref } from '../lib/theme';
+import { getStoredTheme, setTheme, onThemeChange, type ThemePref } from '../lib/theme';
 import {
   getStoredPalette,
   setPalette,
   resetPalette,
   resolvePaletteColors,
+  onPaletteChange,
   type PaletteState,
   type PaletteRole,
 } from '../lib/palette';
@@ -92,6 +93,12 @@ export function Settings() {
     setPaletteState(next);
     if (userId) pushPalette(userId, next);
   };
+
+  // Stellt ein anderes Gerät/Tab die Optik um, wendet appearanceSync sie über
+  // setTheme/setPalette an — ohne diese Abos zeigte diese Seite weiter die alte
+  // Auswahl, während die Farben schon gewechselt haben.
+  useEffect(() => onThemeChange(setThemeState), []);
+  useEffect(() => onPaletteChange(setPaletteState), []);
 
   const paletteColors = resolvePaletteColors(palette);
 

@@ -23,9 +23,21 @@ function applyResolved(pref: ThemePref) {
 let mql: MediaQueryList | null = null;
 let mqlHandler: (() => void) | null = null;
 
+// Wer die aktuelle Wahl anzeigt (Einstellungsseite), muss mitbekommen, wenn sie
+// von woanders kommt — der Realtime-Abgleich in appearanceSync.ts ruft setTheme()
+// auf, wenn ein anderes Gerät umstellt. Gleiches Muster wie onConfigChange() in
+// lib/supabase.ts.
+const listeners = new Set<(pref: ThemePref) => void>();
+
+export function onThemeChange(cb: (pref: ThemePref) => void): () => void {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+
 export function setTheme(pref: ThemePref): void {
   localStorage.setItem(STORAGE_KEY, pref);
   applyResolved(pref);
+  listeners.forEach((cb) => cb(pref));
 
   if (mql && mqlHandler) mql.removeEventListener('change', mqlHandler);
   mql = null;

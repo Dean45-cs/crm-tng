@@ -3,6 +3,7 @@ import { Megaphone, Lock, Plus, Pencil, Eye, EyeOff } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { CampaignForm } from '../components/CampaignForm';
+import { SkeletonCardGrid } from '../components/Skeleton';
 import type { Campaign, CampaignCallType } from '../types';
 
 const CALL_TYPE_SHORT: Record<CampaignCallType, string> = {
@@ -12,7 +13,7 @@ const CALL_TYPE_SHORT: Record<CampaignCallType, string> = {
 };
 
 export function CampaignManager() {
-  const { campaigns, updateCampaign } = useStore();
+  const { campaigns, updateCampaign, loaded } = useStore();
   const { isManager } = useAuth();
 
   const [formOpen, setFormOpen] = useState(false);
@@ -52,7 +53,9 @@ export function CampaignManager() {
         </button>
       </div>
 
-      {campaigns.length === 0 ? (
+      {!loaded ? (
+        <SkeletonCardGrid count={3} />
+      ) : campaigns.length === 0 ? (
         <div className="widget empty">
           <Megaphone size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>Noch keine Kampagnen</h3>

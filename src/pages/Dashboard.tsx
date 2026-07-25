@@ -390,7 +390,11 @@ export function Dashboard() {
                   <span className="muted">Letzte 6 Monate</span>
                 </div>
                 <div style={{ width: '100%', height: 200 }}>
-                  <ResponsiveContainer>
+                  {/* Feste Höhe direkt am ResponsiveContainer statt nur am Wrapper:
+                      sonst misst er beim ersten Rendern noch nichts (-1) und
+                      warnt bei jedem Seitenaufbau in der Konsole. Die Breite
+                      bleibt prozentual, also weiterhin responsiv. */}
+                  <ResponsiveContainer height={200}>
                     <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
                       <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />

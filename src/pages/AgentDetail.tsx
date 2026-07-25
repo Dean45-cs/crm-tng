@@ -238,7 +238,7 @@ export function AgentDetail({ agentKey }: Props) {
           <span className="muted">Letzte 6 Monate</span>
         </div>
         <div style={{ width: '100%', height: 240 }}>
-          <ResponsiveContainer>
+          <ResponsiveContainer height={240}>
             <BarChart data={chart6} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
               <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />

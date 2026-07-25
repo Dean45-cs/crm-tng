@@ -390,7 +390,8 @@
       const start = Date.now();
       const check = () => {
         let result = null;
-        try { result = condition(); } catch (error) { result = null; }
+        // Wirft die Bedingung, gilt sie schlicht als noch nicht erfüllt.
+        try { result = condition(); } catch (error) { /* weiter warten */ }
         if (result) return resolve(result);
         if (Date.now() - start >= timeout) return resolve(null);
         setTimeout(check, interval);
@@ -437,7 +438,8 @@
       let stableSince = 0;
       const tick = () => {
         let n = prev;
-        try { n = getCount(); } catch (error) { n = prev; }
+        // Wirft das Zählen, bleibt der zuletzt bekannte Stand stehen.
+        try { n = getCount(); } catch (error) { /* prev behalten */ }
         const now = Date.now();
         if (n === prev) {
           if (stableSince && now - stableSince >= quietMs) return resolve(n);

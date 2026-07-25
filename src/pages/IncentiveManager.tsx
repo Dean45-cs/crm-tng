@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { formatCurrency, weekLabel, monthLabel } from '../lib/utils';
 import { IncentiveForm } from '../components/IncentiveForm';
+import { SkeletonCardGrid } from '../components/Skeleton';
 import type { Incentive, IncentiveMechanic, IncentiveMetric, IncentivePeriod } from '../types';
 
 const MECHANIC_SHORT: Record<IncentiveMechanic, string> = {
@@ -21,7 +22,7 @@ const PERIOD_SHORT: Record<IncentivePeriod, string> = {
 };
 
 export function IncentiveManager() {
-  const { incentives, updateIncentive, deleteIncentive } = useStore();
+  const { incentives, updateIncentive, deleteIncentive, loaded } = useStore();
   const { isManager } = useAuth();
 
   const [formOpen, setFormOpen] = useState(false);
@@ -59,7 +60,9 @@ export function IncentiveManager() {
         </button>
       </div>
 
-      {incentives.length === 0 ? (
+      {!loaded ? (
+        <SkeletonCardGrid count={3} />
+      ) : incentives.length === 0 ? (
         <div className="widget empty">
           <Award size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>Noch keine Incentives</h3>

@@ -141,7 +141,20 @@ export const useShifts = create<ShiftsState>()((set, get) => ({
       .channel('crm-tng-shifts')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, reload)
       .subscribe();
+
+    // Über Mitternacht gilt eine andere Schicht, ohne dass sich an der Tabelle
+    // etwas ändert — der Realtime-Kanal feuert dafür also nie. Ein offen
+    // gelassener Tab zeigte sonst am nächsten Morgen weiter die Schicht von
+    // gestern. Minütlicher Vergleich des lokalen Tagesschlüssels; geladen wird
+    // nur beim tatsächlichen Wechsel.
+    const dayWatch = setInterval(() => {
+      const { contextUserId, contextDate } = get();
+      if (!contextUserId || contextDate === localDateKey()) return;
+      void get().loadContext(contextUserId);
+    }, 60_000);
+
     return () => {
+      clearInterval(dayWatch);
       sb.removeChannel(channel);
     };
   },

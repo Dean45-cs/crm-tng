@@ -220,7 +220,16 @@ function PinStep({
   onBack: () => void;
 }) {
   const [digits, setDigits] = useState<string[]>(['', '', '', '']);
+  // Spiegel des aktuellen Stands: mehrere change-Events können im selben Tick
+  // eintreffen (Autofill eines Einmalcodes), bevor React neu gerendert hat —
+  // der Render-Closure-Wert wäre dann veraltet und würde Ziffern verschlucken.
+  const digitsRef = useRef(digits);
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
+
+  const commitDigits = (next: string[]) => {
+    digitsRef.current = next;
+    setDigits(next);
+  };
 
   useEffect(() => {
     inputs.current[0]?.focus();
@@ -235,22 +244,26 @@ function PinStep({
   useEffect(() => {
     if (busy || !error) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDigits(['', '', '', '']);
+    commitDigits(['', '', '', '']);
     inputs.current[0]?.focus();
   }, [busy, error]);
 
+  // Der State-Updater bleibt frei von Seiteneffekten: React ruft ihn im
+  // StrictMode absichtlich zweimal auf, wodurch Fokuswechsel UND Absenden
+  // doppelt liefen — jede PIN-Eingabe löste zwei signInWithPassword-Aufrufe aus
+  // (verifiziert: zwei POSTs auf /auth/v1/token) und zählte bei falscher PIN
+  // zwei Fehlversuche, sodass die Login-Sperre nach der Hälfte der erlaubten
+  // Versuche zuschlug. Fokus und Absenden passieren deshalb hier, außerhalb.
   const setDigit = (i: number, v: string) => {
     const clean = v.replace(/\D/g, '').slice(-1);
-    setDigits((d) => {
-      const next = [...d];
-      next[i] = clean;
-      if (clean && i < 3) inputs.current[i + 1]?.focus();
-      if (next.every((x) => x !== '')) {
-        const pin = next.join('');
-        setTimeout(() => onComplete(pin), 80);
-      }
-      return next;
-    });
+    const next = [...digitsRef.current];
+    next[i] = clean;
+    commitDigits(next);
+    if (clean && i < 3) inputs.current[i + 1]?.focus();
+    if (next.every((x) => x !== '')) {
+      const pin = next.join('');
+      setTimeout(() => onComplete(pin), 80);
+    }
   };
 
   const onKeyDown = (i: number, e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -267,7 +280,7 @@ function PinStep({
     e.preventDefault();
     const next = ['', '', '', ''];
     for (let i = 0; i < text.length; i++) next[i] = text[i];
-    setDigits(next);
+    commitDigits(next);
     if (text.length === 4) setTimeout(() => onComplete(text), 80);
     else inputs.current[text.length]?.focus();
   };

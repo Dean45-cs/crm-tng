@@ -62,6 +62,9 @@ export function StatusInsights() {
       })),
     [insights],
   );
+  // Einmal berechnet und an Wrapper UND ResponsiveContainer gegeben: eine feste
+  // Höhe am Container verhindert die -1-Messung beim ersten Rendern.
+  const chartHeight = Math.max(130, chartData.length * 30 + 30);
 
   const userName = (id?: string): string =>
     (id && users[id]?.displayName) || 'Unbekannt';
@@ -139,8 +142,8 @@ export function StatusInsights() {
         </div>
       ) : (
         <>
-          <div style={{ width: '100%', height: Math.max(130, chartData.length * 30 + 30) }}>
-            <ResponsiveContainer>
+          <div style={{ width: '100%', height: chartHeight }}>
+            <ResponsiveContainer height={chartHeight}>
               <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" horizontal={false} />
                 <XAxis

@@ -58,11 +58,17 @@ export const useMonthCalls = create<MonthCallsState>()((set) => ({
 
   subscribeRealtime: () => {
     const sb = getSupabase();
+    // Bewusst deutlich träger als die übrigen Stores (250 ms): jedes
+    // Anruf-Ereignis irgendeiner Kolleg:in lädt hier das komplette
+    // Monatsfenster neu — bei einem telefonierenden Team sind das im
+    // Minutentakt Hunderte Zeilen, in jedem offenen CRM-Tab. Die Zahlen
+    // speisen nur Auswertungs-Kacheln; zwei Sekunden Verzug sind dort nicht
+    // wahrnehmbar. Die Live-Anrufleiste hängt an useCalls und bleibt schnell.
     const reload = debounce(() => {
       fetchCallsSince(monthStartIso())
         .then((rows) => set({ calls: rows }))
         .catch(() => {});
-    });
+    }, 2000);
     const channel = sb
       .channel('crm-tng-month-calls')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'calls' }, reload)

@@ -53,7 +53,10 @@ function run() {
     "Kundennummer: 12345"
   ].join("\n"));
   env.tick();
-  assert.ok(env.getOverlay().innerHTML.includes("Klingelt"), "während des Klingelns wird die Anrufkarte gezeigt, nicht das Idle-Widget");
+  // Auf den Anrufer geprüft, nicht auf das Status-Label: das Label hängt an der
+  // Arbeitsrichtung ("Klingelt" vs. "Wählt …") und würde hier nur den
+  // Vorgabewert von callMode mitprüfen, nicht die eigentliche Aussage.
+  assert.ok(env.getOverlay().innerHTML.includes("Anna Beispiel"), "während des Klingelns wird die Anrufkarte gezeigt, nicht das Idle-Widget");
 
   // 5) Anruf endet, Seite wird wieder idle -> Idle-Widget erscheint erneut.
   // Zwei Ticks: die Klingel-Phase toleriert einen einzelnen leeren Tick gegen
@@ -137,13 +140,15 @@ function run() {
   assert.strictEqual(env.storage[KEYS.activeCall].likelyOutbound, false, "nach dem Annehmen bleibt der Anruf eingehend");
 
   // 10) Der Modus-Schalter im Overlay schreibt die Richtung in den Storage,
-  //     damit das Jira-Panel sofort nachzieht.
-  env.clickControl("mode-outbound");
-  assert.strictEqual(env.storage[KEYS.callMode], "outbound", "der Schalter veröffentlicht die Arbeitsrichtung");
+  //     damit das Jira-Panel sofort nachzieht. Vorbelegt ist "outbound"
+  //     (Outbound-Betrieb, siehe callMode in timio-content.js) — der erste
+  //     echte Wechsel geht deshalb nach eingehend.
+  env.clickControl("mode-inbound");
+  assert.strictEqual(env.storage[KEYS.callMode], "inbound", "der Schalter veröffentlicht die Arbeitsrichtung");
   assert.ok(env.getOverlay().innerHTML.includes("Im Gespräch"), "die Anrufkarte bleibt sichtbar");
 
-  env.clickControl("mode-inbound");
-  assert.strictEqual(env.storage[KEYS.callMode], "inbound", "zurückschalten funktioniert ebenso");
+  env.clickControl("mode-outbound");
+  assert.strictEqual(env.storage[KEYS.callMode], "outbound", "zurückschalten funktioniert ebenso");
 
   // 11) Gesprächsergebnis: in timio geklickt, in Jira verarbeitet. Das
   //     Content-Script legt es nur als Staffelstab in den Storage.
@@ -170,6 +175,42 @@ function run() {
   env.storage[KEYS.callOutcome] = null;
   env.clickControl("outcome", { outcome: "gibt-es-nicht" });
   assert.strictEqual(env.storage[KEYS.callOutcome], null, "eine unbekannte Ergebnis-ID wird ignoriert");
+
+  // 11b) Auch eingehend muss die Ergebnis-Leiste da sein. Sie speiste sich früher
+  //      aus einer eigenen CONFIG.inbound-Liste, die es seit dem Outbound-Umbau
+  //      nicht mehr gibt — die Leiste war damit im Inbound-Modus komplett leer und
+  //      es landete weder ein Ergebnis noch eine disposition im calls-Datensatz.
+  //      Jetzt teilen sich beide Richtungen eine Liste; eingehend fallen nur die
+  //      Ergebnisse weg, die einen eigenen Wählversuch voraussetzen.
+  env.setPageText("Willkommen");
+  env.tick();
+  env.tick();
+  env.clickControl("mode-inbound");
+  env.setPageText([
+    "EF", "Erika Eingehend", "+49 (176) 99998888",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Kundennummer: 98765"
+  ].join("\n"));
+  env.tick();
+  env.setPageText([
+    "EF", "Erika Eingehend", "+49 (176) 99998888",
+    "Beendet",
+    "Dauer: 1:05",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Kundennummer: 98765"
+  ].join("\n"));
+  env.tick();
+  const inboundOverlay = env.getOverlay().innerHTML;
+  assert.ok(inboundOverlay.includes("Ergebnis festhalten"), "eingehend erscheint die Ergebnis-Leiste");
+  assert.ok(inboundOverlay.includes("data-outcome=\"reached-done\""), "das Ergebnis mit Gesprächsinhalt steht auch eingehend bereit");
+  assert.ok(!inboundOverlay.includes("data-outcome=\"mailbox\""), "eingehend fehlt \"Mailbox\" – ohne eigenen Wählversuch sinnlos");
+  env.storage[KEYS.callOutcome] = null;
+  env.clickControl("outcome", { outcome: "reached-done" });
+  assert.strictEqual(
+    (env.storage[KEYS.callOutcome] || {}).outcomeId, "reached-done",
+    "auch eingehend wird das Ergebnis für die Jira-Seite hinterlegt"
+  );
+  env.clickControl("mode-outbound");
 
   // --- Bug A: "Beendet" weit weg von der Anrufkarte -------------------------
   // Ein laufendes Gespräch (Kundennummer sichtbar) darf NICHT beendet werden,
@@ -248,11 +289,17 @@ async function runCallsWritePath() {
 
   const startCalls = [];
   const endCalls = [];
+  // Ermöglicht Szenario 5: startCall() antwortet erst, nachdem der Anruf
+  // längst vorbei ist.
+  let deferStart = false;
+  let releaseStart = null;
   env.sandbox.StadtnetzCRM.supabaseClient = {
     customerCard: async () => ({ ok: false, reason: "not-configured" }),
     startCall: async (payload) => {
       startCalls.push(payload);
-      return { ok: true, id: `db-${startCalls.length}` };
+      const id = `db-${startCalls.length}`;
+      if (deferStart) return new Promise((resolve) => { releaseStart = () => resolve({ ok: true, id }); });
+      return { ok: true, id };
     },
     endCall: async (id, patch) => {
       endCalls.push({ id, ...patch });
@@ -263,7 +310,10 @@ async function runCallsWritePath() {
   loadScripts(env.sandbox, ["src/timio-content.js"]);
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-  // 1) Eingehender Anruf klingelt -> genau ein startCall(), Richtung inbound.
+  // 1) Ein Anruf klingelt -> genau ein startCall(). Die Richtung kommt aus dem
+  //    Arbeitsmodus, nicht aus dem Seitentext (timio zeigt in beide Richtungen
+  //    denselben Call-Screen): ohne gespeicherten Schalterstand gilt der
+  //    Outbound-Betrieb, in dem das Jira-Panel ohnehin konstant arbeitet.
   env.setPageText([
     "AB", "Anna Beispiel", "Beispiel", "+49 (176) 34573586",
     "Eingehender Anruf",
@@ -274,7 +324,7 @@ async function runCallsWritePath() {
   env.tick();
   await flush();
   assert.strictEqual(startCalls.length, 1, "ein Anruf löst genau einen startCall() aus");
-  assert.strictEqual(startCalls[0].direction, "inbound");
+  assert.strictEqual(startCalls[0].direction, "outbound", "ohne gesetzten Schalter gilt der Outbound-Betrieb");
   assert.strictEqual(startCalls[0].customerNumber, "12345");
 
   // Erneutes tick() beim selben Anruf löst KEINEN zweiten startCall() aus (Dedup).
@@ -327,6 +377,36 @@ async function runCallsWritePath() {
   assert.strictEqual(endCalls.length, 2, "ein abgebrochener Anruf ohne Beendet-Screen wird beim Idle-Reset best-effort abgeschlossen");
   assert.strictEqual(endCalls[1].id, "db-2");
   assert.strictEqual(endCalls[1].durationS, null, "ohne jemals verbunden gewesen zu sein ist keine Dauer bekannt");
+
+  // 5) startCall() antwortet erst, nachdem der Anruf schon vorbei ist (kurzer
+  //    Anruf, langsame Antwort). Die zurückkommende ID gehört dann zu keinem
+  //    laufenden Gespräch mehr — sie wurde früher verworfen, womit die Zeile
+  //    für immer ohne ended_at stehen blieb und im CRM als „aktiver Anruf"
+  //    auftauchte. Jetzt wird sie sofort abgeschlossen.
+  deferStart = true;
+  env.setPageText([
+    "EF", "Eva Flott", "Flott", "+49 (176) 12121212",
+    "Eingehender Anruf",
+    "Gruppe: TNG GFIZ Bestellhotline",
+    "Kundennummer: 11111"
+  ].join("\n"));
+  env.tick();
+  await flush();
+  assert.strictEqual(startCalls.length, 3, "auch der dritte Anruf meldet sich an");
+  assert.strictEqual(endCalls.length, 2, "solange startCall() nicht geantwortet hat, gibt es nichts abzuschließen");
+
+  env.setPageText("Willkommen");
+  env.tick();
+  await flush();
+  env.tick();
+  await flush();
+  assert.strictEqual(endCalls.length, 2, "ohne bekannte Zeilen-ID kann der Idle-Reset nichts abschließen");
+
+  releaseStart();
+  await flush();
+  assert.strictEqual(endCalls.length, 3, "die verspätet eingetroffene Zeile wird nachträglich abgeschlossen");
+  assert.strictEqual(endCalls[2].id, "db-3");
+  deferStart = false;
 
   console.log("timio-content.test.js (Anruf-Schreibpfad): alle Szenarien bestanden.");
 }

@@ -124,6 +124,7 @@ export function TeamDashboard() {
     () => (monthCalls ? cancellationReasonBreakdown(monthCalls).slice(0, 6) : []),
     [monthCalls],
   );
+  const churnReasonsHeight = Math.max(140, churnReasons.length * 34 + 20);
   const campaignRows = useMemo(
     () => (monthCalls ? campaignPerformance(monthCalls, campaigns) : []),
     [monthCalls, campaigns],
@@ -235,6 +236,7 @@ export function TeamDashboard() {
       })),
     [rows],
   );
+  const perAgentHeight = Math.max(140, perAgent.length * 32 + 30);
 
   if (!isManager()) {
     return (
@@ -367,8 +369,8 @@ export function TeamDashboard() {
                   <span>Noch keine gekündigten Gespräche erfasst.</span>
                 </div>
               ) : (
-                <div style={{ width: '100%', height: Math.max(140, churnReasons.length * 34 + 20) }}>
-                  <ResponsiveContainer>
+                <div style={{ width: '100%', height: churnReasonsHeight }}>
+                  <ResponsiveContainer height={churnReasonsHeight}>
                     <BarChart
                       data={churnReasons}
                       layout="vertical"
@@ -499,7 +501,7 @@ export function TeamDashboard() {
             <span className="muted">Letzte 6 Monate</span>
           </div>
           <div style={{ width: '100%', height: 200 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer height={200}>
               <BarChart data={trend6} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
                 <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
@@ -530,7 +532,7 @@ export function TeamDashboard() {
             </div>
           ) : (
             <div style={{ width: '100%', height: 200 }}>
-              <ResponsiveContainer>
+              <ResponsiveContainer height={200}>
                 <PieChart>
                   <Pie
                     data={statusMix}
@@ -568,8 +570,8 @@ export function TeamDashboard() {
             <span>Noch keine Mitarbeitenden.</span>
           </div>
         ) : (
-          <div style={{ width: '100%', height: Math.max(140, perAgent.length * 32 + 30) }}>
-            <ResponsiveContainer>
+          <div style={{ width: '100%', height: perAgentHeight }}>
+            <ResponsiveContainer height={perAgentHeight}>
               <BarChart
                 data={perAgent}
                 layout="vertical"

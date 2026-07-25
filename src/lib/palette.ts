@@ -159,9 +159,20 @@ export function applyPalette(state: PaletteState): void {
   else ACCENT_DERIVED_VARS.forEach((v) => root.style.removeProperty(v));
 }
 
+// Analog zu onThemeChange() in theme.ts: die Einstellungsseite hält eine eigene
+// Kopie der Wahl und muss von einer Umstellung durch ein anderes Gerät erfahren
+// (appearanceSync.ts ruft dafür setPalette auf).
+const listeners = new Set<(state: PaletteState) => void>();
+
+export function onPaletteChange(cb: (state: PaletteState) => void): () => void {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+
 export function setPalette(state: PaletteState): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   applyPalette(state);
+  listeners.forEach((cb) => cb(state));
 }
 
 export function resetPalette(): void {

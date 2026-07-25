@@ -9,7 +9,6 @@
     jiraTicketUrl, formatDateDE, calcContractCommission, calcTariffCommission,
     groupProductsByCategory, todayIso
   } = shared;
-  const AI = CONFIG.ai;
   const localAi = app.localAi;
   const supabaseClient = app.supabaseClient;
   // theme.js ist eine eigene Datei im Ladepfad (manifest.json / index.html).
@@ -1134,7 +1133,7 @@
   function renderCallPrep() {
     const prep = state.ai.callPrep;
     const running = busyOn("callprep");
-    let body = "";
+    let body;
     if (running) {
       body = `<div class="sc-inline-loading"><span class="sc-spinner"></span>Bereitet das Gespräch vor …</div>`;
     } else if (prep.status === "ok" && prep.data) {
@@ -1200,11 +1199,29 @@
       </div>`;
   }
 
+  // Schreibt Disposition + Kampagne auf den calls-Datensatz (Migration 021) —
+  // die Grundlage für Save-Rate und Kampagnen-Performance im Team-Dashboard.
+  // Die Zeilen-ID kommt aus dem geteilten activeCall-Signal, das
+  // timio-content.js schreibt (siehe persistCall dort). Best-effort: schlägt es
+  // fehl, bleibt der Anruf ohne Disposition — der CRM-Eintrag entsteht trotzdem.
+  function recordOutcomeDisposition(outcome, call) {
+    if (!supabaseClient || !outcome || !outcome.disposition) return;
+    const rowId = call && call.dbCallId;
+    if (!rowId) return;
+    supabaseClient.patchCallDisposition(rowId, {
+      disposition: outcome.disposition,
+      campaignId: (state.shift && state.shift.campaignId) || undefined
+    }).catch(() => {});
+  }
+
   // Verarbeitet ein Ergebnis – egal ob hier oder im timio-Cockpit geklickt.
-  function applyOutcome(outcomeId, context) {
+  // `options.alreadyRecorded` markiert den Weg über den Storage-Staffelstab:
+  // dort hat das timio-Cockpit die Disposition schon selbst geschrieben.
+  function applyOutcome(outcomeId, context, options) {
     const outcome = activeOutcomes().find((entry) => entry.id === outcomeId);
     if (!outcome) return;
     const call = context || currentActiveCall() || {};
+    if (!(options && options.alreadyRecorded)) recordOutcomeDisposition(outcome, currentActiveCall());
 
     syncInputsFromDom();
     const existing = state.ai.callNotes.trim();
@@ -1216,6 +1233,15 @@
     if (outcome.opensPanel) {
       state.activeTab = "close";
       openCloseout("notiz", call, outcome.seed);
+      // Bei „gekündigt" verlangt der Abschluss zusätzlich einen Kündigungsgrund
+      // (Migration 021) — dieselbe Regel wie im timio-Cockpit, damit die
+      // Kündigungsgrund-Auswertung nicht davon abhängt, wo geklickt wurde.
+      // openCloseout() hat state.closeout gerade für genau dieses Ergebnis
+      // angelegt bzw. beibehalten, deshalb ohne weiteren Abgleich.
+      if (state.closeout) {
+        state.closeout.disposition = outcome.disposition || null;
+        state.closeout.needsReason = Boolean(outcome.needsReason);
+      }
     } else {
       state.activeTab = "talk";
     }
@@ -1296,7 +1322,10 @@
       newProduct: "",
       changeDate: todayIso(),
       notes: "",
-      jiraTicket: ticketKey
+      jiraTicket: ticketKey,
+      // Kündigungsgrund (Migration 021) — nur sichtbar, wenn die gewählte
+      // Ergebnis-Option „gekündigt" war (state.closeout.needsReason).
+      cancellationReason: ""
     };
   }
 
@@ -1358,6 +1387,22 @@
     else if (entryType === "vertrag") res = await supabaseClient.insertContract(fields);
     else if (entryType === "tarifwechsel") res = await supabaseClient.insertTariffChange(fields);
     else return;
+
+    // Kündigungsgrund nachtragen (Migration 021): war das Ergebnis „gekündigt",
+    // wird der hier erfasste Grund zusätzlich auf den calls-Datensatz
+    // geschrieben. Best-effort, unabhängig vom Erfolg des CRM-Eintrags —
+    // spiegelt submitCloseout() im timio-Cockpit.
+    if (state.closeout && state.closeout.needsReason && supabaseClient) {
+      const rowId = (currentActiveCall() || {}).dbCallId;
+      const reason = (fields.cancellationReason || "").trim();
+      if (rowId && reason) {
+        supabaseClient.patchCallDisposition(rowId, {
+          disposition: state.closeout.disposition || "gekuendigt",
+          cancellationReason: reason,
+          campaignId: (state.shift && state.shift.campaignId) || undefined
+        }).catch(() => {});
+      }
+    }
 
     // Anruf ist inzwischen vorbei oder ein neuer hat begonnen — das Ergebnis
     // gehört dann nicht mehr zum aktuell sichtbaren Panel.
@@ -1518,6 +1563,10 @@
           <input class="sc-text-input" data-role="closeout-customer-number" value="${escapeHtml(fields.customerNumber)}">
         </label>
         ${fieldsMarkup}
+        ${state.closeout.needsReason ? `
+        <label class="sc-input-label">Kündigungsgrund
+          <input class="sc-text-input" data-role="closeout-cancellation-reason" value="${escapeHtml(fields.cancellationReason || "")}" placeholder="z.B. zu teuer, Umzug, Wettbewerber">
+        </label>` : ""}
         <label class="sc-input-label">Jira-Ticket
           <input class="sc-text-input" data-role="closeout-jira-ticket" value="${escapeHtml(fields.jiraTicket)}">
         </label>
@@ -2863,6 +2912,7 @@
       else if (role === "closeout-topic") f.topic = value;
       else if (role === "closeout-notes") f.notes = value;
       else if (role === "closeout-jira-ticket") f.jiraTicket = value;
+      else if (role === "closeout-cancellation-reason") f.cancellationReason = value;
       else if (role === "closeout-old-product") f.oldProduct = value;
       else if (role === "closeout-new-product") f.newProduct = value;
       else if (role === "closeout-followup-date") f.followUpDate = value;
@@ -3013,7 +3063,7 @@
               callerName: outcome.callerName,
               callerNumber: outcome.callerNumber,
               customerNumber: outcome.customerNumber
-            });
+            }, { alreadyRecorded: true });
           }
         }
         // Kundenakte: von timio-content.js bei eingehendem Anruf geschrieben,
@@ -3052,15 +3102,22 @@
       });
     }
     window.setInterval(tickActiveCallTimer, 1000);
+    // Schicht/Kampagne regelmäßig nachziehen — siehe loadShift().
+    window.setInterval(loadShift, (CONFIG.shift && CONFIG.shift.refreshMs) || 300000);
   }
 
   // Lädt die heutige Schicht + Kampagne des eingeloggten Agenten und leitet
   // daraus den Call-Typ fürs Skript-Routing ab (siehe activeCallType()).
   // Best-effort: ohne Login/Schicht bleibt state.shift.callType null und das
   // Cockpit fällt auf den Standard (churn) bzw. den manuellen Umschalter zurück.
+  //
+  // Wird zusätzlich periodisch aufgefrischt (siehe bindGlobalListenersOnce):
+  // der Chef ändert die Zuordnung im CRM, während dieser Tab offen bleibt —
+  // ohne Auffrischung liefe der Leitfaden bis zum nächsten Reload auf der
+  // Kampagne von heute früh (und nach Mitternacht auf der von gestern).
   async function loadShift() {
     if (!supabaseClient || !state.supabaseSession) {
-      state.shift.loaded = true;
+      state.shift = { loaded: true, callType: null, campaignId: null, campaignName: null, shiftType: null };
       render();
       return;
     }

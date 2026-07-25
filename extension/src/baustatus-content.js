@@ -253,14 +253,6 @@
 
   // ── Extraktion (Rohfelder → shared.parseBaustatus) ──────────────────────────
 
-  function extractCellContent(cell) {
-    const clone = cell.cloneNode(true);
-    clone.querySelectorAll('svg, [class*="anticon"], [class*="icon"]').forEach((el) => el.remove());
-    const raw = clone.innerText || clone.textContent || "";
-    const lines = raw.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
-    return lines.filter((l, i) => l !== lines[i - 1]).join("\n").trim();
-  }
-
   function extractCompanyName(labelEl) {
     let container = labelEl.parentElement;
     for (let i = 0; i < 4; i++) {

@@ -39,13 +39,14 @@ import { useQuickAdd } from '../components/QuickAdd';
 import { CustomerShareDialog } from '../components/CustomerShareDialog';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { AccessRequestInbox, AccessRequestBanner } from '../components/AccessRequests';
+import { SkeletonPage } from '../components/Skeleton';
 
 interface Props {
   kdnr: string;
 }
 
 export function CustomerDetail({ kdnr }: Props) {
-  const { contracts, tariffChanges, notes, settings, customerOwners, customers, deleteContract, deleteTariffChange, deleteNote, purgeCustomer } =
+  const { contracts, tariffChanges, notes, settings, customerOwners, customers, deleteContract, deleteTariffChange, deleteNote, purgeCustomer, loaded } =
     useStore();
   const { currentUserKey, users, isManager } = useAuth();
   const { navigate } = useRouter();
@@ -83,15 +84,23 @@ export function CustomerDetail({ kdnr }: Props) {
   // Anrufhistorie lebt bewusst nicht im globalen Store (siehe useCalls.ts) —
   // Anrufvolumen kann deutlich höher sein als Verträge/Notizen, deshalb hier
   // gezielt pro Kunde geladen.
-  const [callsList, setCallsList] = useState<Call[]>([]);
+  // Ein Kunde, der bisher nur angerufen wurde, hat weder Vertrag noch Notiz —
+  // dann entscheidet allein diese Liste über „gefunden oder nicht". Solange sie
+  // lädt, darf die Seite deshalb noch kein Urteil fällen. Die Kundennummer wird
+  // im State mitgeführt: „geladen" heißt damit „geladen für genau diesen
+  // Kunden", ohne ein zweites Flag, das beim Wechsel erst zurückgesetzt werden
+  // müsste (ein synchrones setState im Effekt).
+  const [calls, setCalls] = useState<{ kdnr: string | null; rows: Call[] }>({ kdnr: null, rows: [] });
+  const callsLoaded = calls.kdnr === kdnr;
+  const callsList = callsLoaded ? calls.rows : [];
   useEffect(() => {
     let cancelled = false;
     fetchCallsForCustomer(kdnr)
       .then((rows) => {
-        if (!cancelled) setCallsList(rows);
+        if (!cancelled) setCalls({ kdnr, rows });
       })
       .catch(() => {
-        if (!cancelled) setCallsList([]);
+        if (!cancelled) setCalls({ kdnr, rows: [] });
       });
     return () => {
       cancelled = true;
@@ -110,6 +119,21 @@ export function CustomerDetail({ kdnr }: Props) {
     tariffList.reduce((s, t) => s + calcTariffCommission(t, settings), 0);
 
   const initials = (customerName || kdnr).slice(0, 2).toUpperCase();
+
+  // Solange die CRM-Daten (oder die Anrufhistorie) noch laden, ist jede Aussage
+  // über den Kunden verfrüht. Ohne diese Schranke begrüßte ausgerechnet der
+  // Deep-Link aus der Extension (`?kdnr=…`, siehe router.tsx) den Nutzer mit
+  // „Kunde nicht gefunden" — bei langsamer Verbindung sekundenlang.
+  if (!loaded || !callsLoaded) {
+    return (
+      <div>
+        <button className="btn btn-ghost" disabled style={{ marginBottom: 10 }}>
+          <ArrowLeft size={14} /> Zurück
+        </button>
+        <SkeletonPage />
+      </div>
+    );
+  }
 
   if (
     contractsList.length === 0 &&

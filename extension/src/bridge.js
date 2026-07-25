@@ -93,8 +93,16 @@
     try { chrome.alarms.create(RETRY_ALARM, { periodInMinutes: 1 }); } catch (error) { /* alarms fehlt */ }
   }
 
-  function disconnect() {
+  // Steht die Verbindung (oder ist die Bridge abgeschaltet), hat der
+  // Wiederhol-Alarm seinen Zweck erfüllt. Ohne dieses Aufräumen weckt er den
+  // Service-Worker für den Rest der Browser-Sitzung im Minutentakt.
+  function clearRetry() {
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    try { chrome.alarms.clear(RETRY_ALARM); } catch (error) { /* alarms fehlt */ }
+  }
+
+  function disconnect() {
+    clearRetry();
     if (socket) {
       try { socket.close(); } catch (error) { /* egal */ }
       socket = null;
@@ -113,6 +121,7 @@
 
     next.addEventListener("open", () => {
       retryMs = RETRY_MIN_MS;
+      clearRetry();
       send({ type: "hello", token });
       // „connected" wird erst nach dem „ready" des Servers gesetzt (Token ok).
     });

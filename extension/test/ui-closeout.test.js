@@ -29,8 +29,12 @@ const SHARED_SETTINGS_FIXTURE = {
 };
 
 function makeStub(inserted) {
+  // Gesprächsergebnisse, die als disposition auf den calls-Datensatz gehen
+  // (Migration 021) — hier gesammelt statt geschrieben.
+  inserted.patched = inserted.patched || [];
   return {
     customerCard: async () => ({ ok: false, reason: "not-configured" }),
+    patchCallDisposition: async (id, patch) => { inserted.patched.push({ id, ...patch }); return { ok: true }; },
     fetchSharedSettings: async () => ({ ok: true, data: SHARED_SETTINGS_FIXTURE }),
     insertNote: async (fields) => { inserted.notiz.push(fields); return { ok: true, id: "note-1" }; },
     insertLead: async (fields) => { inserted.lead.push(fields); return { ok: true, id: "lead-1" }; },
@@ -125,6 +129,49 @@ async function run() {
     await flush();
     assert.strictEqual(inserted.lead.length, 1, "genau ein insertLead()-Aufruf");
     assert.strictEqual(inserted.lead[0].customerNumber, "99999");
+  }
+
+  // --- Gesprächsergebnis landet als disposition am calls-Datensatz -----------
+  // Bisher schrieb nur das timio-Cockpit die Disposition; ein im Jira-Panel
+  // geklicktes Ergebnis fehlte in Save-Rate und Kampagnen-Auswertung komplett.
+  // Die Zeilen-ID kommt über das geteilte activeCall-Signal (dbCallId).
+  {
+    const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
+    const { env, KEYS } = await mountPanel(inserted);
+    env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall({ dbCallId: "call-row-1" }) });
+    env.click("call-outcome", { outcome: "cancelled" });
+    await flush();
+
+    assert.strictEqual(inserted.patched.length, 1, "das Ergebnis wird auf den Anruf-Datensatz geschrieben");
+    assert.strictEqual(inserted.patched[0].id, "call-row-1", "und zwar auf die vom timio-Cockpit gemeldete Zeile");
+    assert.strictEqual(inserted.patched[0].disposition, "gekuendigt");
+    // „gekündigt" verlangt zusätzlich einen Grund — dasselbe Feld wie im
+    // timio-Cockpit, damit die Auswertung nicht davon abhängt, wo geklickt wurde.
+    assert.ok(env.html().includes('data-role="closeout-cancellation-reason"'), "das Kündigungsgrund-Feld erscheint");
+  }
+
+  // --- Ohne bekannte Zeilen-ID wird nichts geschrieben ------------------------
+  {
+    const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
+    const { env, KEYS } = await mountPanel(inserted);
+    env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall() });
+    env.click("call-outcome", { outcome: "cancelled" });
+    await flush();
+    assert.strictEqual(inserted.patched.length, 0, "ohne dbCallId gibt es keinen Datensatz zum Beschriften");
+  }
+
+  // --- Ergebnis aus timio wird hier NICHT ein zweites Mal geschrieben --------
+  {
+    const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
+    const { env, KEYS } = await mountPanel(inserted);
+    env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall({ dbCallId: "call-row-2" }) });
+    // Staffelstab, wie ihn timio-content.js hinterlegt — dort ist die
+    // Disposition bereits geschrieben.
+    env.sandbox.chrome.storage.local.set({
+      [KEYS.callOutcome]: { outcomeId: "cancelled", callId: 1, customerNumber: "12345", createdAt: Date.now() }
+    });
+    await flush();
+    assert.strictEqual(inserted.patched.length, 0, "kein doppelter Schreibvorgang für dasselbe Ergebnis");
   }
 
   console.log("ui-closeout.test.js: alle Szenarien bestanden.");

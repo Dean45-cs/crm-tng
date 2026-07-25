@@ -25,13 +25,31 @@ alter table public.campaigns enable row level security;
 -- CAMPAIGNS: alle aktiven Nutzer lesen (Extension braucht sie für das
 -- Call-Typ-Routing, Agenten sehen sie im Schichtplan). Schreiben/Ändern/
 -- Löschen nur Chefs — gleiches Muster wie incentives (Migration 003).
+-- drop-if-exists vor jedem create, damit die Migration gefahrlos erneut
+-- ausgeführt werden kann (gleiche Konvention wie Migration 011/020).
+drop policy if exists "campaigns read all" on public.campaigns;
 create policy "campaigns read all" on public.campaigns
   for select using (public.auth_is_active());
+drop policy if exists "campaigns insert manager" on public.campaigns;
 create policy "campaigns insert manager" on public.campaigns
   for insert with check (public.auth_is_manager());
+drop policy if exists "campaigns update manager" on public.campaigns;
 create policy "campaigns update manager" on public.campaigns
   for update using (public.auth_is_manager());
+drop policy if exists "campaigns delete manager" on public.campaigns;
 create policy "campaigns delete manager" on public.campaigns
   for delete using (public.auth_is_manager());
 
-alter publication supabase_realtime add table public.campaigns;
+-- Realtime-Publication nur ergänzen, wenn die Tabelle noch nicht Mitglied ist —
+-- ein blankes `alter publication ... add table` bricht sonst beim Re-Run ab.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'campaigns'
+  ) then
+    alter publication supabase_realtime add table public.campaigns;
+  end if;
+end $$;

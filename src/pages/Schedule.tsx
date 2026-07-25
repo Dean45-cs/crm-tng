@@ -14,7 +14,7 @@ import { useAuth } from '../store/useAuth';
 import { useStore } from '../store/useStore';
 import { useShifts } from '../store/useShifts';
 import { fetchShiftsForWeek, upsertShift, deleteShiftRow } from '../lib/supabaseApi';
-import { weekStart, weekLabel, formatDateObj } from '../lib/utils';
+import { weekStart, weekLabel, formatDateObj, parseLocalDate } from '../lib/utils';
 import { toast } from '../store/useToast';
 import { SkeletonTable } from '../components/Skeleton';
 import { Modal } from '../components/Modal';
@@ -266,19 +266,30 @@ export function Schedule() {
   };
 
   // Vorwoche übernehmen: die Schichten der Woche davor 1:1 auf diese Woche
-  // kopieren (nur wenn diese Woche noch leer ist — schützt vor Überschreiben).
+  // kopieren. Enthält die aktuelle Woche schon Einträge, werden sie dabei
+  // überschrieben — deshalb wird vorher gefragt (gleiches Muster wie beim
+  // Löschen von Verträgen/Notizen).
   const copyPreviousWeek = async () => {
     if (!manager || busy) return;
+    if (shifts && shifts.length > 0) {
+      const ok = confirm(
+        `Diese Woche enthält bereits ${shifts.length} Einträge. Sie werden durch den Plan der Vorwoche überschrieben. Fortfahren?`,
+      );
+      if (!ok) return;
+    }
     const prevStart = weekStart(new Date(refDate.getTime() - 7 * 86400000));
     try {
       setBusy(true);
+      setWriting(true);
       const prevRows = await fetchShiftsForWeek(toDateKey(prevStart), toDateKey(weekDays(prevStart)[6]));
       if (prevRows.length === 0) {
         toast.info('Die Vorwoche enthält keine Schichten.');
         return;
       }
       const ops: CellOp[] = prevRows.map((s) => {
-        const d = new Date(s.shiftDate);
+        // parseLocalDate statt new Date(): ein reiner Datumsstring wird sonst
+        // als UTC gelesen und rutscht in westlichen Zeitzonen auf den Vortag.
+        const d = parseLocalDate(s.shiftDate);
         d.setDate(d.getDate() + 7);
         return { userId: s.userId, dateKey: toDateKey(d), shiftType: s.shiftType, campaignId: s.campaignId ?? '' };
       });
@@ -291,8 +302,10 @@ export function Schedule() {
       toast.success('Vorwoche übernommen.');
     } catch {
       toast.error('Vorwoche konnte nicht übernommen werden.');
+      await reload().catch(() => {});
     } finally {
       setBusy(false);
+      setWriting(false);
     }
   };
 
@@ -391,7 +404,7 @@ export function Schedule() {
         </div>
       ) : (
         <div className={`widget ${busy ? 'is-busy' : ''}`} style={{ padding: 0, overflow: 'hidden' }}>
-          <div className="table-wrap">
+          <div className="table-wrap schedule-wrap">
             <table className="crm-table schedule-table">
               <thead>
                 <tr>

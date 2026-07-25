@@ -200,6 +200,15 @@
     try { chrome.alarms.create(RETRY_ALARM, { periodInMinutes: 1 }); } catch (error) { /* alarms fehlt */ }
   }
 
+  // Steht die Verbindung, hat der Wiederhol-Alarm seinen Zweck erfüllt. Ohne
+  // dieses Aufräumen weckt er den Service-Worker für den Rest der
+  // Browser-Sitzung im Minutentakt, nur um in connect() sofort wieder
+  // auszusteigen.
+  function clearRetry() {
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    try { chrome.alarms.clear(RETRY_ALARM); } catch (error) { /* alarms fehlt */ }
+  }
+
   function connect() {
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
 
@@ -214,6 +223,7 @@
 
     next.addEventListener("open", () => {
       retryMs = RETRY_MIN_MS;
+      clearRetry();
       send({ t: "hello", version: (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || "" });
       sendSnapshot();
       requestTicket();

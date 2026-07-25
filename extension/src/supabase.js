@@ -474,6 +474,10 @@
           apikey: config.anonKey,
           Authorization: `Bearer ${session.accessToken}`
         },
+        // Wird auch beim Entladen des timio-Tabs aufgerufen (pagehide in
+        // timio-content.js). Ohne keepalive bricht der Browser den Request beim
+        // Schließen ab und die Zeile bliebe ohne ended_at zurück.
+        keepalive: true,
         body: JSON.stringify({ ended_at: endedAt, duration_s: durationS })
       });
 

@@ -15,8 +15,6 @@
 const assert = require("assert");
 const { makeSandbox, makeWorkerSandbox, loadScripts } = require("./support/stub-env");
 
-const flush = () => new Promise((resolve) => setImmediate(resolve));
-
 function loadShared() {
   const env = makeSandbox();
   loadScripts(env.sandbox, ["src/config.js", "src/shared.js"]);

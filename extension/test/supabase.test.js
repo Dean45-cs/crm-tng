@@ -375,7 +375,7 @@ async function runTicketSummaryNote() {
 
   // --- Fremde Notiz (RLS lässt das PATCH ins Leere laufen) -> eigene anlegen --
   {
-    const { sb, calls } = setup((url, options) => {
+    const { sb } = setup((url, options) => {
       const method = (options && options.method) || "GET";
       if (url.includes("/notes?") && method === "GET") return { ok: true, status: 200, json: async () => [{ id: "note-fremd" }] };
       if (url.includes("/notes?") && method === "PATCH") return { ok: true, status: 200, json: async () => [] };

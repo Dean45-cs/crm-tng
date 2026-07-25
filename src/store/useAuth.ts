@@ -388,7 +388,10 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
   logout: async () => {
     const uid = get().currentUserKey;
-    if (uid) logAudit({ action: 'logout', entityType: 'auth', entityId: uid });
+    // Bewusst abgewartet: die RLS-Policy auf audit_log verlangt
+    // actor_id = auth.uid(), nach signOut() gibt es keine uid mehr. Ohne await
+    // wurde jeder Logout-Eintrag serverseitig abgelehnt.
+    if (uid) await logAudit({ action: 'logout', entityType: 'auth', entityId: uid });
     const sb = getSupabase();
     await sb.auth.signOut();
     set({ currentUserKey: null });

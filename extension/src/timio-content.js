@@ -56,11 +56,13 @@
 
   let stopped = false;
   let intervalId = null;
+  let shiftRefreshTimer = null;
 
   function shutdown() {
     if (stopped) return;
     stopped = true;
     if (intervalId) window.clearInterval(intervalId);
+    if (shiftRefreshTimer) window.clearInterval(shiftRefreshTimer);
     const overlay = document.getElementById(OVERLAY_ID);
     if (overlay) overlay.remove();
     // Die Befehlspalette hängt an einem eigenen DOM-Root und einem
@@ -357,7 +359,12 @@
   let lastQueueWriteAt = 0;
   let queueStats = null;    // letzter bekannter Stand (eigener Write oder anderer Tab)
   let ticketContext = null; // von der Jira-Seite veröffentlichtes offenes Ticket
-  let callMode = "inbound"; // Arbeitsrichtung, vom Bearbeiter gesetzt
+  // Arbeitsrichtung, vom Bearbeiter gesetzt. Vorbelegt mit "outbound": das
+  // Jira-Panel arbeitet seit dem Outbound-Umbau konstant ausgehend (siehe
+  // state.callMode in ui.js), und ohne diese Vorbelegung landete JEDER Anruf
+  // mit direction "inbound" in der Historie, solange niemand den Schalter
+  // angefasst hat. Ein gespeicherter Wert aus dem Storage gewinnt weiterhin.
+  let callMode = "outbound";
   let customerSearchJql = ""; // optionale eigene JQL-Vorlage aus den Einstellungen
 
   // Kundenakte (Stufe 1, KONZEPT-INTEGRATION.md): { callId, customerNumber,
@@ -385,17 +392,27 @@
   const SELECTOR_WARN_TICKS = (CONFIG.call && CONFIG.call.selectorWarnTicks) || 4;
 
   // Aktuelle Schicht/Kampagne des eingeloggten Agenten (Outbound-Umbau,
-  // Migration 019/020). Wird einmalig geladen und liefert die campaign_id, die
-  // beim Gesprächsabschluss am calls-Datensatz landet (Kampagnen-Auswertung im
-  // Team-Dashboard). null, solange nichts geladen/hinterlegt ist.
+  // Migration 019/020). Liefert die campaign_id, die beim Gesprächsabschluss am
+  // calls-Datensatz landet (Kampagnen-Auswertung im Team-Dashboard). null,
+  // solange nichts geladen/hinterlegt ist.
+  //
+  // Wird periodisch neu gezogen (CONFIG.shift.refreshMs): der Chef ändert die
+  // Zuordnung im CRM, während dieser timio-Tab den ganzen Tag offen bleibt.
+  // Ein einmaliges Laden beim Seitenaufbau schrieb sonst bis zum nächsten
+  // Reload die Kampagne von heute früh an jeden Anruf — und über Mitternacht
+  // hinweg sogar die von gestern.
+  const SHIFT_REFRESH_MS = (CONFIG.shift && CONFIG.shift.refreshMs) || 300000;
   let shiftState = { campaignId: null, callType: null };
   async function loadShift() {
-    if (!supabaseClient) return;
+    if (!supabaseClient || stopped) return;
     try {
       const res = await supabaseClient.fetchCurrentShift();
-      if (res && res.ok && res.data) {
-        shiftState = { campaignId: res.data.campaignId || null, callType: res.data.callType || null };
-      }
+      if (stopped || !res || !res.ok) return;
+      // Auch der leere Fall wird übernommen: wurde die Schicht im CRM gelöscht
+      // oder die Kampagne entfernt, darf die alte campaign_id nicht an den
+      // nächsten Anrufen kleben bleiben.
+      const data = res.data || {};
+      shiftState = { campaignId: data.campaignId || null, callType: data.callType || null };
     } catch (error) {
       // Best-effort: ohne Schicht bleibt campaignId null, der Abschluss
       // funktioniert weiterhin, nur ohne Kampagnen-Zuordnung.
@@ -491,7 +508,18 @@
     }).then((res) => {
       // Anruf ist inzwischen vorbei oder ein neuer hat begonnen — die
       // zurückkommende ID gehört dann nicht mehr zum aktuellen Gespräch.
-      if (stopped || callId !== startedCallId) return;
+      if (stopped || callId !== startedCallId) {
+        // Die Zeile existiert trotzdem: ein kurzer Anruf kann vorbei sein,
+        // bevor startCall() antwortet. Früher wurde die ID hier einfach
+        // verworfen — die Zeile blieb dann für immer ohne ended_at stehen und
+        // tauchte in der Live-Anrufleiste des CRM als „aktiver Anruf" auf, bis
+        // der Staleness-Filter nach zwei Stunden griff. Deshalb hier direkt
+        // abschließen. Ohne bekannte Gesprächsdauer bleibt duration_s leer.
+        if (res.ok && res.id) {
+          supabaseClient.endCall(res.id, { endedAt: new Date().toISOString(), durationS: null }).catch(() => {});
+        }
+        return;
+      }
       if (res.ok) {
         dbCallId = res.id;
         recordingWarning = "";
@@ -506,7 +534,7 @@
         lastOverlaySignature = null;
         renderOverlay(lastDetails || { status: STATUS.IDLE });
       }
-    }).catch((error) => {
+    }).catch(() => {
       if (stopped || callId !== startedCallId) return;
       recordingWarning = "Dieser Anruf konnte nicht in der Historie gespeichert werden (Verbindungsproblem).";
       lastOverlaySignature = null;
@@ -528,8 +556,11 @@
     }).catch(() => {});
   }
 
+  // dbCallId gehört in die Signatur: sie trifft erst asynchron ein (Antwort von
+  // startCall). Ohne sie würde die frisch bekannte Zeilen-ID erst mit dem
+  // nächsten Heartbeat veröffentlicht — bei einem kurzen Anruf womöglich nie.
   function callSignatureOf(state) {
-    return [state.status, state.callerNumber, state.customerNumber, state.finalDuration, looksOutbound(state)].join("|");
+    return [state.status, state.callerNumber, state.customerNumber, state.finalDuration, looksOutbound(state), dbCallId].join("|");
   }
 
   function persistCall(state) {
@@ -539,6 +570,12 @@
     }
     if (state.status !== STATUS.IDLE && callId) {
       payload.callId = callId;
+      // Die Supabase-Zeilen-ID des Anrufs wandert mit: nur so kann auch das
+      // Jira-Panel das Gesprächsergebnis auf denselben Datensatz schreiben
+      // (disposition/Kündigungsgrund/Kampagne, Migration 021). Vorher kannte
+      // ausschließlich dieses Content-Script die ID — ein im Jira-Panel
+      // geklicktes Ergebnis landete deshalb nie in der Auswertung.
+      if (dbCallId) payload.dbCallId = dbCallId;
     }
     storageSet({ [CONFIG.storageKeys.activeCall]: payload });
     lastCallSignature = callSignatureOf(state);
@@ -660,12 +697,17 @@
   // Gesprächsergebnis direkt nach dem Auflegen – hier, wo der Bearbeiter
   // gerade sitzt. Die lokale KI läuft aber auf der Jira-Seite, deshalb wird
   // der Klick nur als Staffelstab in den Storage gelegt; das Panel formuliert
-  // daraus den Kommentar und legt ggf. die Wiedervorlage an. Eingehend und
-  // ausgehend haben eigene Wortschätze (Stufe 3, KONZEPT-INTEGRATION.md) —
-  // "Mailbox"/"Falsche Nummer" ergeben bei einem eingehenden Anruf keinen Sinn.
+  // daraus den Kommentar und legt ggf. die Wiedervorlage an.
+  //
+  // EINE gemeinsame Ergebnisliste mit dem Jira-Panel (CONFIG.outbound.outcomes,
+  // siehe activeOutcomes() in ui.js): der Staffelstab reicht nur die Ergebnis-Id
+  // weiter, die die Gegenseite wiederfinden muss. Eingehend werden nur die
+  // Ergebnisse ausgeblendet, die einen eigenen Wählversuch voraussetzen
+  // (outboundOnly) — die Ids bleiben dieselben.
   function activeOutcomes() {
-    const cfg = isOutbound(callMode) ? CONFIG.outbound : CONFIG.inbound;
-    return (cfg && cfg.outcomes) || [];
+    const outcomes = (CONFIG.outbound && CONFIG.outbound.outcomes) || [];
+    if (isOutbound(callMode)) return outcomes;
+    return outcomes.filter((outcome) => !outcome.outboundOnly);
   }
 
   function outcomeBarMarkup(call) {
@@ -1004,7 +1046,7 @@
     return "";
   }
 
-  function closeoutPanelMarkup(call) {
+  function closeoutPanelMarkup() {
     if (!closeoutState || closeoutState.callId !== callId) return "";
     const { entryType, fields, status, error } = closeoutState;
 
@@ -1345,8 +1387,8 @@
     // Reihenfolge folgt dem Blickverlauf: ausgehend zählt zuerst, was ich von
     // dieser Person will; eingehend zuerst, wer da ist und wer noch wartet.
     const blocks = outbound
-      ? `${callPrepMarkup()}${ticketBlockMarkup(call)}${outcomeBarMarkup(call)}${closeoutPanelMarkup(call)}<div class="tc-queue">${queueBlockMarkup(call)}</div>`
-      : `<div class="tc-queue">${queueBlockMarkup(call)}</div>${ticketBlockMarkup(call)}${outcomeBarMarkup(call)}${closeoutPanelMarkup(call)}`;
+      ? `${callPrepMarkup()}${ticketBlockMarkup(call)}${outcomeBarMarkup(call)}${closeoutPanelMarkup()}<div class="tc-queue">${queueBlockMarkup(call)}</div>`
+      : `<div class="tc-queue">${queueBlockMarkup(call)}</div>${ticketBlockMarkup(call)}${outcomeBarMarkup(call)}${closeoutPanelMarkup()}`;
 
     return `
       <div class="tc-card ${meta.cls} ${outbound ? "is-outbound" : ""}">
@@ -1654,7 +1696,11 @@
       if (stopped || !data) return;
       queueStats = data[CONFIG.storageKeys.queueStats] || queueStats;
       ticketContext = data[CONFIG.storageKeys.ticketContext] || null;
-      callMode = callModeMeta(data[CONFIG.storageKeys.callMode]).id;
+      // Nur überschreiben, wenn wirklich etwas gespeichert ist — callModeMeta()
+      // fällt sonst auf "inbound" zurück und würde die Outbound-Vorbelegung
+      // oben bei jedem Seitenaufbau wieder zunichtemachen.
+      const storedMode = data[CONFIG.storageKeys.callMode];
+      if (storedMode) callMode = callModeMeta(storedMode).id;
       const settings = data[CONFIG.storageKeys.settings];
       if (settings && typeof settings === "object") customerSearchJql = settings.customerSearchJql || "";
       const prefs = data[CONFIG.storageKeys.timioOverlay];
@@ -1707,15 +1753,25 @@
   // Heartbeat den Zustand innerhalb weniger Sekunden wieder her.
   window.addEventListener("pagehide", () => {
     storageSet({ [CONFIG.storageKeys.activeCall]: { status: STATUS.IDLE, updatedAt: Date.now() } });
+    // Läuft gerade ein Anruf, wird auch dessen calls-Zeile abgeschlossen: sonst
+    // bliebe sie ohne ended_at stehen (der Tab ist weg, niemand schließt sie
+    // mehr) und stünde im CRM als „aktiver Anruf". Best-effort — endCall()
+    // sendet mit keepalive, damit der Request das Entladen überlebt.
+    if (supabaseClient && dbCallId && callEndedForId !== callId) {
+      callEndedForId = callId;
+      const durationS = connectedAt ? Math.round((Date.now() - connectedAt) / 1000) : null;
+      supabaseClient.endCall(dbCallId, { endedAt: new Date().toISOString(), durationS }).catch(() => {});
+    }
   });
 
   // Befehlspalette: einmalig registriert, unabhängig vom Call-Cockpit-Overlay
   // (dessen eigene Listener erst beim ersten Rendern des Overlays entstehen).
   document.addEventListener("keydown", onGlobalKeydown);
 
-  // Schicht/Kampagne einmalig laden (best-effort, für die Kampagnen-Zuordnung
-  // beim Gesprächsabschluss).
+  // Schicht/Kampagne laden und regelmäßig auffrischen (best-effort, für die
+  // Kampagnen-Zuordnung beim Gesprächsabschluss). Siehe loadShift().
   loadShift();
+  shiftRefreshTimer = window.setInterval(loadShift, SHIFT_REFRESH_MS);
 
   intervalId = window.setInterval(tick, POLL_MS);
   tick();
