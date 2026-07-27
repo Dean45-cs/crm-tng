@@ -1,40 +1,18 @@
 "use strict";
 
-// Startet das Fenster: Panel aufbauen, Titelleiste verdrahten, auf Meldungen
-// aus Chrome reagieren. Alles Fachliche steckt weiterhin in ui.js – hier steht
-// nur, was ein eigenes Fenster zusätzlich braucht.
+// Startet das Overlay: Panel aufbauen und auf Meldungen aus Chrome reagieren.
+// Alles Fachliche steckt weiterhin in ui.js, alles Overlay-Eigene in
+// hud-host.js – hier steht nur das Zusammenspiel.
 
 (function boot() {
   const app = window.StadtnetzCRM;
-
-  const dot = document.querySelector("[data-role='hud-dot']");
-  const contextLabel = document.querySelector("[data-role='hud-context']");
-  const offline = document.querySelector("[data-role='hud-offline']");
-  const pinButton = document.querySelector("[data-hud='pin']");
-  const notesButton = document.querySelector("[data-hud='notes']");
-
-  let connected = false;
+  const host = app.hudHost;
 
   // --- Verbindungsanzeige --------------------------------------------------
 
-  // Wie weit das Panel von oben wegrücken muss. Der Offline-Hinweis bricht je
-  // nach Fensterbreite auf zwei oder drei Zeilen um – eine feste Zahl im CSS
-  // würde ihn mal überdecken und mal eine Lücke lassen.
-  function updateOffset() {
-    const titlebar = document.querySelector(".hud-titlebar").offsetHeight;
-    const banner = offline.hidden ? 0 : offline.offsetHeight;
-    document.body.style.setProperty("--hud-offset", `${titlebar + banner}px`);
-  }
-
   function setConnected(value) {
-    const next = Boolean(value);
-    const wasReconnected = next && !connected;
-    connected = next;
-    dot.classList.toggle("is-connected", connected);
-    dot.classList.toggle("is-offline", !connected);
-    dot.title = connected ? "Mit Chrome verbunden" : "Chrome ist nicht verbunden";
-    offline.hidden = connected;
-    updateOffset();
+    const wasReconnected = Boolean(value) && !host.isConnected();
+    host.setConnected(value);
     // Nach einer Trennung (Chrome/Extension neu geladen o.ä.) merkt sich ui.js
     // den offline-Status der KI-Fähigkeiten dauerhaft, bis neu geprüft wird –
     // sonst blieben alle KI-Buttons grau, obwohl die Verbindung längst wieder
@@ -42,74 +20,72 @@
     if (wasReconnected && app.ui.loadCapabilities) app.ui.loadCapabilities();
   }
 
-  window.addEventListener("resize", updateOffset);
+  // --- Notizen -------------------------------------------------------------
 
-  function setContext(ticket) {
-    const key = ticket && ticket.key && ticket.key !== app.jiraReader.UNKNOWN ? ticket.key : "";
-    contextLabel.textContent = key || (connected ? "kein Vorgang offen" : "");
-    contextLabel.title = ticket && ticket.summary && ticket.summary !== app.jiraReader.UNKNOWN ? ticket.summary : "";
+  function toggleNotes(force) {
+    app.hudNotes.toggle(force);
+    app.ui.rerender();
   }
 
-  // --- Titelleiste ---------------------------------------------------------
-
-  function setPinned(pinned) {
-    pinButton.classList.toggle("is-active", Boolean(pinned));
-    pinButton.title = pinned ? "Immer im Vordergrund (an)" : "Immer im Vordergrund (aus)";
-  }
-
-  document.querySelector(".hud-actions").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-hud]");
-    if (!button) return;
-    switch (button.dataset.hud) {
-      case "notes":
-        app.hudNotes.toggle();
-        notesButton.classList.toggle("is-active", app.hudNotes.isOpen());
-        return;
-      case "pin": {
-        const next = !pinButton.classList.contains("is-active");
-        setPinned(next);
-        window.hud.command("always-on-top", { enabled: next });
-        return;
-      }
-      case "minimize":
-        window.hud.command("minimize", {});
-        return;
-      case "hide":
-        window.hud.command("hide", {});
-        return;
-      default:
-    }
-  });
-
-  // Notizen sind das, wofür man das Fenster mitten im Gespräch anspringt –
+  // Notizen sind das, wofür man das Overlay mitten im Gespräch anspringt –
   // deshalb eine eigene Tastenkombination.
   window.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
       event.preventDefault();
-      app.hudNotes.toggle();
-      notesButton.classList.toggle("is-active", app.hudNotes.isOpen());
+      toggleNotes();
       return;
     }
-    if (event.key === "Escape" && app.hudNotes.isOpen()) {
-      app.hudNotes.toggle(false);
-      notesButton.classList.remove("is-active");
-    }
+    if (event.key === "Escape" && app.hudNotes.isOpen()) toggleNotes(false);
   });
 
-  // --- Meldungen aus Chrome ------------------------------------------------
+  // --- Größe ändern ---------------------------------------------------------
 
-  window.hud.onStatus((status) => {
-    setConnected(status && status.connected);
-    setContext(app.jiraReader.read());
-  });
+  // Ohne Systemrahmen gibt es keine Fensterkanten zum Anfassen (und bei einem
+  // transparenten Fenster trifft man sie unter macOS ohnehin kaum). Der
+  // Anfasser unten rechts schickt stattdessen die Mausbewegung ans Fenster.
+  (function bindResizeGrip() {
+    const grip = document.querySelector("[data-role='hud-resize']");
+    if (!grip) return;
+    let last = null;
+
+    grip.addEventListener("pointerdown", (event) => {
+      last = { x: event.screenX, y: event.screenY };
+      grip.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+
+    grip.addEventListener("pointermove", (event) => {
+      if (!last) return;
+      const dx = event.screenX - last.x;
+      const dy = event.screenY - last.y;
+      if (!dx && !dy) return;
+      last = { x: event.screenX, y: event.screenY };
+      window.hud.command("resize-by", { dx, dy });
+    });
+
+    const stop = (event) => {
+      if (!last) return;
+      last = null;
+      try { grip.releasePointerCapture(event.pointerId); } catch (error) { /* schon weg */ }
+    };
+    grip.addEventListener("pointerup", stop);
+    grip.addEventListener("pointercancel", stop);
+  })();
+
+  // --- Meldungen aus Chrome / aus dem Fenster -------------------------------
+
+  window.hud.onStatus((status) => setConnected(status && status.connected));
 
   window.hud.onTicket((ticket) => {
     // setTicket meldet nur echte Wechsel – nur dann muss das Panel neu lesen.
     if (!app.jiraReader.setTicket(ticket)) return;
-    setContext(app.jiraReader.read());
     app.ui.refresh();
     if (app.hudNotes.isOpen()) app.hudNotes.refreshContext();
   });
+
+  // Overlay-Schalter können auch außerhalb des Panels umgelegt werden
+  // (Tray-Menü, systemweite Tastenkombination).
+  window.hud.onOverlay((overlay) => host.setOverlay(overlay));
 
   // Ein neuer Anruf oder eine frisch nachgeschlagene Kundenakte ändert, wem
   // eine Notiz zugeordnet wird – der Notizbereich muss das mitbekommen.
@@ -127,8 +103,9 @@
   // --- Start ---------------------------------------------------------------
 
   window.hud.state().then(async (initial) => {
-    setConnected(initial.connected);
-    setPinned(initial.alwaysOnTop);
+    host.setOverlay(initial.overlay);
+    host.setVersion(initial.version);
+    host.setConnected(initial.connected);
     app.jiraReader.setTicket(initial.ticket);
 
     app.hudNotes.init({ notes: initial.notes, draft: initial.notesDraft });
@@ -136,6 +113,5 @@
     // mount() liest den gespiegelten Storage, baut das Panel und startet die
     // Fähigkeitsprüfung der KI – exakt wie im Jira-Tab.
     await app.ui.mount();
-    setContext(app.jiraReader.read());
   });
 })();

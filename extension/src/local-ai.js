@@ -93,9 +93,21 @@
   // Prompt API (Kern für alle Text- und Analyseaufgaben)
   // ---------------------------------------------------------------------------
 
-  async function promptAvailability() {
+  // Wann zuletzt tatsächlich eine Sitzung zustande kam. Chrome meldet
+  // "unavailable" nicht nur, wenn das Modell fehlt, sondern auch vorübergehend –
+  // etwa während es geladen/entladen wird oder unter Speicherdruck. Diese
+  // Momentaufnahme darf die KI nicht dauerhaft abschalten: hat sie eben noch
+  // gearbeitet, wird der Versuch trotzdem unternommen und erst ein echter Fehler
+  // beim Anlegen der Sitzung gilt als Nein.
+  let lastSessionOkAt = 0;
+  const RECENTLY_WORKED_MS = 3600000;
+
+  function recentlyWorked() {
+    return lastSessionOkAt > 0 && Date.now() - lastSessionOkAt < RECENTLY_WORKED_MS;
+  }
+
+  async function availabilityOnce() {
     const model = globals.prompt();
-    if (!model || typeof model.availability !== "function") return STATUS.UNSUPPORTED;
     // Erst mit Sprach-Hinweisen prüfen. Manche Chrome-Versionen melden für eine
     // nicht offiziell gelistete AUSGABE-Sprache (z. B. "de") fälschlich
     // "unavailable", obwohl das Modell vorhanden ist und Deutsch problemlos
@@ -112,6 +124,19 @@
     } catch (error) {
       return STATUS.UNAVAILABLE;
     }
+  }
+
+  async function promptAvailability() {
+    const model = globals.prompt();
+    if (!model || typeof model.availability !== "function") return STATUS.UNSUPPORTED;
+    const status = await availabilityOnce();
+    if (status !== STATUS.UNAVAILABLE) return status;
+    // Ein einzelnes "unavailable" ist oft nur ein schlechter Moment (Modell wird
+    // gerade geladen/entladen). Einmal kurz nachfassen, bevor die Oberfläche die
+    // KI als nicht nutzbar meldet – genau dieses Umschalten hatte nach dem
+    // ersten erfolgreichen Lauf alle KI-Funktionen lahmgelegt.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    return availabilityOnce();
   }
 
   // Zulässige Modellparameter (Temperatur/topK) einmalig ermitteln und cachen.
@@ -150,7 +175,9 @@
       }
     }
     try {
-      return await model.create(createOptions(base, opts));
+      const session = await model.create(createOptions(base, opts));
+      lastSessionOkAt = Date.now();
+      return session;
     } catch (error) {
       // Scheitert das Erstellen an den Sprach-Hinweisen (expectedInputs/-Outputs)
       // – dieselbe Chrome-Eigenheit wie bei availability(), nur beim Anlegen der
@@ -160,8 +187,18 @@
       const withoutLangs = { ...base };
       delete withoutLangs.expectedInputs;
       delete withoutLangs.expectedOutputs;
-      return await model.create(createOptions(withoutLangs, opts));
+      const session = await model.create(createOptions(withoutLangs, opts));
+      lastSessionOkAt = Date.now();
+      return session;
     }
+  }
+
+  // Darf die Aufgabe trotz negativer Verfügbarkeitsmeldung starten? Ja, wenn die
+  // API überhaupt existiert und vor Kurzem schon eine Sitzung zustande kam. Der
+  // Versuch kostet nichts: klappt er, war die Meldung nur ein schlechter Moment;
+  // klappt er nicht, wirft create() und der echte Fehler wird gemeldet.
+  function mayTryAnyway(status) {
+    return status !== STATUS.UNSUPPORTED && recentlyWorked();
   }
 
   // Baut aus den lokalen Bearbeiter-/Firmenangaben einen System-Zusatz.
@@ -271,11 +308,16 @@
   // ---------------------------------------------------------------------------
 
   // Verfügbarkeit der lokalen KI insgesamt (Prompt API ist die Voraussetzung).
+  // provenWorking = auf diesem Gerät kam vor Kurzem nachweislich eine Sitzung
+  // zustande. Dann bleibt die Oberfläche bedienbar, auch wenn Chrome gerade
+  // "unavailable" meldet – die Aufgabe wird versucht statt vorsorglich gesperrt.
   async function capabilities() {
     const status = await promptAvailability();
+    const proven = mayTryAnyway(status);
     return {
       status,
-      usable: isUsable(status),
+      usable: isUsable(status) || proven,
+      provenWorking: proven,
       needsDownload: status === STATUS.DOWNLOADABLE,
       downloading: status === STATUS.DOWNLOADING
     };
@@ -285,10 +327,26 @@
   // Vorlaufzeit – timio wählt selbst aus seiner Anrufliste. Deshalb läuft das
   // hier vorab und deterministisch (topK 1), damit beim Verbinden ohne Warten
   // dasteht, was zu besprechen ist.
+  // Kündigungsdaten aus der Churnliste (GFIZ) als Prompt-Block. Sie sind für ein
+  // Rückgewinnungsgespräch der eigentliche Kern: sie sagen, WARUM gekündigt
+  // wurde und was dem Kunden schon angeboten wurde – beides steht so in keinem
+  // Jira-Ticket.
+  function churnContext(churn) {
+    if (!churn) return "";
+    const lines = [];
+    if (churn.ursache) lines.push(`Kündigungsgrund laut Churnliste: ${clip(churn.ursache, 200)}`);
+    if (churn.eingang) lines.push(`Erfasst am: ${clip(churn.eingang, 60)}`);
+    if (churn.winback) lines.push(`Bisheriger Winback-Stand: ${clip(churn.winback, 80)}`);
+    if (churn.dealcloser) lines.push(`Bereits angebotenes Halteangebot: ${clip(churn.dealcloser, 120)}`);
+    if (churn.vertrag) lines.push(`Betroffener Vertrag: ${clip(churn.vertrag, 60)}`);
+    if (churn.kommentar) lines.push(`Vermerk: ${clip(churn.kommentar, 600)}`);
+    return lines.join("\n");
+  }
+
   async function prepareCall(input, opts = {}) {
-    const { ticket, agent } = input || {};
+    const { ticket, agent, churn } = input || {};
     const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
+    if (!isUsable(status) && !mayTryAnyway(status)) return { status };
 
     const schema = {
       type: "object",
@@ -312,17 +370,27 @@
       }
     };
 
+    const churnBlock = churnContext(churn);
     const promptText = [
       "Bereite ein ausgehendes Telefonat mit dem Kunden zu diesem Ticket vor.",
       "Der Bearbeiter ruft den Kunden an – nicht umgekehrt. Er muss also selbst erklären, warum er anruft.",
+      // Steht der Kunde auf der Kündiger-Liste, ist das Gespräch kein
+      // Sachstands-Anruf mehr, sondern eine Rückgewinnung. Das ändert Ziel,
+      // Punkte und die zu erwartenden Einwände grundlegend.
+      churnBlock
+        ? "WICHTIG: Der Kunde hat gekündigt und steht auf der Kündiger-Liste. Dies ist ein RÜCKGEWINNUNGSGESPRÄCH (Winback). Benenne im Ziel ausdrücklich den Kündigungsgrund und was ihn entkräften könnte."
+        : "",
+      churnBlock
+        ? "Gab es bereits ein Halteangebot, darf es nicht einfach wiederholt werden – schlage etwas vor, das darüber hinausgeht oder besser zum Kündigungsgrund passt."
+        : "",
       "ziel: in einem Satz, was mit diesem Anruf konkret erreicht werden soll.",
       "punkte: 2 bis 3 Stichpunkte, die der Bearbeiter aktiv ansprechen muss (Sachstand, Zusagen, Änderungen).",
       "fragen: 1 bis 3 Fragen, die im Ticket offen sind und nur der Kunde beantworten kann.",
       "einwaende: bis zu 2 realistisch zu erwartende Einwände mit jeweils einer kurzen, sachlichen Antwort.",
       "Ist eine Information nicht belegt, formuliere sie als Frage statt als Behauptung.",
-      "",
+      churnBlock ? fenced("KÜNDIGUNGSDATEN", churnBlock) : "",
       fenced("TICKETDATEN", ticketContext(ticket))
-    ].join("\n");
+    ].filter(Boolean).join("\n");
 
     const data = await promptJson(promptText, schema, {
       ...opts,
@@ -342,7 +410,7 @@
   async function draftCallNote(input, opts = {}) {
     const { ticket, note, agent } = input || {};
     const status = await promptAvailability();
-    if (!isUsable(status)) return { status };
+    if (!isUsable(status) && !mayTryAnyway(status)) return { status };
 
     let session;
     try {

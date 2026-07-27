@@ -184,7 +184,11 @@ function makeSandbox(bus) {
 function makeWorkerSandbox(bus) {
   const sharedBus = bus || createBus();
   const chromeStub = makeChromeStub(sharedBus);
-  const calls = { badgeText: [], badgeColor: [], title: [], notifications: [], tabsUpdated: [], tabsCreated: [], alarms: [] };
+  const calls = {
+    badgeText: [], badgeColor: [], title: [], notifications: [],
+    tabsUpdated: [], tabsCreated: [], tabsReloaded: [], tabMessages: [],
+    windowsFocused: [], platformInfo: [], alarms: []
+  };
 
   chromeStub.action = {
     setBadgeText(arg) { calls.badgeText.push(arg.text); },
@@ -201,12 +205,77 @@ function makeWorkerSandbox(bus) {
     create(id, opts, cb) { calls.notifications.push({ id, opts }); if (cb) cb(id); },
     onClicked: { addListener(fn) { chromeStub.notifications._onClicked = fn; } }
   };
+  // Tab-Attrappe. Zwei Betriebsarten, damit die bestehenden Badge-Tests
+  // unverändert laufen:
+  //   - bus.timioTabs gesetzt (alt): query() gibt genau diese Liste zurück.
+  //   - bus.tabs gesetzt (neu, Netz-Auskunft): eine Liste echter Tab-Objekte
+  //     { id, url, status, windowId, active }, gegen die query() das
+  //     url-Muster anwendet und die update()/reload() tatsächlich verändern.
+  function matchesPattern(url, pattern) {
+    if (!pattern) return true;
+    const escaped = String(pattern).replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+    return new RegExp(`^${escaped}$`).test(String(url || ""));
+  }
+  function findTab(id) {
+    return (sharedBus.tabs || []).find((tab) => tab.id === id) || null;
+  }
   chromeStub.tabs = {
-    query(info, cb) { cb((sharedBus.timioTabs || [])); },
-    update(id, info) { calls.tabsUpdated.push({ id, info }); },
-    create(info) { calls.tabsCreated.push(info); }
+    query(info, cb) {
+      if (!sharedBus.tabs) return cb(sharedBus.timioTabs || []);
+      cb(sharedBus.tabs.filter((tab) => matchesPattern(tab.url, info && info.url)));
+    },
+    get(id, cb) { cb(findTab(id) || undefined); },
+    update(id, info, cb) {
+      calls.tabsUpdated.push({ id, info });
+      const tab = findTab(id);
+      if (tab && info) {
+        if (info.active === true) (sharedBus.tabs || []).forEach((other) => { other.active = other.id === id; });
+        // Navigation: der Tab lädt und wird von der Test-Seite wieder auf
+        // "complete" gesetzt (bzw. sofort, wenn sie das nicht steuert).
+        if (info.url) { tab.url = info.url; tab.status = sharedBus.tabLoadsInstantly === false ? "loading" : "complete"; }
+      }
+      if (cb) cb(tab || undefined);
+    },
+    reload(id, opts, cb) {
+      calls.tabsReloaded.push({ id, opts });
+      const tab = findTab(id);
+      if (tab) tab.status = sharedBus.tabLoadsInstantly === false ? "loading" : "complete";
+      if (cb) cb();
+    },
+    create(info, cb) {
+      calls.tabsCreated.push(info);
+      const id = 900 + calls.tabsCreated.length;
+      const tab = { id, url: (info && info.url) || "", status: "complete", windowId: 1, active: Boolean(info && info.active) };
+      if (sharedBus.tabs) sharedBus.tabs.push(tab);
+      if (cb) cb(tab);
+      return tab;
+    },
+    // Nachrichten an ein Content-Script: die Test-Seite stellt mit
+    // bus.tabHandler(tabId, message) die Gegenstelle.
+    sendMessage(id, message, cb) {
+      calls.tabMessages.push({ id, message });
+      const handler = sharedBus.tabHandler;
+      if (typeof handler !== "function") {
+        chromeStub.runtime.lastError = { message: "Could not establish connection. Receiving end does not exist." };
+        if (cb) cb(undefined);
+        chromeStub.runtime.lastError = undefined;
+        return;
+      }
+      Promise.resolve(handler(id, message)).then((response) => {
+        if (response === undefined) {
+          chromeStub.runtime.lastError = { message: "Could not establish connection. Receiving end does not exist." };
+          if (cb) cb(undefined);
+          chromeStub.runtime.lastError = undefined;
+          return;
+        }
+        if (cb) cb(response);
+      });
+    },
+    onUpdated: { addListener(fn) { (sharedBus.tabUpdatedListeners = sharedBus.tabUpdatedListeners || []).push(fn); }, removeListener() {} },
+    onRemoved: { addListener() {} }
   };
-  chromeStub.windows = { update() {} };
+  chromeStub.windows = { update(id, props, cb) { calls.windowsFocused.push({ id, props }); if (cb) cb(); } };
+  chromeStub.runtime.getPlatformInfo = (cb) => { calls.platformInfo.push(true); if (cb) cb({ os: "mac" }); };
   chromeStub.runtime.onInstalled = { addListener(fn) { chromeStub.runtime._onInstalled = fn; } };
   chromeStub.runtime.onStartup = { addListener(fn) { chromeStub.runtime._onStartup = fn; } };
 
@@ -285,6 +354,7 @@ function makePanelSandbox(options) {
   const body = makePanelElement("body");
   let docKeydownHandler = null;
   const timers = [];
+  const intervals = [];
   let timerSeq = 0;
 
   const documentStub = {
@@ -316,7 +386,10 @@ function makePanelSandbox(options) {
       const idx = timers.findIndex((t) => t.id === id);
       if (idx >= 0) timers.splice(idx, 1);
     },
-    setInterval() { return 1; },
+    // Der Sekundentakt des Panels (tickActiveCallTimer: Anrufdauer,
+    // Lookup-Watchdog, Selbstheilung der KI-Prüfung). Die Rückrufe werden
+    // gesammelt und von env.tick() ausgeführt – von selbst feuert hier nichts.
+    setInterval(fn) { intervals.push(fn); return intervals.length; },
     clearInterval() {},
     addEventListener() {},
     removeEventListener() {},
@@ -359,6 +432,11 @@ function makePanelSandbox(options) {
     // Simuliert einen dokumentweiten Tastendruck (⌘K/Enter/… für die Palette).
     fireKeydown(event) {
       if (docKeydownHandler) docKeydownHandler(event);
+    },
+    // Führt einen Durchlauf des Sekundentakts aus (window.setInterval-Rückrufe):
+    // Anrufdauer, Lookup-Watchdog, Selbstheilung der KI-Prüfung.
+    tick() {
+      intervals.forEach((fn) => fn());
     },
     // Simuliert einen Klick auf ein Control mit data-action (Delegation am
     // Root-Element, genau wie im echten Panel).

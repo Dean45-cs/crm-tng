@@ -19,9 +19,17 @@
 
   const app = globalThis.StadtnetzCRM || {};
   const shared = app.shared || {};
+  const DASH = ((app.CONFIG || {}).lookups || {}).baustatus || {};
 
   function log(...args) {
     try { console.log("[Netz-Auskunft/Baustatus]", ...args); } catch (error) { /* egal */ }
+  }
+
+  // Anklickbar im Layout. getClientRects allein ist zu streng – ein Tab, der
+  // gerade erst in den Vordergrund geholt wurde, hat unter Umständen noch kein
+  // fertiges Layout, und dann fand step2 sein Lupen-Icon nie.
+  function visible(element) {
+    return shared.isVisible ? shared.isVisible(element) : Boolean(element && element.getClientRects().length);
   }
 
   function sendStep(requestId, step, state) {
@@ -98,13 +106,13 @@
     const btn = await shared.waitForCondition(() => {
       const candidates = document.querySelectorAll('span[aria-label="search"], span.anticon-search');
       for (const c of candidates) {
-        if (c.getClientRects().length) {
+        if (visible(c)) {
           const inHeader = c.closest('header, nav, [class*="bg-primary"], [class*="justify-between"]');
           if (inHeader) return c;
         }
       }
       for (const c of candidates) {
-        if (c.getClientRects().length) return c;
+        if (visible(c)) return c;
       }
       const svg = document.querySelector('svg[data-icon="search"]');
       return svg || null;
@@ -526,19 +534,49 @@
     return result;
   }
 
+  // Steht auf der Seite wirklich das Dashboard – oder die Login-/SSO-Seite? Der
+  // Worker fragt das über sc-ping ab, bevor er die Automatisierung startet, und
+  // kann dem Bearbeiter dadurch „bitte anmelden" statt „Zeitüberschreitung"
+  // melden. Siehe CONFIG.lookups.baustatus.readySelectors.
+  function isReady() {
+    const selectors = DASH.readySelectors || [];
+    if (!selectors.length) return true;
+    return selectors.some((selector) => {
+      try { return Boolean(document.querySelector(selector)); }
+      catch (error) { return false; }
+    });
+  }
+
+  // Ein zweiter Auftrag, während der erste noch durch die Seite navigiert, würde
+  // beide Läufe verderben.
+  let busy = false;
+
+  // Startzeitpunkt dieses Scripts – siehe churn-content.js: der Worker akzeptiert
+  // nur ein Script, das nach dem Zurücksetzen des Tabs gestartet ist.
+  const loadedAt = Date.now();
+
   try {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (!message) return false;
       // Erreichbarkeits-Ping des Hintergrund-Workers: ein frisch geladenes
       // Content-Script mit gültigem Kontext antwortet sofort. Bleibt die
       // Antwort aus, weiß der Worker (lookup.js), dass hier ein verwaistes
-      // Script hängt (Extension neu geladen, dieser Tab aber nicht) und lädt
-      // den Tab einmal neu, statt stumm in den Timeout zu laufen.
-      if (message.type === "sc-ping") { sendResponse({ ok: true, pong: true, kind: "baustatus" }); return false; }
+      // Script hängt (Extension neu geladen, dieser Tab aber nicht) und setzt
+      // den Tab zurück, statt stumm in den Timeout zu laufen.
+      if (message.type === "sc-ping") {
+        sendResponse({ ok: true, pong: true, kind: "baustatus", ready: isReady(), busy, loadedAt, url: location.href });
+        return false;
+      }
       if (message.type !== "sc-lookup-baustatus") return false;
+      if (busy) {
+        sendResponse({ ok: false, error: "Es läuft bereits eine Abfrage in diesem Tab. Bitte kurz warten." });
+        return false;
+      }
+      busy = true;
       runBaustatusLookup(message.requestId, String(message.customerNumber || "").trim())
         .then((data) => sendResponse({ ok: true, data }))
-        .catch((error) => sendResponse({ ok: false, error: (error && error.message) || String(error) }));
+        .catch((error) => sendResponse({ ok: false, error: (error && error.message) || String(error) }))
+        .finally(() => { busy = false; });
       return true; // asynchrone Antwort
     });
   } catch (error) {

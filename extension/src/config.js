@@ -60,6 +60,19 @@
       // error, customerNumber, updatedAt }. Geschrieben vom Hintergrund-Worker
       // (lookup.js), gelesen vom Jira-Panel (ui.js). Bleibt lokal.
       lookupResult: "stadtnetzCrm.lookupResult",
+      // Offener Auftrag für die Netz-Auskunft. Das Panel legt ihn hier ab UND
+      // schickt zusätzlich eine Nachricht an den Hintergrund-Worker.
+      //
+      // Warum doppelt: chrome.runtime.sendMessage ist ein Zuruf ohne Zustellgarantie.
+      // Schläft der Worker gerade, wurde er beendet oder ist er beim Laden
+      // gescheitert, verschwindet die Nachricht spurlos – dann passierte GAR
+      // NICHTS (kein Tab, keine Meldung), und das Panel stand bis zum Watchdog
+      // auf „läuft". Eine Storage-Änderung weckt den Service-Worker dagegen
+      // zuverlässig; findet er hier einen offenen Auftrag, holt er ihn nach.
+      // Der Worker nimmt den Auftrag beim Start entgegen, löscht diesen
+      // Schlüssel (= angenommen) und vermerkt das im Ergebnis. Bleibt die
+      // Annahme aus, weiß das Panel, dass der Dienst nicht läuft, und sagt es.
+      lookupRequest: "stadtnetzCrm.lookupRequest",
       // Zustand der WebSocket-Bridge zur Desktop-/Kundenanbindung:
       // { connected, active, updatedAt }. Geschrieben von bridge.js, gelesen
       // von ui.js für das „Bridge aktiv"-Banner. Bleibt lokal.
@@ -186,6 +199,13 @@
         label: "Baustatus (FTTX)",
         urlMatch: "https://fttx-dash.tng.de/*",
         openUrl: "https://fttx-dash.tng.de/",
+        // Beweis, dass im Tab wirklich das Dashboard steht und nicht die
+        // Login-/SSO- oder eine Fehlerseite. Das Content-Script prüft diese
+        // Selektoren beim Erreichbarkeits-Ping (sc-ping → ready) – erst danach
+        // startet die Automatisierung. Ohne diese Unterscheidung liefen wir in
+        // den vollen Timeout und meldeten „Zeitüberschreitung", obwohl in
+        // Wahrheit nur die Anmeldung fehlt.
+        readySelectors: ['.ant-select-selection-search-input[role="combobox"]', ".ant-select"],
         // Schrittkette – die Labels erscheinen 1:1 als Fortschritts-Checkliste
         // im Panel (ui.js), die ids melden die Content-Scripts über sc-lookup-step.
         steps: [
@@ -204,18 +224,53 @@
         label: "Kündiger-Status (GFIZ)",
         urlMatch: "https://gfiz-dash.tng.de/*",
         openUrl: "https://gfiz-dash.tng.de/",
+        readySelectors: ["input.ant-input", ".ant-table", "nav", "header"],
+        // Die Startseite von gfiz-dash ist die „Status Abfrage" – die Kündiger
+        // stehen unter „Churnliste". Ohne diesen Schritt tippte die Automatisierung
+        // die Kundennummer in das Vertragsfeld der Status-Abfrage und fand
+        // erwartungsgemäß nie einen Kündigungsvorgang. Der Reiter wird deshalb
+        // zuerst geöffnet; steht die Liste schon, passiert nichts.
+        navLabel: "Churnliste",
         steps: [
+          { id: "nav", label: "Churnliste öffnen" },
           { id: "search", label: "Kundennummer eingeben" },
           { id: "settle", label: "Treffer abwarten" },
           { id: "extract", label: "Daten auslesen" }
         ]
       },
       // Wie lange der Worker auf das vollständige Laden eines frisch geöffneten
-      // Dashboard-Tabs wartet, bevor er das Content-Script anspricht.
-      tabLoadTimeoutMs: 20000,
+      // bzw. frisch zurückgesetzten Dashboard-Tabs wartet.
+      tabLoadTimeoutMs: 30000,
+      // Wie lange danach auf ein ansprechbares Content-Script MIT sichtbarem
+      // Dashboard (readySelectors) gewartet wird. Getrennt vom Laden, weil eine
+      // React-Oberfläche nach "complete" noch aufbaut.
+      readyTimeoutMs: 25000,
       // Obergrenze für einen kompletten Lookup (Navigation + Extraktion), damit
-      // ein hängendes Dashboard den Vorgang nicht ewig „läuft" anzeigt.
-      lookupTimeoutMs: 45000
+      // ein hängendes Dashboard den Vorgang nicht ewig „läuft" anzeigt. Großzügig,
+      // weil der Baustatus-Pfad sieben DOM-Schritte mit Wartezeiten durchläuft.
+      lookupTimeoutMs: 90000,
+      // Ein kompletter Anlauf (Tab zurücksetzen → Automatisierung) darf einmal
+      // wiederholt werden. Gedacht für den realistischen Fall, dass die
+      // Oberfläche das Content-Script mitten im Lauf abräumt (SPA-Neuaufbau,
+      // Sitzungserneuerung) – dann ist der Vorgang mit einem zweiten Anlauf
+      // gerettet, statt den Bearbeiter erneut klicken zu lassen.
+      attempts: 2,
+      // Takt des Lebenszeichens während eines Laufs. Zwei Aufgaben in einem:
+      // (a) es hält den kurzlebigen Service-Worker wach (jeder chrome.*-Aufruf
+      //     setzt Chromes Leerlauf-Uhr zurück) – sonst wird er mitten im Lauf
+      //     beendet und das Panel hängt für immer bei „läuft";
+      // (b) es frischt updatedAt auf, damit der Panel-Watchdog einen langsamen,
+      //     aber laufenden Vorgang nicht für hängend erklärt.
+      heartbeatMs: 10000,
+      // Ohne Lebenszeichen (siehe heartbeatMs) gilt ein Lauf im Panel als
+      // hängend. Muss deutlich über heartbeatMs liegen, aber NICHT über der
+      // Gesamtdauer eines Lookups – der Watchdog prüft die Stille, nicht die Länge.
+      watchdogMs: 45000,
+      // So lange wartet das Panel auf die Annahme durch den Hintergrund-Worker
+      // (siehe storageKeys.lookupRequest). Der Worker meldet sie binnen
+      // Millisekunden; bleibt sie aus, läuft der Dienst nicht – dann sofort eine
+      // umsetzbare Meldung statt einer Minute Warten auf einen Timeout.
+      ackTimeoutMs: 8000
     },
 
     // WebSocket-Bridge (server/baustatus_bridge.py): erlaubt einem externen
@@ -345,7 +400,16 @@
       temperature: {
         analysis: 0.2,
         draft: 0.7
-      }
+      },
+
+      // Wie lange ein negatives Ergebnis der Verfügbarkeitsprüfung gilt, bevor
+      // von selbst neu geprüft wird. Ein „nicht nutzbar" darf nie endgültig
+      // sein: die häufigste Ursache ist keine fehlende Fähigkeit des Geräts,
+      // sondern eine kurzzeitige Störung (im HUD die Verbindung zum Jira-Tab,
+      // in Chrome ein gerade beschäftigtes/nachladendes Modell). Ohne diese
+      // Frist blieben nach einer einzigen Störung alle KI-Funktionen gesperrt,
+      // bis jemand neu lädt.
+      recheckMs: 30000
     },
 
     // Gesprächsleitfäden je Call-Typ (Outbound-Umbau). Welchen der Bearbeiter

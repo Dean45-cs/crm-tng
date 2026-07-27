@@ -31,7 +31,7 @@ async function run() {
   assert.strictEqual(stored1.requestId, "t1");
   assert.strictEqual(env.calls.tabsCreated.length, 0, "kein Tab wurde geöffnet");
   // Kein deepStrictEqual auf vm-Realm-Arrays (anderer Prototyp) – join vergleicht Inhalte.
-  assert.strictEqual(stored1.steps.map((s) => s.id).join(","), "search,settle,extract", "churn-Schritte vorbelegt");
+  assert.strictEqual(stored1.steps.map((s) => s.id).join(","), "nav,search,settle,extract", "churn-Schritte vorbelegt (inkl. Reiterwechsel zur Churnliste)");
   assert.ok(stored1.steps.every((s) => s.state === "pending"), "alle Schritte starten als pending");
 
   // Schritt-Reducer: aktualisiert den passenden Schritt und spiegelt in den Storage.
@@ -54,7 +54,7 @@ async function run() {
 
   // initSteps deckt beide Abfragearten ab.
   assert.strictEqual(lookup.initSteps("baustatus").length, 8);
-  assert.strictEqual(lookup.initSteps("churn").length, 3);
+  assert.strictEqual(lookup.initSteps("churn").length, 4);
   assert.strictEqual(lookup.initSteps("quatsch").length, 0, "unbekannte Art hat keine Schritte");
 
   // 4. Fortschrittsmeldung nach Worker-Neustart: der In-Memory-Spiegel (active)

@@ -27,6 +27,34 @@
   };
   const S = (localAi && localAi.STATUS) || {};
 
+  // Gastgeber-Haken für die Desktop-App.
+  //
+  // Dasselbe Panel läuft an zwei Orten: als Overlay in der Jira-Seite und als
+  // Overlay auf dem Schreibtisch (desktop/). Was nur der Schreibtisch hat
+  // (Verbindungspunkt, Notizen, Overlay-Einstellungen), soll trotzdem nicht in
+  // dieser Datei landen – sonst wandert Fenster-Logik in die Extension, wo es
+  // sie nicht gibt. Stattdessen setzt desktop/renderer/hud-host.js ein Objekt
+  // an app.hudHost; hier wird an den passenden Stellen nur nachgefragt. In
+  // Chrome bleibt app.hudHost undefiniert und alles rendert unverändert.
+  //
+  // Bewusst als Funktion (nicht als Konstante beim Laden): hud-host.js wird
+  // nach ui.js geladen, eine Kopie beim Start wäre immer null.
+  function hudHost() {
+    return app.hudHost || null;
+  }
+
+  // Ruft einen Markup-Haken auf. Fällt er aus, kostet das ein Stück Anzeige –
+  // nicht das ganze Panel.
+  function hostHtml(name) {
+    const host = hudHost();
+    if (!host || typeof host[name] !== "function") return "";
+    try {
+      return host[name]() || "";
+    } catch (error) {
+      return "";
+    }
+  }
+
   // Auto-Aufräumen der Gesprächsnotizen: erst nach einer Tipppause, nie
   // während des Tippens selbst.
   const CALL_AUTO_CLEAN_DELAY_MS = 1500;
@@ -84,7 +112,9 @@
     // `confirm` hält die ausstehende Bestätigung { kind, customerNumber } – die
     // kritische Aktion wird VOR jedem Lauf im Panel bestätigt. `customerInput`
     // ist die (optional manuell überschriebene) Kundennummer für die Abfrage.
-    lookup: { result: null, confirm: null, customerInput: "" },
+    // diagnose: Ergebnis der Selbstauskunft des Hintergrund-Dienstes
+    // („Verbindung prüfen“) – nur Anzeige, nichts wird dabei automatisiert.
+    lookup: { result: null, confirm: null, customerInput: "", diagnose: null },
     // Zustand der WebSocket-Bridge (aus storageKeys.bridgeState) für das
     // „Bridge aktiv"-Banner.
     bridgeState: null,
@@ -100,6 +130,12 @@
     palette: null,
     ai: {
       caps: null,           // Ergebnis von localAi.capabilities()
+      // Wann die Verfügbarkeit zuletzt geprüft wurde und ob gerade geprüft wird.
+      // Grundlage der Selbstheilung (maybeRecheckAi): ein negatives Ergebnis
+      // gilt nur befristet, damit eine kurzzeitige Störung nicht dauerhaft alle
+      // KI-Funktionen sperrt.
+      capsCheckedAt: 0,
+      capsChecking: false,
       busy: "",             // Name der gerade laufenden KI-Aufgabe ("" = frei)
       download: 0,          // Download-Fortschritt in Prozent
       controller: null,     // AbortController der laufenden Aufgabe
@@ -674,29 +710,69 @@
   // Calls auf (kein frisches Update mehr – z. B. timio-Tab abgestürzt) und
   // hält die Veraltet-Anzeige der Wartefeld-Daten aktuell.
   // Sicherheitsnetz gegen ein ewig bei „läuft" hängendes Panel: meldet sich der
-  // Hintergrund-Worker über LOOKUP_WATCHDOG_MS nicht mit Fortschritt oder
+  // Hintergrund-Worker über die Watchdog-Frist nicht mit Fortschritt oder
   // Ergebnis (z. B. Worker beendet, Dashboard-Tab unerreichbar, Nachricht nie
   // angekommen), wird der Zustand mit einer klaren, umsetzbaren Meldung auf
-  // Fehler gesetzt. Im Normallauf schreibt der Worker bei jedem Schritt
-  // (updatedAt wandert mit), sodass der Watchdog nur bei echtem Stillstand
-  // greift – nicht während eines langsamen, aber fortschreitenden Laufs.
-  const LOOKUP_WATCHDOG_MS = 60000;
+  // Fehler gesetzt. Der Worker frischt updatedAt in seinem Heartbeat-Takt auf
+  // (CONFIG.lookups.heartbeatMs), also greift der Watchdog nur bei echter Stille
+  // – nicht während eines langsamen, aber laufenden Vorgangs. Die Schwelle kommt
+  // deshalb aus derselben Konfiguration wie der Takt: würde sie darunter liegen,
+  // bräche das Panel jeden normalen Lauf ab.
+  // Beide Fristen zur Laufzeit aus der CONFIG lesen (nicht beim Laden einfrieren),
+  // damit sie an einer Stelle stehen und anpassbar bleiben.
+  function lookupWatchdogMs() {
+    const lookups = CONFIG.lookups || {};
+    return typeof lookups.watchdogMs === "number" ? lookups.watchdogMs : 45000;
+  }
+  function lookupAckMs() {
+    const lookups = CONFIG.lookups || {};
+    return typeof lookups.ackTimeoutMs === "number" ? lookups.ackTimeoutMs : 8000;
+  }
+
+  // Der Hintergrund-Worker quittiert die Annahme sofort (phase != "queued").
+  // Bleibt sie aus, LÄUFT DER DIENST NICHT – das ist der Zustand, in dem früher
+  // gar nichts passierte (kein Tab, keine Meldung) und das Panel bis zum
+  // Timeout „läuft" zeigte. Hier wird daraus eine Ansage, die man befolgen kann.
+  function maybeExpireUnacceptedLookup() {
+    const result = state.lookup.result;
+    if (!result || result.status !== "running") return false;
+    // Nur der selbst gesetzte Wartezustand zählt. Ein Ergebnis ohne phase stammt
+    // aus einer älteren Sitzung – dafür ist der normale Watchdog zuständig.
+    if (result.phase !== "queued") return false;
+    const queuedAt = result.queuedAt || result.updatedAt || 0;
+    if (!queuedAt || Date.now() - queuedAt <= lookupAckMs()) return false;
+    state.lookup.result = Object.assign({}, result, {
+      status: "error",
+      phase: "done",
+      note: "",
+      error: "Der Hintergrund-Dienst der Extension hat den Auftrag nicht angenommen – er läuft vermutlich nicht. Bitte chrome://extensions öffnen, bei „Stadtnetz CRM Outbound“ auf „Neu laden“ klicken und danach diesen Jira-Tab mit F5 aktualisieren. Zeigt die Karte dort einen Fehler unter „Service Worker“, bitte diesen Text melden."
+    });
+    // Der liegengebliebene Auftrag darf nicht später von einem startenden Worker
+    // aufgegriffen werden und unvermittelt ein Dashboard öffnen.
+    safeLocalRemove(CONFIG.storageKeys.lookupRequest);
+    render();
+    return true;
+  }
+
   function maybeExpireStuckLookup() {
+    if (maybeExpireUnacceptedLookup()) return;
     const result = state.lookup.result;
     if (!result || result.status !== "running") return;
     const last = result.updatedAt || 0;
-    if (!last || Date.now() - last <= LOOKUP_WATCHDOG_MS) return;
+    if (!last || Date.now() - last <= lookupWatchdogMs()) return;
     state.lookup.result = Object.assign({}, result, {
       status: "error",
-      error: "Zeitüberschreitung: Die Abfrage hat sich nicht mehr gemeldet. Ist der Dashboard-Tab (fttx-dash bzw. gfiz-dash) offen und bist du dort angemeldet? Bitte den Tab neu laden und erneut versuchen."
+      error: "Zeitüberschreitung: Die Abfrage hat sich nicht mehr gemeldet. Meist ist der Hintergrund-Dienst der Extension beendet worden – bitte diesen Jira-Tab neu laden (F5) und erneut versuchen. Bleibt es dabei, in chrome://extensions unter „Service Worker“ nach Fehlern sehen."
     });
     render();
   }
 
   function tickActiveCallTimer() {
-    // Läuft prozessweit im Sekundentakt – zuerst der Lookup-Watchdog, damit er
-    // auch dann greift, wenn gerade kein Anruf aktiv ist (früher Rücksprung unten).
+    // Läuft prozessweit im Sekundentakt – zuerst der Lookup-Watchdog und die
+    // Selbstheilung der KI-Verfügbarkeit, damit beide auch dann greifen, wenn
+    // gerade kein Anruf aktiv ist (früher Rücksprung unten).
     maybeExpireStuckLookup();
+    maybeRecheckAi();
     const call = currentActiveCall();
     if (!call) {
       if (state.activeCall) {
@@ -769,6 +845,19 @@
     return Boolean(state.ai.caps && state.ai.caps.usable);
   }
 
+  // Für die Bedienbarkeit zählt nicht der letzte Prüfstand, sondern ob ein
+  // Versuch überhaupt Sinn haben kann. Alles außer „dieses Chrome kennt die API
+  // nicht" kann vorübergehend sein (Verbindung weg, Modell gerade beschäftigt) –
+  // dann bleibt der Knopf bedienbar und die Aktion prüft selbst noch einmal nach
+  // (ensureAiUsable). Vorher sperrte ein einziges negatives Prüfergebnis alle
+  // KI-Knöpfe dauerhaft, ohne Weg zurück außer Neustart.
+  function aiActionable() {
+    if (aiUsable()) return true;
+    const caps = state.ai.caps;
+    if (!caps) return false; // Prüfung läuft noch
+    return caps.status !== S.UNSUPPORTED || Boolean(caps.offline) || Boolean(caps.transient);
+  }
+
   function aiUnavailableMessage(status) {
     // Im HUD (Desktop-App) läuft die lokale KI nicht hier, sondern ferngesteuert
     // in Chrome. Meldet der Shim `offline`, ist NICHT das Modell das Problem,
@@ -776,7 +865,16 @@
     // konkrete, behebbare Anweisung zeigen statt des irreführenden
     // „in diesem Chrome nicht verfügbar".
     if (state.ai.caps && state.ai.caps.offline) {
-      return "Keine Verbindung zur Chrome-Erweiterung. Chrome mit geöffnetem Jira-Vorgang starten; nach einem Neuladen der Erweiterung auch den Jira-Tab neu laden (F5).";
+      const reason = state.ai.caps.reason ? ` (${state.ai.caps.reason})` : "";
+      return `Keine Verbindung zur Chrome-Erweiterung${reason}. Chrome mit geöffnetem Jira-Vorgang starten; nach einem Neuladen der Erweiterung auch den Jira-Tab neu laden (F5). Es wird automatisch erneut geprüft.`;
+    }
+    // Die Prüfung selbst ist gescheitert (Verbindung/Zeitüberschreitung) – das
+    // sagt nichts über das Modell aus und darf nicht als „Gerät kann das nicht"
+    // erscheinen. Im HUD ist das der häufigste Fall: Chrome läuft, aber der
+    // Jira-Tab ist gerade nicht ansprechbar.
+    if (state.ai.caps && state.ai.caps.transient) {
+      const reason = state.ai.caps.reason ? ` (${state.ai.caps.reason})` : "";
+      return `Die lokale KI war gerade nicht erreichbar${reason}. Das heißt nicht, dass das Modell fehlt – es wird automatisch erneut geprüft. Läuft Chrome mit einem geöffneten Jira-Vorgang? Nach einem Neuladen der Erweiterung muss auch der Jira-Tab neu geladen werden (F5).`;
     }
     switch (status) {
       case S.UNSUPPORTED:
@@ -877,12 +975,26 @@
   // ---------------------------------------------------------------------------
 
   function renderAiBanner() {
+    // Auf dem Schreibtisch sagt der Gastgeber schon oben im Panel, dass Chrome
+    // fehlt – und ohne Chrome gibt es dort weder KI noch etwas zum erneut
+    // Prüfen. Zwei Warnungen für dieselbe Ursache sind eine zu viel.
+    const host = hudHost();
+    if (host && typeof host.isConnected === "function" && !host.isConnected()) return "";
     const caps = state.ai.caps;
     if (!caps) {
       return `<div class="sc-ai-banner is-checking"><span class="sc-spinner" aria-hidden="true"></span>Lokale KI wird geprüft …</div>`;
     }
+    if (state.ai.capsChecking) {
+      return `<div class="sc-ai-banner is-checking"><span class="sc-spinner" aria-hidden="true"></span>Lokale KI wird erneut geprüft …</div>`;
+    }
     if (caps.usable && caps.status === S.AVAILABLE) {
       return "";
+    }
+    // Chrome meldet gerade kein "available", das Modell hat hier aber vor Kurzem
+    // gearbeitet. Dann nicht sperren, sondern es beim nächsten Auftrag versuchen –
+    // die Meldung ist ein Hinweis, keine Absage.
+    if (caps.usable && caps.provenWorking) {
+      return `<div class="sc-ai-banner is-checking">Die lokale KI meldet sich gerade zögerlich – die nächste Aufgabe wird trotzdem versucht.</div>`;
     }
     if (caps.status === S.DOWNLOADABLE) {
       const loading = busyOn("enable");
@@ -895,7 +1007,14 @@
           <button class="sc-primary-button" type="button" data-action="enable-ai" ${loading ? "disabled" : ""}>${loading ? "Lädt …" : "Modell laden"}</button>
         </div>`;
     }
-    return `<div class="sc-ai-banner is-warn"><span aria-hidden="true">!</span>${escapeHtml(aiUnavailableMessage(caps.status))}</div>`;
+    return `
+      <div class="sc-ai-banner is-warn">
+        <span aria-hidden="true">!</span>
+        <div>
+          <p>${escapeHtml(aiUnavailableMessage(caps.status))}</p>
+          <button class="sc-text-button" type="button" data-action="recheck-ai">Erneut prüfen</button>
+        </div>
+      </div>`;
   }
 
 
@@ -961,14 +1080,17 @@
       ${contactRows.length ? `<div class="sc-lookup-contacts"><span class="sc-eyebrow">Externe Firmen</span><div class="sc-ticket-grid">${contactRows.map((entry) => ticketRow(entry[0], entry[1])).join("")}</div></div>` : ""}`;
   }
 
-  function renderChurnCard(data) {
+  function renderChurnCard(data, result) {
     if (!data || !data.found) return `<p class="sc-ai-message sc-lookup-ok">Kein Kündiger-/Churn-Vorgang zu dieser Kundennummer gefunden.</p>`;
+    const opened = result && result.openedTicket;
     return `
       <p class="sc-lookup-note">${data.count} ${data.count === 1 ? "Vorgang" : "Vorgänge"} gefunden.</p>
+      ${opened ? `<p class="sc-ai-message sc-lookup-ok">Das Kündigungsticket wurde geöffnet – dort läuft die Gesprächsvorbereitung mit dem Kündigungsgrund als Kontext.</p>` : ""}
       <ul class="sc-lookup-churn">${data.cases.map((c) => `
         <li>
           <div class="sc-lookup-churn-head">${escapeHtml(c.vertrag || "—")}${c.geschaeftsfall ? ` · ${escapeHtml(c.geschaeftsfall)}` : ""}</div>
-          ${c.ursache ? `<div class="sc-lookup-churn-sub">${escapeHtml(c.ursache)}${c.eingang ? ` · ${escapeHtml(c.eingang)}` : ""}</div>` : ""}
+          ${c.ursache ? `<div class="sc-lookup-churn-sub"><strong>Grund:</strong> ${escapeHtml(c.ursache)}${c.eingang ? ` · ${escapeHtml(c.eingang)}` : ""}</div>` : ""}
+          ${c.winback || c.dealcloser ? `<div class="sc-lookup-churn-sub">${c.winback ? `Winback: ${escapeHtml(c.winback)}` : ""}${c.winback && c.dealcloser ? " · " : ""}${c.dealcloser ? `bereits angeboten: ${escapeHtml(c.dealcloser)}` : ""}</div>` : ""}
           ${c.jiraTicket ? `<a class="sc-text-button" href="${escapeHtml(c.jiraHref || jiraTicketUrl(c.jiraTicket))}" target="_blank" rel="noopener">${escapeHtml(c.jiraTicket)} öffnen</a>` : ""}
           ${c.kommentar ? `<div class="sc-lookup-churn-comment">${escapeWithBreaks(c.kommentar)}</div>` : ""}
         </li>`).join("")}</ul>`;
@@ -978,14 +1100,23 @@
     if (!result) return "";
     const dash = (CONFIG.lookups && CONFIG.lookups[result.kind]) || {};
     if (result.status === "running") {
-      return `<div class="sc-lookup-progress"><p class="sc-eyebrow">${escapeHtml(dash.label || "Abfrage")} · läuft …</p>${renderLookupSteps(result)}</div>`;
+      // result.note ist der Abschnitt, in dem der Worker gerade steckt
+      // (Tab vorbereiten, auf das Dashboard warten, zweiter Anlauf). Ohne ihn
+      // sah die Vorbereitungsphase – vor dem ersten abgehakten Schritt – wie
+      // Stillstand aus.
+      return `<div class="sc-lookup-progress">
+          <p class="sc-eyebrow">${escapeHtml(dash.label || "Abfrage")} · läuft …</p>
+          ${result.note ? `<p class="sc-lookup-note">${escapeHtml(result.note)}</p>` : ""}
+          ${renderLookupSteps(result)}
+          <p class="sc-input-hint">Das Dashboard läuft im Vordergrund weiter – bitte den Tab währenddessen nicht wechseln. Danach springt der Fokus von selbst hierher zurück.</p>
+        </div>`;
     }
     if (result.status === "error") {
       return `<div class="sc-lookup-progress">${renderLookupSteps(result)}<p class="sc-ai-message sc-lookup-error">${escapeHtml(result.error || "Abfrage fehlgeschlagen.")}</p></div>`;
     }
     if (result.status === "ok") {
       const data = result.data || {};
-      return `<div class="sc-lookup-card"><span class="sc-eyebrow">${escapeHtml(dash.label || "Ergebnis")}${result.customerNumber ? ` · ${escapeHtml(result.customerNumber)}` : ""}</span>${result.kind === "baustatus" ? renderBaustatusCard(data) : renderChurnCard(data)}</div>`;
+      return `<div class="sc-lookup-card"><span class="sc-eyebrow">${escapeHtml(dash.label || "Ergebnis")}${result.customerNumber ? ` · ${escapeHtml(result.customerNumber)}` : ""}</span>${result.kind === "baustatus" ? renderBaustatusCard(data) : renderChurnCard(data, result)}</div>`;
     }
     return "";
   }
@@ -995,10 +1126,38 @@
     return `
       <div class="sc-lookup-confirm">
         <p><strong>Aktive Abfrage bestätigen.</strong> Dies öffnet und automatisiert das Dashboard <em>${escapeHtml(dash.label || confirm.kind)}</em> und liest Daten zu Kundennummer <strong>${escapeHtml(confirm.customerNumber)}</strong>. Das verlässt bewusst das „liest nur"-Prinzip der Extension.</p>
+        <p class="sc-input-hint">Der Dashboard-Tab wird dafür in den Vordergrund geholt und auf die Startseite zurückgesetzt (nur so läuft die Abfrage zuverlässig — im Hintergrund bremst Chrome die Seite aus). Nicht gespeicherte Eingaben in diesem Tab gehen dabei verloren. Danach kommt der Fokus hierher zurück.</p>
         <div class="sc-inline-actions">
           <button class="sc-primary-button" type="button" data-action="lookup-confirm">Ja, nachschlagen</button>
           <button class="sc-secondary-button" type="button" data-action="lookup-cancel">Abbrechen</button>
         </div>
+      </div>`;
+  }
+
+  // Selbstauskunft des Hintergrund-Dienstes: beantwortet in vier Zeilen, warum
+  // eine Abfrage nicht losläuft – statt den Bearbeiter raten zu lassen.
+  function renderLookupDiagnose(diagnose) {
+    if (!diagnose) return "";
+    if (diagnose.status === "running") {
+      return `<p class="sc-ai-message"><span class="sc-spinner" aria-hidden="true"></span> Verbindung wird geprüft …</p>`;
+    }
+    if (diagnose.status === "error") {
+      return `<p class="sc-ai-message sc-lookup-error">${escapeHtml(diagnose.error)}</p>`;
+    }
+    const report = diagnose.report || {};
+    const rows = [
+      ["Hintergrund-Dienst", "läuft"],
+      ["Freigabe (Netz-Auskunft)", report.enableLookups ? "an" : "AUS – in den Einstellungen aktivieren"],
+      ["Tab-Berechtigung", report.tabsApi ? "vorhanden" : "FEHLT – Extension neu laden"]
+    ];
+    (report.dashboards || []).forEach((entry) => {
+      rows.push([entry.label, `${entry.tabs} Tab(s) offen · ${entry.script}`]);
+    });
+    return `
+      <div class="sc-lookup-card">
+        <span class="sc-eyebrow">Verbindungsprüfung</span>
+        <div class="sc-ticket-grid">${rows.map((entry) => ticketRow(entry[0], entry[1])).join("")}</div>
+        <p class="sc-input-hint">Ist hier alles in Ordnung und die Abfrage läuft trotzdem nicht, hilft der Blick in chrome://extensions unter „Service Worker“.</p>
       </div>`;
   }
 
@@ -1033,7 +1192,9 @@
         <div class="sc-inline-actions">
           <button class="sc-primary-button" type="button" data-action="lookup-baustatus" ${running ? "disabled" : ""}>Baustatus nachschlagen</button>
           <button class="sc-secondary-button" type="button" data-action="lookup-churn" ${running ? "disabled" : ""}>Kündiger-Status prüfen</button>
+          <button class="sc-text-button" type="button" data-action="lookup-diagnose" ${running ? "disabled" : ""}>Verbindung prüfen</button>
         </div>
+        ${renderLookupDiagnose(state.lookup.diagnose)}
         ${renderLookupResult(state.lookup.result)}`;
     }
     return `
@@ -1092,7 +1253,7 @@
           <button class="sc-text-button" type="button" data-action="use-call-draft">In den Abschluss übernehmen</button>
         </div>`;
     }
-    const disabled = !aiUsable() || anyBusy();
+    const disabled = !aiActionable() || anyBusy();
     return `
       <section class="sc-section sc-ai-card">
         <div class="sc-section-title-row">
@@ -1161,7 +1322,7 @@
       body = `<p class="sc-ai-message">Aus dem Ticket entstehen Anrufziel, Gesprächspunkte, offene Fragen und die zu erwartenden Einwände – damit du beim Verbinden sofort sprechfähig bist.</p>`;
     }
     const hasResult = prep.status === "ok" && Boolean(prep.data);
-    const canRun = aiUsable() && !anyBusy();
+    const canRun = aiActionable() && !anyBusy();
     return `
       <section class="sc-section sc-ai-card">
         <div class="sc-section-title-row">
@@ -1852,6 +2013,7 @@
   function renderSettings() {
     const s = state.settings;
     return `
+      ${hostHtml("settings")}
       ${renderSupabaseLoginSection()}
       ${renderThemeSection()}
       <section class="sc-section">
@@ -1910,7 +2072,7 @@
           <h3>Daten &amp; Datenschutz</h3>
           <span class="sc-local-label">nur lokal</span>
         </div>
-        <p class="sc-section-intro">Alle Daten dieser Extension (Einstellungen, KI-Gesprächsvorbereitung pro Ticket, Anruf-Status und Rückrufliste) liegen ausschließlich lokal in deinem Chrome-Profil. Es gibt keinen Server und keine Übertragung. Hier kannst du alles vollständig löschen.</p>
+        <p class="sc-section-intro">Alle Daten dieser Extension (Einstellungen, KI-Gesprächsvorbereitung pro Ticket, Anruf-Status und Rückrufliste) liegen ausschließlich lokal in deinem Chrome-Profil. Die KI läuft auf dem Gerät, es gibt keinen Cloud-Dienst und keine Übertragung. Hier kannst du alles vollständig löschen.</p>
         <button class="sc-secondary-button sc-danger-button" type="button" data-action="wipe-data">Alle lokal gespeicherten Daten löschen</button>
       </section>`;
   }
@@ -1933,7 +2095,7 @@
     state.supabaseSession = null;
     state.supabaseAuth = { name: "", pin: "", busy: false, error: "" };
     state.customerCard = null;
-    state.lookup = { result: null, confirm: null, customerInput: "" };
+    state.lookup = { result: null, confirm: null, customerInput: "", diagnose: null };
     state.bridgeState = null;
     state.closeout = null;
     state.sharedSettings = { status: "idle", data: null, error: "" };
@@ -2086,9 +2248,20 @@
     }
   }
 
+  // Woran man im Kopf erkennt, worüber man gerade spricht: der offene Vorgang,
+  // ersatzweise die Kampagne der Schicht. Bewusst knapp – der Kopf ist eine
+  // Zeile, keine Visitenkarte.
+  function headerContext() {
+    const ticket = state.ticket;
+    if (ticket && ticket.key && ticket.key !== jiraReader.UNKNOWN) return ticket.key;
+    if (state.shift && state.shift.campaignName) return state.shift.campaignName;
+    return "";
+  }
+
   function rootMarkup() {
     const tabs = CONFIG.tabs.map((tab) => `
       <button class="sc-tab ${state.activeTab === tab.id ? "is-active" : ""}" type="button" role="tab" aria-selected="${state.activeTab === tab.id}" data-action="switch-tab" data-tab="${tab.id}">${escapeHtml(tab.label)}</button>`).join("");
+    const context = headerContext();
     return `
       ${renderCallCockpit()}
       <button class="sc-launcher ${state.isOpen ? "is-hidden" : ""}" type="button" data-action="open-panel" aria-label="Stadtnetz CRM Outbound öffnen">
@@ -2096,22 +2269,24 @@
       </button>
       <aside class="sc-panel ${state.isOpen ? "is-open" : ""}" aria-label="Stadtnetz CRM Outbound">
         <header class="sc-panel-header">
-          <div>
-            <span class="sc-eyebrow">Stadtnetz CRM · Outbound · lokale KI</span>
-            <strong>Anrufen. Abschließen.</strong>
+          <div class="sc-panel-id">
+            ${hostHtml("headerStatus")}
+            <span class="sc-panel-name">Outbound</span>
+            ${context ? `<span class="sc-panel-context" title="${escapeHtml(context)}">${escapeHtml(context)}</span>` : ""}
           </div>
           <div class="sc-header-actions">
+            ${hostHtml("headerActions")}
             ${state.settingsOpen ? "" : `<button class="sc-icon-button ${state.layout.customizeMode ? "is-active" : ""}" type="button" data-action="toggle-customize" title="Layout anpassen" aria-label="Layout anpassen">▦</button>`}
             <button class="sc-icon-button ${state.settingsOpen ? "is-active" : ""}" type="button" data-action="toggle-settings" title="Einstellungen" aria-label="Einstellungen">⚙</button>
             <button class="sc-icon-button" type="button" data-action="refresh" title="Ticketdaten aktualisieren" aria-label="Ticketdaten aktualisieren">↻</button>
             <button class="sc-icon-button" type="button" data-action="close-panel" title="Panel minimieren" aria-label="Panel minimieren">×</button>
           </div>
         </header>
+        ${hostHtml("banner")}
         ${renderBridgeBanner()}
         ${renderActiveCallBanner()}
         ${state.settingsOpen ? "" : `<nav class="sc-tabs" role="tablist" aria-label="Bereiche">${tabs}</nav>`}
         <main class="sc-panel-content">${state.settingsOpen ? renderSettings() : activeContent()}</main>
-        <footer class="sc-panel-footer">Verarbeitet Ticketdaten ausschließlich lokal – On-Device-KI, kein Cloud-Dienst.</footer>
         <div class="sc-toast" role="status" aria-live="polite"></div>
       </aside>`;
   }
@@ -2323,9 +2498,47 @@
   // automatische Aufräumen im Hintergrund) niemals eine laufende Eingabe
   // unterbricht, werden Fokus und Cursor-Position des gerade aktiven
   // Eingabefelds über den Neuaufbau hinweg erhalten.
+  // Bereiche mit eigener Bildlaufleiste. Sie werden beim Neuaufbau des Panels
+  // neu erzeugt und stünden danach wieder ganz oben – deshalb wird ihre Position
+  // gesichert und zurückgesetzt.
+  const SCROLL_KEEPERS = [".sc-panel-content", ".sc-cockpit-body", ".sc-cockpit-summary", "[data-keep-scroll]"];
+
+  function captureScroll(container) {
+    const saved = [];
+    SCROLL_KEEPERS.forEach((selector) => {
+      let nodes;
+      try { nodes = container.querySelectorAll(selector); } catch (error) { return; }
+      Array.prototype.forEach.call(nodes || [], (node, index) => {
+        if (node && node.scrollTop) saved.push({ selector, index, top: node.scrollTop });
+      });
+    });
+    return saved;
+  }
+
+  function restoreScroll(container, saved) {
+    saved.forEach((entry) => {
+      let nodes;
+      try { nodes = container.querySelectorAll(entry.selector); } catch (error) { return; }
+      const node = nodes && nodes[entry.index];
+      // Ist der Inhalt kürzer geworden, begrenzt der Browser den Wert selbst.
+      if (node) node.scrollTop = entry.top;
+    });
+  }
+
+  // Zuletzt geschriebenes Markup. Ein Neuaufbau, der exakt dasselbe erzeugt, wird
+  // übersprungen: er würde nur flackern, den Fokus stören und die Bildlaufposition
+  // zurücksetzen. Das ist der Normalfall, seit der Hintergrund-Dienst während
+  // einer Abfrage im Takt Lebenszeichen schreibt – jedes davon löste bisher einen
+  // vollständigen Neuaufbau aus, und das Panel sprang nach oben.
+  let lastMarkup = null;
+
   function render() {
     const container = root();
     if (!container) return;
+
+    const markup = rootMarkup();
+    if (markup === lastMarkup) return;
+    lastMarkup = markup;
 
     const active = document.activeElement;
     let focusRole = null;
@@ -2336,8 +2549,11 @@
         selection = { start: active.selectionStart, end: active.selectionEnd };
       }
     }
+    const scroll = captureScroll(container);
 
-    container.innerHTML = rootMarkup();
+    container.innerHTML = markup;
+
+    restoreScroll(container, scroll);
 
     if (focusRole) {
       const next = container.querySelector(`[data-role='${focusRole}']`);
@@ -2404,22 +2620,101 @@
     return true;
   }
 
-  async function loadCapabilities() {
+  // Wie lange ein negatives Prüfergebnis gilt, bevor von selbst neu geprüft wird.
+  function aiRecheckMs() {
+    const ai = CONFIG.ai || {};
+    return typeof ai.recheckMs === "number" ? ai.recheckMs : 30000;
+  }
+
+  async function loadCapabilities(options) {
+    const autoRun = !options || options.autoRun !== false;
     if (!ensureAi()) { render(); return; }
+    if (state.ai.capsChecking) return;
+    state.ai.capsChecking = true;
     try {
       state.ai.caps = await localAi.capabilities();
     } catch (error) {
-      state.ai.caps = { usable: false, status: S.UNAVAILABLE };
+      // WICHTIG: Ein Fehler beim PRÜFEN ist keine Aussage über das Modell. Im
+      // HUD läuft die KI ferngesteuert in Chrome – bricht diese Verbindung
+      // (kein Jira-Tab, Tab nach einem Extension-Reload stumm, keine Antwort),
+      // landete hier früher "unavailable" und das Fenster meldete „Das lokale
+      // KI-Modell ist auf diesem Gerät derzeit nicht nutzbar." Der Zustand blieb
+      // hängen, alle KI-Knöpfe blieben grau — bis zum Neustart. Deshalb wird der
+      // Fehler als vorübergehend markiert, im Klartext benannt und automatisch
+      // erneut geprüft.
+      state.ai.caps = {
+        usable: false,
+        status: S.UNAVAILABLE,
+        transient: true,
+        reason: String((error && error.message) || error || "")
+      };
+    } finally {
+      state.ai.capsChecking = false;
+      state.ai.capsCheckedAt = Date.now();
     }
     render();
-    maybeAutoRun();
+    if (autoRun) maybeAutoRun();
+  }
+
+  // Schreibt gerade jemand in ein Feld des Panels? Dann ist kein guter Moment
+  // für ein Neu-Rendern.
+  function isTypingInPanel() {
+    try {
+      const node = document.activeElement;
+      if (!node) return false;
+      const tag = String(node.tagName || "").toLowerCase();
+      if (tag !== "input" && tag !== "textarea") return false;
+      const container = root();
+      return Boolean(container && container.contains(node));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Ein „nicht nutzbar" darf nie endgültig sein, solange die Ursache auch eine
+  // vorübergehende sein kann (Verbindung weg, Modell gerade beschäftigt, lädt
+  // noch). Läuft im Sekundentakt mit (tickActiveCallTimer) und heilt den
+  // Zustand von selbst, ohne dass jemand neu laden muss.
+  function maybeRecheckAi() {
+    const caps = state.ai.caps;
+    if (!caps || aiUsable() || anyBusy() || state.ai.capsChecking) return;
+    // Kennt dieses Chrome die API schlicht nicht, gibt es nichts zu heilen.
+    if (caps.status === S.UNSUPPORTED && !caps.offline && !caps.transient) return;
+    if (Date.now() - (state.ai.capsCheckedAt || 0) < aiRecheckMs()) return;
+    // Nicht mitten ins Tippen rendern: die Prüfung baut das Panel neu auf und
+    // würde den Cursor aus dem Notizfeld reißen. Sie hat es nicht eilig.
+    if (isTypingInPanel()) return;
+    loadCapabilities();
+  }
+
+  // Vor einer KI-Aktion: sagt der letzte Stand „nicht nutzbar", einmal frisch
+  // nachsehen statt die Aktion stillschweigend zu verschlucken. Ohne autoRun,
+  // sonst startet die Prüfung die Aufgabe nebenher ein zweites Mal.
+  async function ensureAiUsable() {
+    if (aiUsable()) return true;
+    await loadCapabilities({ autoRun: false });
+    if (aiUsable()) return true;
+    toast(aiUnavailableMessage(state.ai.caps && state.ai.caps.status));
+    return false;
   }
 
   // Ein Ergebnis gilt für den Auto-Lauf als erledigt, wenn es entweder
   // aktuell ist, oder wenn es zuletzt fehlgeschlagen ist (kein automatischer
   // Retry-Loop – Fehlversuche bleiben manuell erneut anstoßbar).
+  // Kennzeichen des Kündigungs-Kontexts, mit dem eine Vorbereitung erstellt
+  // wurde. Kommt der Kontext erst später dazu (die Churn-Abfrage öffnet das
+  // Ticket ja gerade erst), ist eine zwischengespeicherte Vorbereitung ohne ihn
+  // nicht mehr die richtige – sie kennt den Kündigungsgrund nicht.
+  function churnKey() {
+    const churn = churnContextForTicket();
+    if (!churn) return "";
+    return [churn.vertrag, churn.ursache, churn.winback, churn.dealcloser].filter(Boolean).join("|");
+  }
+
   function autoRunSatisfied(field) {
-    return field.status === "error" || (field.status === "ok" && !isStale(field));
+    if (field.status === "error") return true;
+    if (field.status !== "ok" || isStale(field)) return false;
+    return (field.churnKey || "") === churnKey();
   }
 
   // Die einzige automatisch mitlaufende KI-Aufgabe: die Gesprächsvorbereitung.
@@ -2444,8 +2739,8 @@
     render();
     try {
       // Ein leichter Lauf stößt den Modell-Download an und zeigt Fortschritt.
-      const result = await localAi.prepareCall({ ticket: state.ticket, agent: agentForAi() }, { signal, onDownload });
-      if (result && result.status === S.OK) cacheField("callPrep", { status: "ok", data: result.data });
+      const result = await localAi.prepareCall({ ticket: state.ticket, agent: agentForAi(), churn: churnContextForTicket() }, { signal, onDownload });
+      if (result && result.status === S.OK) cacheField("callPrep", { status: "ok", data: result.data, churnKey: churnKey() });
       state.ai.caps = await localAi.capabilities();
     } catch (error) {
       if (!isAbort(error)) state.ai.caps = await safeCaps();
@@ -2457,7 +2752,13 @@
   }
 
   async function safeCaps() {
-    try { return await localAi.capabilities(); } catch (error) { return { usable: false, status: S.UNAVAILABLE }; }
+    try {
+      return await localAi.capabilities();
+    } catch (error) {
+      // Wie in loadCapabilities: eine gescheiterte PRÜFUNG ist kein Urteil über
+      // das Modell und darf die KI nicht dauerhaft sperren.
+      return { usable: false, status: S.UNAVAILABLE, transient: true, reason: String((error && error.message) || error || "") };
+    }
   }
 
   // Cached die aktuelle Feld-Instanz mit Fingerprint des jetzigen Tickets ab
@@ -2473,7 +2774,8 @@
   // Setzt den Aufräum-Lauf für die Gesprächsnotizen tatsächlich in Gang.
   // Geht davon aus, dass die Notiz bereits geprüft/nicht leer ist.
   async function runCallClean() {
-    if (!aiUsable() || !state.ai.callNotes.trim()) return;
+    if (!state.ai.callNotes.trim()) return;
+    if (!(await ensureAiUsable())) return;
     const previous = state.ai.callDraft;
     const signal = beginRun("callclean");
     state.ai.callDraft = { status: "loading", text: "" };
@@ -2495,15 +2797,37 @@
   // Gesprächsvorbereitung für ausgehende Anrufe. Wird im Outbound-Modus
   // automatisch mitgezogen, damit sie fertig ist, bevor timio wählt – nach dem
   // Verbinden bleibt dafür keine Zeit mehr.
+  // Passt der zuletzt abgefragte Kündigungsvorgang zum gerade offenen Ticket?
+  // Dann fließt er als Kontext in die Gesprächsvorbereitung – das Ergebnis ist
+  // kein allgemeiner Sachstands-Anruf mehr, sondern ein Rückgewinnungsgespräch
+  // mit dem konkreten Kündigungsgrund. Der Vorgang liegt im geteilten Storage,
+  // steht also auch in dem Tab bereit, den die Abfrage gerade geöffnet hat.
+  function churnContextForTicket() {
+    const result = state.lookup.result;
+    if (!result || result.kind !== "churn" || result.status !== "ok") return null;
+    const cases = (result.data && result.data.cases) || [];
+    if (!cases.length || !state.ticket) return null;
+    const key = (state.ticket.key || "").trim().toUpperCase();
+    // Erst über die Ticketnummer (eindeutig), sonst über die Kundennummer.
+    const byTicket = cases.find((entry) => (entry.jiraTicket || "").trim().toUpperCase() === key);
+    if (byTicket) return byTicket;
+    const reference = known(state.ticket.customerReference) ? state.ticket.customerReference.trim() : "";
+    if (reference && result.customerNumber && reference === String(result.customerNumber).trim()) return cases[0];
+    return null;
+  }
+
   async function generateCallPrep() {
-    if (!aiUsable()) return;
+    if (!(await ensureAiUsable())) return;
     const previous = state.ai.callPrep;
     const signal = beginRun("callprep");
     state.ai.callPrep = { status: "loading", data: null };
     render();
     try {
-      const result = await localAi.prepareCall({ ticket: state.ticket, agent: agentForAi() }, { signal, onDownload });
-      if (result.status === S.OK) cacheField("callPrep", { status: "ok", data: result.data });
+      const churn = churnContextForTicket();
+      const result = await localAi.prepareCall({ ticket: state.ticket, agent: agentForAi(), churn }, { signal, onDownload });
+      // churnKey mitspeichern: so ist erkennbar, ob die Vorbereitung den
+      // Kündigungsgrund schon kannte oder noch von vorher stammt.
+      if (result.status === S.OK) cacheField("callPrep", { status: "ok", data: result.data, churnKey: churnKey() });
       else state.ai.callPrep = { status: "error", data: null };
     } catch (error) {
       state.ai.callPrep = isAbort(error) ? previous : { status: "error", data: null };
@@ -2665,30 +2989,44 @@
     render();
   }
 
-  // Schritt 2 – bestätigt: Auftrag an den Hintergrund-Worker (lookup.js) und
-  // optimistisch einen „läuft"-Zustand anzeigen; Fortschritt/Ergebnis kommen
-  // über storageKeys.lookupResult zurück.
+  // Schritt 2 – bestätigt: Auftrag an den Hintergrund-Worker (lookup.js).
+  //
+  // Der Auftrag geht auf ZWEI Wegen raus, und das ist der Kern der Sache:
+  //   (a) als Eintrag in chrome.storage.local (storageKeys.lookupRequest) und
+  //   (b) als Nachricht (schnell, aber ohne Zustellgarantie).
+  // chrome.runtime.sendMessage ist ein Zuruf: schläft der Worker gerade, wurde er
+  // beendet oder ist er beim Laden gescheitert, verschwindet die Nachricht
+  // spurlos – dann passierte GAR NICHTS, nicht einmal ein Tab ging auf. Eine
+  // Storage-Änderung weckt den Service-Worker dagegen zuverlässig; er findet den
+  // Auftrag dort und holt ihn nach.
+  //
+  // Und weil auch das schiefgehen kann, muss der Worker die Annahme quittieren
+  // (phase != "queued"). Bleibt sie aus, sagt das Panel nach ackTimeoutMs klar,
+  // was zu tun ist – statt eine Minute lang „läuft" anzuzeigen.
   function confirmLookup() {
     const confirm = state.lookup.confirm;
     if (!confirm) return;
     state.lookup.confirm = null;
     const dash = (CONFIG.lookups && CONFIG.lookups[confirm.kind]) || {};
     const requestId = `lk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-    // Häufigste Ursache für „es passiert nichts": die Extension wurde neu
-    // geladen, der Jira-Tab aber nicht – dann ist der Content-Script-Kontext
-    // ungültig und chrome.runtime.sendMessage wirft. Das darf NICHT still
-    // scheitern, sonst hängt die Anzeige ewig bei „läuft".
-    const reloadHint = {
-      requestId, kind: confirm.kind, customerNumber: confirm.customerNumber,
-      status: "error",
-      steps: (dash.steps || []).map((step) => ({ id: step.id, state: "pending" })),
-      data: null,
-      error: "Verbindung zur Extension verloren – bitte den Jira-Tab neu laden (F5) und erneut versuchen. (Nach dem Neuladen der Extension muss auch der Jira-Tab neu geladen werden.)"
+    const request = {
+      requestId,
+      kind: confirm.kind,
+      customerNumber: confirm.customerNumber,
+      source: "panel",
+      createdAt: Date.now()
     };
-    try { console.log("[Netz-Auskunft] confirmLookup alive=", extensionAlive(), "kind=", confirm.kind, "nr=", confirm.customerNumber); } catch (e) { /* egal */ }
+
+    // Ist der Content-Script-Kontext ungültig (Extension neu geladen, Jira-Tab
+    // nicht), geht weder Storage noch Nachricht – das muss sichtbar scheitern.
     if (!extensionAlive()) {
-      state.lookup.result = reloadHint;
+      state.lookup.result = {
+        requestId, kind: confirm.kind, customerNumber: confirm.customerNumber,
+        status: "error",
+        steps: (dash.steps || []).map((step) => ({ id: step.id, state: "pending" })),
+        data: null,
+        error: "Verbindung zur Extension verloren – bitte den Jira-Tab neu laden (F5) und erneut versuchen. (Nach dem Neuladen der Extension muss auch der Jira-Tab neu geladen werden.)"
+      };
       render();
       toast("Bitte Jira-Tab neu laden (F5).");
       return;
@@ -2699,37 +3037,66 @@
       kind: confirm.kind,
       customerNumber: confirm.customerNumber,
       status: "running",
+      // "queued" = abgeschickt, aber noch nicht vom Worker angenommen. Der
+      // Worker setzt beim Annehmen sofort eine andere phase; genau daran erkennt
+      // das Panel, ob der Hintergrund-Dienst überhaupt läuft.
+      phase: "queued",
+      note: "Auftrag wird an den Hintergrund-Dienst übergeben …",
       steps: (dash.steps || []).map((step) => ({ id: step.id, state: "pending" })),
       data: null,
       error: "",
-      // Startzeitpunkt für den Watchdog (maybeExpireStuckLookup). Der Worker
-      // überschreibt updatedAt bei jedem Fortschritt; bleibt es zu lange stehen,
-      // gilt der Lauf als hängend und wird sichtbar auf Fehler gesetzt.
-      updatedAt: Date.now()
+      // Start für den Watchdog (maybeExpireStuckLookup) und für die
+      // Annahme-Frist (siehe unten).
+      updatedAt: Date.now(),
+      queuedAt: Date.now()
     };
+
+    // (a) Der verlässliche Weg: liegt im Storage, weckt den Worker.
+    safeLocalSet({ [CONFIG.storageKeys.lookupRequest]: request });
+    // (b) Der schnelle Weg. Fehler hier sind unkritisch – (a) trägt den Auftrag.
     try {
-      try { console.log("[Netz-Auskunft] sende sc-run-lookup an den Worker …", requestId); } catch (e) { /* egal */ }
-      chrome.runtime.sendMessage({
-        type: "sc-run-lookup",
-        request: { kind: confirm.kind, customerNumber: confirm.customerNumber, source: "panel", requestId }
-      }, () => {
-        // Fire-and-forget: „message port closed" ist erwartbar (keine Antwort).
-        // Andere Fehler deuten auf einen fehlenden Empfänger (Worker/lookup.js
-        // nicht geladen) – dann sichtbar auf Reload hinweisen.
-        const err = chrome.runtime.lastError;
-        if (err && !/message port closed/i.test(err.message || "")) {
-          state.lookup.result = reloadHint;
-          render();
-        }
+      chrome.runtime.sendMessage({ type: "sc-run-lookup", request }, () => {
+        void chrome.runtime.lastError;
       });
-    } catch (error) {
-      state.lookup.result = reloadHint;
-      render();
-      toast("Bitte Jira-Tab neu laden (F5).");
-      return;
-    }
+    } catch (error) { /* Storage-Weg genügt */ }
+
     render();
     toast("Abfrage gestartet …");
+  }
+
+  // „Verbindung prüfen": fragt den Hintergrund-Dienst nach seiner Selbstauskunft.
+  // Bleibt die Antwort aus, ist das bereits das Ergebnis – dann läuft er nicht.
+  // Das ersetzt das Rätselraten bei „ich klicke und es passiert nichts".
+  function runLookupDiagnose() {
+    state.lookup.diagnose = { status: "running", report: null, error: "" };
+    render();
+
+    const finish = (next) => {
+      if (!state.lookup.diagnose || state.lookup.diagnose.status !== "running") return;
+      state.lookup.diagnose = next;
+      render();
+    };
+    const deadMessage = "Der Hintergrund-Dienst der Extension antwortet nicht. Bitte chrome://extensions öffnen, bei „Stadtnetz CRM Outbound“ auf „Neu laden“ klicken und danach diesen Jira-Tab mit F5 aktualisieren.";
+
+    if (!extensionAlive()) {
+      finish({ status: "error", report: null, error: "Verbindung zur Extension verloren – bitte diesen Jira-Tab neu laden (F5)." });
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage({ type: "sc-lookup-diagnose" }, (response) => {
+        const err = chrome.runtime.lastError;
+        if (err || !response || !response.ok) {
+          finish({ status: "error", report: null, error: deadMessage });
+          return;
+        }
+        finish({ status: "ok", report: response.report, error: "" });
+      });
+    } catch (error) {
+      finish({ status: "error", report: null, error: deadMessage });
+      return;
+    }
+    // Antwortet niemand, kommt auch kein Rückruf – deshalb eine eigene Frist.
+    window.setTimeout(() => finish({ status: "error", report: null, error: deadMessage }), 6000);
   }
 
   function cancelLookup() {
@@ -2741,6 +3108,11 @@
     const control = event.target.closest("[data-action]");
     if (!control) return;
     const action = control.dataset.action;
+
+    // Erst der Gastgeber (Desktop-App): Overlay-Knöpfe kennt nur er. Meldet er
+    // "erledigt", ist der Klick abgearbeitet.
+    const host = hudHost();
+    if (host && typeof host.handleAction === "function" && host.handleAction(action, control)) return;
 
     switch (action) {
       case "open-panel":
@@ -2795,6 +3167,7 @@
       case "supabase-login": await handleSupabaseLogin(); return;
       case "supabase-logout": handleSupabaseLogout(); return;
       case "enable-ai": enableAi(); return;
+      case "recheck-ai": loadCapabilities(); render(); return;
       case "dismiss-call-overlay": dismissCallOverlay(); return;
       case "toggle-cockpit-mode": toggleCockpitMode(); return;
       case "wipe-data": wipeAllData(); return;
@@ -2868,6 +3241,7 @@
       case "lookup-churn": promptLookup("churn"); return;
       case "lookup-confirm": confirmLookup(); return;
       case "lookup-cancel": cancelLookup(); return;
+      case "lookup-diagnose": runLookupDiagnose(); return;
       case "open-lookup-settings":
         state.settingsOpen = true;
         render();
@@ -2883,6 +3257,8 @@
   // Textareas direkt in den State spiegeln (verhindert Verlust bei Re-Render).
   function handleInput(event) {
     const role = event.target && event.target.dataset && event.target.dataset.role;
+    const host = hudHost();
+    if (host && typeof host.handleInput === "function" && host.handleInput(role, event.target)) return;
     if (role === "call-notes") { state.ai.callNotes = event.target.value; scheduleAutoCallClean(); }
     else if (role === "set-agent-name") state.settings.agentName = event.target.value;
     else if (role === "set-company") state.settings.company = event.target.value;
@@ -2964,6 +3340,10 @@
     container = document.createElement("div");
     container.id = CONFIG.rootId;
     document.body.appendChild(container);
+    // Frisches, leeres Wurzelelement: der Markup-Cache aus einer früheren
+    // Einbindung gilt nicht mehr. Ohne dieses Zurücksetzen hielte render() das
+    // Markup für unverändert und das Panel bliebe leer.
+    lastMarkup = null;
 
     const saved = await localStorageGet([
       CONFIG.storageKeys.isOpen,
@@ -3144,6 +3524,9 @@
   app.ui = {
     mount,
     refresh: refreshTicket,
+    // Neu zeichnen, ohne das Ticket erneut zu lesen: das braucht der Gastgeber,
+    // wenn sich nur bei ihm etwas geändert hat (Verbindung, Overlay-Schalter).
+    rerender: render,
     loadCapabilities
   };
 })();

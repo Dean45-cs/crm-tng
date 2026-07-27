@@ -60,22 +60,45 @@
   transform: translateX(0);
 }
 
+/* Eine Zeile, mehr nicht: das Panel ist ein Auskunfts-Overlay, keine App mit
+   Begrüßungsbildschirm. Links wer/worüber, rechts die Werkzeuge. */
 #stadtnetzcrm-root .sc-panel-header {
   display: flex;
-  min-height: 78px;
+  min-height: 40px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 5px 6px 5px 12px;
   border-bottom: 1px solid var(--sc-line);
-  background: linear-gradient(135deg, #f7faff 0%, #ffffff 100%);
+  background: var(--sc-surface);
 }
 
-#stadtnetzcrm-root .sc-panel-header strong {
-  display: block;
-  margin-top: 2px;
+#stadtnetzcrm-root .sc-panel-id {
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+#stadtnetzcrm-root .sc-panel-name {
+  flex: none;
   color: var(--sc-ink);
-  font-size: 15px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Der offene Vorgang bzw. die Kampagne – darf umbruchlos kürzen, statt den
+   Kopf zweizeilig werden zu lassen. */
+#stadtnetzcrm-root .sc-panel-context {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--sc-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #stadtnetzcrm-root .sc-call-banner {
@@ -426,14 +449,14 @@
 
 #stadtnetzcrm-root .sc-icon-button {
   display: inline-grid;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--sc-muted);
-  font-size: 20px;
+  font-size: 17px;
   line-height: 1;
 }
 
@@ -1189,19 +1212,15 @@
   font-size: 12px;
 }
 
-#stadtnetzcrm-root .sc-panel-footer {
-  padding: 8px 12px;
-  border-top: 1px solid var(--sc-line);
-  background: #fff;
-  color: var(--sc-muted);
-  font-size: 10px;
-  text-align: center;
-}
+/* Die frühere Fußzeile („verarbeitet alles lokal") ist entfallen: sie stand in
+   jedem Bildschirmfoto, kostete dauerhaft Höhe und sagte nichts, was man
+   während eines Gesprächs braucht. Die Aussage steht jetzt dort, wo man sie
+   sucht – im Einstellungs-Abschnitt „Daten & Datenschutz". */
 
 #stadtnetzcrm-root .sc-toast {
   position: absolute;
   right: 12px;
-  bottom: 42px;
+  bottom: 14px;
   max-width: 300px;
   padding: 8px 10px;
   border-radius: 6px;
@@ -1552,7 +1571,7 @@
   }
 
   #stadtnetzcrm-root .sc-panel-header {
-    background: linear-gradient(135deg, #20262e 0%, #1c2128 100%);
+    background: var(--sc-surface);
   }
 
   #stadtnetzcrm-root .sc-section--muted { background: #20262e; }
@@ -1671,7 +1690,6 @@
     background: #16202f;
   }
 
-  #stadtnetzcrm-root .sc-panel-footer,
   #stadtnetzcrm-root .sc-tabs,
   #stadtnetzcrm-root .sc-call-phase,
   #stadtnetzcrm-root .sc-template-card,
@@ -1763,6 +1781,10 @@
   margin-top: 4px;
   color: var(--sc-muted);
   font-size: 11px;
+  /* Zurücksetzen: steht der Hinweis in einem .sc-input-label, erbt er sonst
+     dessen fette Beschriftungsschrift und liest sich wie eine zweite
+     Überschrift statt wie eine Erläuterung. */
+  font-weight: 400;
   line-height: 1.4;
 }
 

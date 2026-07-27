@@ -1,12 +1,17 @@
 "use strict";
 
-// Stadtnetz CRM Copilot als Desktop-App.
+// Stadtnetz CRM Copilot als Bildschirm-Overlay.
 //
-// Das Fenster ist rahmenlos und bleibt über allen anderen: dasselbe Cockpit
-// wie bisher im Jira-Tab, nur eben immer sichtbar und unabhängig davon, welche
-// Seite gerade im Vordergrund ist. Die Chrome-Extension bleibt bestehen und
-// liefert weiterhin Ticketdaten und die lokale KI (Gemini Nano gibt es nur in
-// Chrome selbst, siehe README).
+// Kein Programmfenster, sondern eine Einblendung: rahmenlos, ohne Schatten und
+// ohne Systemrahmen, ohne Eintrag im Dock/in der Taskleiste und ohne eigene
+// Titelleiste – es liegt einfach über der Arbeitsoberfläche, so wie ein
+// Spiel-Overlay über dem Spiel. Es gibt deshalb auch keinen Schließen-Knopf am
+// oberen Rand: aus- und einblenden macht die Tastenkombination (und die
+// Overlay-Einstellungen im Panel selbst), beendet wird über das Tray-Symbol.
+//
+// Angezeigt wird dasselbe Cockpit wie im Jira-Tab. Die Chrome-Extension bleibt
+// bestehen und liefert weiterhin Ticketdaten und die lokale KI (Gemini Nano
+// gibt es nur in Chrome selbst, siehe README).
 
 const { app, BrowserWindow, Tray, Menu, ipcMain, globalShortcut, shell, nativeImage, screen } = require("electron");
 const path = require("path");
@@ -19,6 +24,15 @@ const DEFAULT_PORT = 8777;
 const MIN_WIDTH = 360;
 const MIN_HEIGHT = 420;
 const DEFAULT_BOUNDS = { width: 420, height: 760 };
+
+// Ein Overlay darf nie in einen Zustand geraten, aus dem man es nicht mehr
+// herausholt. Beide Tastenkombinationen gelten systemweit, auch wenn das
+// Overlay gerade keine Klicks annimmt – zusammen mit dem Tray-Menü sind das
+// die Rettungsanker.
+const TOGGLE_ACCELERATOR = process.platform === "darwin" ? "Command+Shift+Space" : "Control+Shift+Space";
+const CLICK_THROUGH_ACCELERATOR = process.platform === "darwin" ? "Command+Shift+D" : "Control+Shift+D";
+
+const MIN_OPACITY = 0.35;
 
 // Nur eine Instanz: zwei HUDs würden sich um den Port und um die
 // Extension-Verbindung streiten.
@@ -86,12 +100,21 @@ function createWindow() {
     minHeight: MIN_HEIGHT,
     show: false,
     frame: false,
-    // Bewusst nicht transparent: das Fenster ist ohnehin durchgehend gefüllt,
-    // und transparente rahmenlose Fenster lassen sich auf macOS nur noch
-    // hakelig in der Größe ändern.
-    backgroundColor: "#ffffff",
+    // Transparent, damit die abgerundeten Ecken des Panels wirklich abgerundet
+    // aussehen und nicht in einem grauen Rechteck sitzen. Der Preis: macOS
+    // lässt transparente rahmenlose Fenster an den Kanten nur noch hakelig
+    // anfassen – deshalb hat das Panel unten rechts einen eigenen Anfasser,
+    // der die Größe über "resize-by" setzt (siehe unten).
+    transparent: true,
+    backgroundColor: "#00000000",
+    // Ohne Systemschatten: ein Schlagschatten ist das, was eine Einblendung am
+    // ehesten wieder wie ein Fenster aussehen lässt. Abgehoben wird über die
+    // Kante des Panels (siehe hud.css).
+    hasShadow: false,
     resizable: true,
-    skipTaskbar: false,
+    // Kein Eintrag in Taskleiste bzw. Fensterliste – ein Overlay ist kein
+    // Programm, zwischen dem man hin- und herschaltet.
+    skipTaskbar: true,
     title: "Stadtnetz CRM Copilot",
     // Entscheidend für ein Fenster, das immer im Vordergrund über Chrome
     // schwebt: ohne diese Option behandelt macOS einen Klick auf das (nicht
@@ -113,6 +136,8 @@ function createWindow() {
   });
 
   setAlwaysOnTop(store.hudGet("alwaysOnTop", true));
+  setOpacity(store.hudGet("opacity", 1));
+  setClickThrough(store.hudGet("clickThrough", false));
   win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
 
   win.once("ready-to-show", () => {
@@ -171,17 +196,87 @@ function setAlwaysOnTop(enabled) {
     win.setVisibleOnAllWorkspaces(Boolean(enabled), { visibleOnFullScreen: true });
   }
   rebuildTrayMenu();
+  broadcastOverlay();
+}
+
+// Dieselben Schalter gibt es an drei Stellen (Panel, Tray, Tastenkombination).
+// Wer nicht ausgelöst hat, muss den neuen Stand trotzdem erfahren.
+function broadcastOverlay() {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send("hud:overlay", overlayState());
+}
+
+// Durchscheinend: bei der Netz-Auskunft schaut man oft auf das, was darunter
+// liegt (Dashboard, Ticketliste). Untergrenze, damit das Overlay nicht
+// versehentlich unsichtbar gestellt wird und dann "weg" scheint.
+function setOpacity(value) {
+  const clamped = Math.min(1, Math.max(MIN_OPACITY, Number(value) || 1));
+  store.hudSet("opacity", clamped);
+  if (win && !win.isDestroyed()) win.setOpacity(clamped);
+  broadcastOverlay();
+  return clamped;
+}
+
+// Klicks durchreichen: das Overlay ist dann nur noch Anzeige, die Maus greift
+// durch auf das Fenster darunter. Herausgeholt wird es über die
+// Tastenkombination oder das Tray-Menü – im Panel selbst käme kein Klick mehr
+// an, deshalb steht der Schalter im Einstellungstext ausdrücklich mit
+// Tastenkombination dabei.
+function setClickThrough(enabled) {
+  const value = Boolean(enabled);
+  store.hudSet("clickThrough", value);
+  if (win && !win.isDestroyed()) {
+    win.setIgnoreMouseEvents(value, { forward: true });
+    // Ohne Fokus lässt sich sonst weder tippen noch scrollen, sobald man
+    // zurückschaltet.
+    if (!value) win.focus();
+  }
+  rebuildTrayMenu();
+  broadcastOverlay();
+  return value;
+}
+
+function overlayState() {
+  return {
+    alwaysOnTop: store.hudGet("alwaysOnTop", true),
+    opacity: store.hudGet("opacity", 1),
+    clickThrough: store.hudGet("clickThrough", false),
+    toggleShortcut: TOGGLE_ACCELERATOR,
+    clickThroughShortcut: CLICK_THROUGH_ACCELERATOR
+  };
+}
+
+// Größe ändern ohne Systemrahmen: der Anfasser unten rechts im Panel schickt
+// die Verschiebung seit dem letzten Ereignis, hier wird sie auf die aktuellen
+// Fensterkanten addiert. Position bleibt, es wächst nach rechts/unten.
+function resizeBy(dx, dy) {
+  if (!win || win.isDestroyed()) return;
+  const bounds = win.getBounds();
+  win.setBounds({
+    x: bounds.x,
+    y: bounds.y,
+    width: Math.max(MIN_WIDTH, Math.round(bounds.width + (Number(dx) || 0))),
+    height: Math.max(MIN_HEIGHT, Math.round(bounds.height + (Number(dy) || 0)))
+  });
 }
 
 function showWindow() {
   if (!win || win.isDestroyed()) createWindow();
   if (win.isMinimized()) win.restore();
   win.show();
+  // Ohne Dock-Symbol ist die App unter macOS ein Hilfsprogramm – ein reines
+  // win.focus() macht ihr Fenster dann nicht zuverlässig zum Tastaturfenster,
+  // und in die Notizen ließe sich nichts tippen.
+  if (process.platform === "darwin" && typeof app.focus === "function") app.focus({ steal: true });
   win.focus();
 }
 
+// Ein-/Ausblenden wie bei einem Spiel-Overlay: sichtbar heißt weg, weg heißt
+// da. Bewusst nicht mehr am Fokus festgemacht – ein Overlay hat den Fokus
+// meistens nicht (und bei durchgereichten Klicks nie), die Taste hätte es dann
+// nie ausgeblendet.
 function toggleWindow() {
-  if (win && !win.isDestroyed() && win.isVisible() && win.isFocused()) return win.hide();
+  if (win && !win.isDestroyed() && win.isVisible()) return win.hide();
   showWindow();
 }
 
@@ -194,12 +289,21 @@ function rebuildTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: connected ? "Mit Chrome verbunden" : "Wartet auf Chrome…", enabled: false },
     { type: "separator" },
-    { label: "Cockpit anzeigen", click: showWindow },
+    { label: "Auskunft einblenden", accelerator: TOGGLE_ACCELERATOR, click: showWindow },
     {
       label: "Immer im Vordergrund",
       type: "checkbox",
       checked: store.hudGet("alwaysOnTop", true),
       click: (item) => setAlwaysOnTop(item.checked)
+    },
+    {
+      // Zweiter Rettungsanker neben der Tastenkombination: wer die Klicks
+      // durchgereicht hat, kommt hier immer wieder heraus.
+      label: "Klicks durchreichen",
+      type: "checkbox",
+      accelerator: CLICK_THROUGH_ACCELERATOR,
+      checked: store.hudGet("clickThrough", false),
+      click: (item) => setClickThrough(item.checked)
     },
     { type: "separator" },
     { label: "Beenden", click: () => { quitting = true; app.quit(); } }
@@ -227,7 +331,7 @@ function registerIpc() {
     connected: bridge.connected,
     ticket: bridge.ticket,
     storage: bridge.storageGet(null),
-    alwaysOnTop: store.hudGet("alwaysOnTop", true),
+    overlay: overlayState(),
     notes: store.hudGet("notes", []),
     notesDraft: store.hudGet("notesDraft", ""),
     platform: process.platform,
@@ -244,11 +348,21 @@ function registerIpc() {
       case "hide":
         if (win && !win.isDestroyed()) win.hide();
         return;
-      case "minimize":
-        if (win && !win.isDestroyed()) win.minimize();
-        return;
       case "always-on-top":
         setAlwaysOnTop(args.enabled);
+        return;
+      case "opacity":
+        setOpacity(args.value);
+        return;
+      case "click-through":
+        setClickThrough(args.enabled);
+        return;
+      case "resize-by":
+        resizeBy(args.dx, args.dy);
+        return;
+      case "quit":
+        quitting = true;
+        app.quit();
         return;
       case "open-external":
         if (/^https?:\/\//i.test(args.url || "")) shell.openExternal(args.url);
@@ -259,6 +373,39 @@ function registerIpc() {
         bridge.command(name, args);
     }
   });
+}
+
+// --- Erscheinungsbild als Overlay -------------------------------------------
+
+// Kein Dock-Symbol und kein Eintrag im Programmumschalter: erst damit hört die
+// Auskunft auf, sich wie ein zweites Programm neben Chrome anzufühlen. Sie ist
+// dann nur noch über das Tray-Symbol und die Tastenkombination erreichbar –
+// beides bleibt bestehen, egal wie das Fenster gerade steht.
+function hideFromDock() {
+  if (process.platform !== "darwin" || !app.dock) return;
+  app.dock.hide();
+}
+
+// Ohne Dock-Symbol ist die App unter macOS ein Hilfsprogramm ohne Menüleiste –
+// und damit wären Kopieren/Einfügen/Rückgängig im Notizfeld weg, weil deren
+// Tastenkürzel über das Programmmenü laufen. Ein Menü nur mit diesen Rollen
+// hält sie am Leben, ohne sichtbar zu werden.
+function installEditMenu() {
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: app.name, submenu: [{ role: "quit" }] },
+    {
+      label: "Bearbeiten",
+      submenu: [
+        { role: "undo" }, { role: "redo" }, { type: "separator" },
+        { role: "cut" }, { role: "copy" }, { role: "paste" },
+        { role: "selectAll" }
+      ]
+    }
+  ]));
 }
 
 // --- Start -----------------------------------------------------------------
@@ -295,11 +442,13 @@ app.whenReady().then(async () => {
   }
 
   registerIpc();
+  installEditMenu();
+  hideFromDock();
   createWindow();
   createTray();
 
-  const accelerator = process.platform === "darwin" ? "Command+Shift+Space" : "Control+Shift+Space";
-  globalShortcut.register(accelerator, toggleWindow);
+  globalShortcut.register(TOGGLE_ACCELERATOR, toggleWindow);
+  globalShortcut.register(CLICK_THROUGH_ACCELERATOR, () => setClickThrough(!store.hudGet("clickThrough", false)));
 
   app.on("activate", showWindow);
 });

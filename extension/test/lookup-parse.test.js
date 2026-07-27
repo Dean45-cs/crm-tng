@@ -91,6 +91,49 @@ async function run() {
   assert.strictEqual(badColor.kvz.color, "", "unbekannte Farbklasse wird verworfen");
   assert.strictEqual(badColor.found, true, "ein Vertrag allein reicht als Treffer");
 
+  // ── Spaltenzuordnung der Churnliste ────────────────────────────────────────
+  // Die echte Kopfzeile (Stand 2026-07). Feste Zellindizes gingen hier daneben:
+  // der Winback-Status landete im Feld „Grund", die Ticketnummer nirgends.
+  {
+    const headers = [
+      "", "Vertrag", "Kundennummer", "Zeitstempel Änderung", "Winback Status",
+      "Ursache Real", "JIRA Ticket-Nr.", "Rückruf Bitte", "Dealcloser"
+    ];
+    const map = shared.mapChurnColumns(headers, headers.length);
+    assert.strictEqual(map.vertrag, 1, "Vertrag");
+    assert.strictEqual(map.kundennummer, 2, "Kundennummer");
+    assert.strictEqual(map.eingang, 3, "Zeitstempel Änderung");
+    assert.strictEqual(map.winback, 4, "Winback Status");
+    assert.strictEqual(map.ursache, 5, "Ursache Real – NICHT der Winback-Status daneben");
+    assert.strictEqual(map.jira, 6, "JIRA Ticket-Nr.");
+    assert.strictEqual(map.dealcloser, 8, "Dealcloser");
+    assert.strictEqual(map.geschaeftsfall, undefined, "eine nicht vorhandene Spalte bleibt unzugeordnet statt zu raten");
+  }
+
+  // Eine zusätzliche Spalte vor dem Kopf (Ant blendet eine Auswahlspalte ein):
+  // die Datenzeile ist dann länger als der Kopf, alles verschiebt sich um eins.
+  {
+    const headers = ["Vertrag", "Winback Status", "Ursache Real", "JIRA Ticket-Nr."];
+    const map = shared.mapChurnColumns(headers, headers.length + 1);
+    assert.strictEqual(map.vertrag, 1, "Versatz durch die Auswahlspalte wird berücksichtigt");
+    assert.strictEqual(map.ursache, 3);
+    assert.strictEqual(map.jira, 4);
+  }
+
+  // Ohne erkennbare Kopfzeile wird nichts zugeordnet – der Aufrufer meldet das,
+  // statt stillschweigend falsche Zellen zu lesen.
+  {
+    const map = shared.mapChurnColumns([], 9);
+    assert.strictEqual(Object.keys(map).length, 0, "keine Kopfzeile, keine Zuordnung");
+  }
+
+  // ── Ticketnummer über die Form statt über die Spalte ───────────────────────
+  assert.strictEqual(shared.findJiraKey("TNG-1407030"), "TNG-1407030");
+  assert.strictEqual(shared.findJiraKey("  Ticket: TNG-1435760 (offen)"), "TNG-1435760");
+  assert.strictEqual(shared.findJiraKey("152P nicht erreicht 10.06.2026"), "", "eine Zeile ohne Ticket liefert leer");
+  assert.strictEqual(shared.findJiraKey(""), "");
+  assert.strictEqual(shared.findJiraKey(null), "");
+
   // ── waitForCondition ───────────────────────────────────────────────────────
   let calls = 0;
   const hit = await shared.waitForCondition(() => (++calls >= 3 ? "treffer" : null), 1000, 10);

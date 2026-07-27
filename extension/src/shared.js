@@ -383,21 +383,72 @@
 
   // Pollt condition() bis truthy oder Timeout. Gibt den Rückgabewert von
   // condition() zurück (z. B. das gefundene Element) bzw. null bei Timeout.
+  //
+  // Zusätzlich zum Polling hängt ein MutationObserver am Dokument, der bei jeder
+  // DOM-Änderung sofort erneut prüft. Das ist kein Beschleuniger, sondern der
+  // Grund, warum die Netz-Auskunft überhaupt zuverlässig läuft: Chrome drosselt
+  // setTimeout in einem NICHT sichtbaren Tab auf mindestens eine Sekunde und
+  // nach einigen Minuten im Hintergrund auf einen Aufruf pro Minute
+  // ("intensive throttling"). Reines Polling mit 150 ms verhungert dort, jede
+  // Wartebedingung läuft in ihren Timeout und der ganze Lauf scheitert.
+  // Mutations-Ereignisse sind von der Drosselung nicht betroffen.
+  // (Der Worker holt den Dashboard-Tab zusätzlich in den Vordergrund – siehe
+  // lookup.js. Dieser Observer ist die zweite Verteidigungslinie, falls der
+  // Bearbeiter während des Laufs doch wegklickt.)
   function waitForCondition(condition, timeoutMs, intervalMs) {
     const timeout = typeof timeoutMs === "number" ? timeoutMs : 5000;
     const interval = typeof intervalMs === "number" ? intervalMs : 150;
     return new Promise((resolve) => {
       const start = Date.now();
+      let done = false;
+      let timer = null;
+      let observer = null;
+
+      const finish = (value) => {
+        if (done) return;
+        done = true;
+        if (timer) clearTimeout(timer);
+        if (observer) { try { observer.disconnect(); } catch (error) { /* egal */ } }
+        resolve(value);
+      };
+
       const check = () => {
+        if (done) return;
+        if (timer) { clearTimeout(timer); timer = null; }
         let result = null;
         // Wirft die Bedingung, gilt sie schlicht als noch nicht erfüllt.
         try { result = condition(); } catch (error) { /* weiter warten */ }
-        if (result) return resolve(result);
-        if (Date.now() - start >= timeout) return resolve(null);
-        setTimeout(check, interval);
+        if (result) return finish(result);
+        if (Date.now() - start >= timeout) return finish(null);
+        timer = setTimeout(check, interval);
       };
+
+      if (typeof MutationObserver === "function" && typeof document !== "undefined" && document.documentElement) {
+        try {
+          observer = new MutationObserver(() => check());
+          observer.observe(document.documentElement, {
+            childList: true, subtree: true, attributes: true, characterData: true
+          });
+        } catch (error) {
+          observer = null;
+        }
+      }
+
       check();
     });
+  }
+
+  // Sichtbar im Sinne von „anklickbar/beschreibbar": hat eine Box im Layout.
+  // getClientRects allein ist zu streng – ein Tab, der noch nie im Vordergrund
+  // war, hat unter Umständen kein fertiges Layout. offsetParent deckt das ab.
+  function isVisible(element) {
+    if (!element) return false;
+    try {
+      if (element.getClientRects && element.getClientRects().length) return true;
+      return Boolean(element.offsetParent);
+    } catch (error) {
+      return false;
+    }
   }
 
   // Setzt den Wert eines von React kontrollierten Inputs so, dass React die
@@ -466,6 +517,66 @@
   // Content-Scripts: { found, kundennummer, rows:[{vertrag, geschaeftsfall,
   // ursache, eingang, jiraTicket, jiraHref, kommentar}] }. Ausgabe ist eine
   // aufgeräumte Anzeigeform mit Fallzähler.
+  // ---------------------------------------------------------------------------
+  // Churnliste: Spaltenzuordnung
+  //
+  // Die Liste hat je nach Rechten/Filtern unterschiedlich viele Spalten, und Ant
+  // Design schiebt bei breiten Tabellen eine Auswahlspalte davor. Feste
+  // Zellindizes gehen deshalb verlässlich daneben — und zwar STILL: dann steht
+  // der Winback-Status im Feld „Grund" und die Ticketnummer nirgends. Zugeordnet
+  // wird deshalb über die Kopftexte.
+  //
+  // Muster je Spalte in ABSTEIGENDER Genauigkeit: sie werden der Reihe nach über
+  // alle Kopfzellen probiert, damit ein weites Muster keine Spalte klaut
+  // („Zeitstempel Änderung" darf nicht als Kündigungsdatum durchgehen).
+  // Echte Kopfzeile (Stand 2026-07): Vertrag · Kundennummer · Zeitstempel
+  // Änderung · Winback Status · Ursache Real · JIRA Ticket-Nr. · Rückruf Bitte ·
+  // Dealcloser.
+  // ---------------------------------------------------------------------------
+
+  const CHURN_COLUMNS = [
+    { key: "vertrag", match: [/^vertrag$/, /vertragsnummer/, /^contract/], child: "button" },
+    { key: "kundennummer", match: [/kundennummer|kunden-nr|client ?id/] },
+    { key: "eingang", match: [/zeitstempel/, /^eingang/, /eingangsdatum/, /received/, /^datum/] },
+    { key: "winback", match: [/winback/], child: ".ant-select-selection-item" },
+    { key: "ursache", match: [/^ursache/, /k(ü|ue)ndigungsgrund/, /^grund/, /reason/], child: ".ant-select-selection-item" },
+    { key: "geschaeftsfall", match: [/gesch(ä|ae)ftsfall/, /vorgangsart/, /business ?case/], child: ".ant-select-selection-item" },
+    { key: "jira", match: [/^jira/, /jira/, /ticket/, /^vorgang$/] },
+    { key: "dealcloser", match: [/dealcloser|deal ?closer/], child: ".ant-select-selection-item" },
+    { key: "kommentar", match: [/kommentar/, /bemerkung/, /notiz/, /comment/], child: ".w-64" }
+  ];
+
+  // headers: Kopftexte je Spaltenindex (Lücken erlaubt, z. B. die Auswahlspalte).
+  // cellCount: Zellen einer Datenzeile – ist sie länger als der Kopf, sitzt davor
+  // eine zusätzliche Spalte und alles verschiebt sich um die Differenz.
+  // Rückgabe: { key -> Zellindex } nur für erkannte Spalten.
+  function mapChurnColumns(headers, cellCount) {
+    const list = Array.isArray(headers) ? headers : [];
+    const normalized = list.map((text) => String(text == null ? "" : text).replace(/\s+/g, " ").trim().toLowerCase());
+    const offset = typeof cellCount === "number" && cellCount > normalized.length
+      ? cellCount - normalized.length
+      : 0;
+    const map = {};
+    CHURN_COLUMNS.forEach((column) => {
+      for (const pattern of column.match) {
+        const index = normalized.findIndex((text) => text && pattern.test(text));
+        if (index >= 0) { map[column.key] = index + offset; return; }
+      }
+    });
+    return map;
+  }
+
+  // Ticketnummer aus einem beliebigen Text. Der zuverlässigste Weg zur
+  // JIRA-Nummer führt NICHT über die Spalte, sondern über die Form selbst
+  // (TNG-1407030) bzw. den Link – das trifft auch dann, wenn die Spalte anders
+  // heißt, verschoben ist oder gar nicht erkannt wurde.
+  const JIRA_KEY = /\b[A-Z][A-Z0-9_]{1,9}-\d{2,}\b/;
+
+  function findJiraKey(text) {
+    const match = String(text == null ? "" : text).match(JIRA_KEY);
+    return match ? match[0] : "";
+  }
+
   function parseChurn(raw) {
     const input = raw || {};
     const rows = Array.isArray(input.rows) ? input.rows : [];
@@ -475,6 +586,10 @@
         geschaeftsfall: cleanText(row && row.geschaeftsfall),
         ursache: cleanText(row && row.ursache),
         eingang: cleanText(row && row.eingang),
+        // Stand der Rückgewinnung und ein bereits gemachtes Angebot – für das
+        // Winback-Gespräch die zwei wichtigsten Felder neben der Ursache.
+        winback: cleanText(row && row.winback),
+        dealcloser: cleanText(row && row.dealcloser),
         jiraTicket: cleanText(row && row.jiraTicket),
         jiraHref: (row && row.jiraHref) || "",
         kommentar: cleanText(row && row.kommentar)
@@ -555,8 +670,12 @@
     // Netz-Auskunft: DOM-Helfer + reine Parser
     sleep,
     waitForCondition,
+    isVisible,
     reactSetValue,
     waitForStableRows,
+    CHURN_COLUMNS,
+    mapChurnColumns,
+    findJiraKey,
     parseChurn,
     parseBaustatus
   };

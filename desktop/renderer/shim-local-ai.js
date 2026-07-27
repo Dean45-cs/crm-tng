@@ -56,6 +56,12 @@
     entry.finish();
     if (message.ok) return entry.resolve(message.result);
     if (message.aborted) return entry.reject(abortError());
+    // Der Auftrag kam nicht bis zur KI (kein Jira-Tab, Tab stumm) – das ist ein
+    // VERBINDUNGS-, kein Modellproblem. Bei der Fähigkeitsprüfung deshalb wie
+    // "offline" antworten: das Panel zeigt dann den behebbaren Hinweis und prüft
+    // von selbst erneut, statt „Das lokale KI-Modell ist auf diesem Gerät derzeit
+    // nicht nutzbar" zu melden und alle KI-Knöpfe dauerhaft zu sperren.
+    if (message.transport) return entry.rejectTransport(message.error);
     const error = new Error(message.error || "Die lokale KI in Chrome hat einen Fehler gemeldet.");
     error.name = message.errorName || "Error";
     entry.reject(error);
@@ -93,17 +99,25 @@
         if (timer) clearTimeout(timer);
         if (onAbort && signal) signal.removeEventListener("abort", onAbort);
       };
+      // Ein Transportproblem (Chrome/Jira-Tab nicht erreichbar) ist keine Aussage
+      // über das Modell. Die Fähigkeitsprüfung antwortet deshalb "offline" –
+      // damit zeigt das Panel den behebbaren Hinweis und prüft automatisch
+      // erneut; jede andere Aufgabe scheitert mit klarem Verbindungsfehler.
+      const rejectTransport = (reason) => {
+        finish();
+        if (method === "capabilities") return resolve(offlineCapabilities(reason));
+        const error = new Error(reason || "Keine Verbindung zur Chrome-Erweiterung.");
+        error.name = "ConnectionError";
+        reject(error);
+      };
       // Jedes Lebenszeichen (Chunk, Download-Fortschritt) verlängert die Frist:
       // eine lange Zusammenfassung ist kein hängender Aufruf.
       const touch = () => {
         if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          finish();
-          reject(new Error("Chrome hat nicht geantwortet."));
-        }, TIMEOUT_MS);
+        timer = setTimeout(() => rejectTransport("Chrome hat nicht geantwortet."), TIMEOUT_MS);
       };
 
-      pending.set(id, { resolve, reject, finish, touch, ...callbacks });
+      pending.set(id, { resolve, reject, finish, touch, rejectTransport, method, ...callbacks });
       touch();
 
       if (signal) {
@@ -132,18 +146,20 @@
           resolve(method === "capabilities" ? offlineCapabilities() : { status: STATUS.UNSUPPORTED });
         })
         .catch((error) => {
-          finish();
-          reject(error);
+          // Auch ein Fehler auf dem Weg zur Extension ist ein Transportproblem.
+          rejectTransport((error && error.message) || "Keine Verbindung zur Chrome-Erweiterung.");
         });
     });
   }
 
-  function offlineCapabilities() {
+  function offlineCapabilities(reason) {
     return {
       status: STATUS.UNSUPPORTED,
       usable: false,
       needsDownload: false,
       downloading: false,
+      // Klartext, woran es lag – das Panel hängt ihn an den Hinweis.
+      reason: reason || "",
       hasSummarizer: false,
       hasRewriter: false,
       hasProofreader: false,

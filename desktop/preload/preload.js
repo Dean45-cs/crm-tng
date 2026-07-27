@@ -37,5 +37,9 @@ contextBridge.exposeInMainWorld("hud", {
   onStorageChanged: subscribe("hud:storage-changed"),
   onTicket: subscribe("hud:ticket"),
   onStatus: subscribe("hud:status"),
-  onAi: subscribe("hud:ai")
+  onAi: subscribe("hud:ai"),
+  // Overlay-Schalter, die auch außerhalb des Panels umgelegt werden können
+  // (Tray-Menü, Tastenkombination) – das Panel muss den Haken sonst nicht
+  // mitbekommen und zeigte einen veralteten Stand.
+  onOverlay: subscribe("hud:overlay")
 });

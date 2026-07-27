@@ -105,14 +105,40 @@
     }
   }
 
+  // Reihenfolge der Kandidaten für einen KI-Auftrag: der Tab, der zuletzt einen
+  // Vorgang gemeldet hat, dann der aktive, dann die übrigen.
+  function orderedAiTabs(tabs) {
+    const score = (tab) => (tab.id === preferredTabId ? 0 : tab.active ? 1 : 2);
+    return tabs.slice().sort((a, b) => score(a) - score(b));
+  }
+
   // Sucht den Tab, der den KI-Auftrag ausführen soll: bevorzugt den, der
   // zuletzt einen Vorgang gemeldet hat, sonst irgendeinen offenen Jira-Tab.
   async function aiTabId() {
     const tabs = await queryTabs({ url: JIRA_MATCH });
     if (!tabs.length) return null;
-    if (preferredTabId && tabs.some((tab) => tab.id === preferredTabId)) return preferredTabId;
-    const active = tabs.find((tab) => tab.active);
-    return (active || tabs[0]).id;
+    return orderedAiTabs(tabs)[0].id;
+  }
+
+  // Antwortet in diesem Tab ein lebendes Content-Script? Nur dorthin lohnt ein
+  // Auftrag. chrome.tabs.sendMessage meldet einen fehlenden Empfänger nicht
+  // synchron – ein Auftrag an einen stummen Tab verschwand deshalb lautlos, die
+  // App lief in ihren 3-Minuten-Timeout und meldete am Ende „Modell nicht
+  // nutzbar", obwohl in Wahrheit nur der Tab neu geladen werden musste.
+  function pingAgent(tabId) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (value) => { if (!settled) { settled = true; resolve(value); } };
+      try {
+        chrome.tabs.sendMessage(tabId, { type: "sc-hud-ping" }, (response) => {
+          void chrome.runtime.lastError;
+          done(Boolean(response && response.ok));
+        });
+      } catch (error) {
+        done(false);
+      }
+      setTimeout(() => done(false), 2000);
+    });
   }
 
   async function requestTicket() {
@@ -134,17 +160,34 @@
 
   // --- KI ------------------------------------------------------------------
 
+  // transport: true kennzeichnet „der Auftrag kam nicht bis zur KI" – im
+  // Unterschied zu einer Antwort der KI selbst. Die App unterscheidet daran
+  // Verbindungsproblem und Modellproblem (siehe desktop/renderer/shim-local-ai.js);
+  // ohne diese Unterscheidung wurde jeder Verbindungsabbruch als „Das lokale
+  // KI-Modell ist auf diesem Gerät nicht nutzbar" angezeigt und blieb hängen.
+  function failTransport(id, error) {
+    send({ t: "ai-result", id, ok: false, transport: true, error });
+  }
+
   async function runAi(request) {
-    const tabId = await aiTabId();
-    if (!tabId) {
+    const tabs = await queryTabs({ url: JIRA_MATCH });
+    if (!tabs.length) {
       // Kein Jira-Tab offen: sofort ehrlich antworten, statt die App warten zu
-      // lassen. Sie zeigt dann denselben Hinweis wie bei fehlender lokaler KI.
-      send({ t: "ai-result", id: request.id, ok: false, error: "In Chrome ist kein Jira-Tab offen." });
+      // lassen.
+      failTransport(request.id, "In Chrome ist kein Jira-Tab offen. Bitte in Chrome einen Jira-Vorgang öffnen.");
       return;
     }
-    if (!tellTab(tabId, { ...request, type: "sc-hud-ai" })) {
-      send({ t: "ai-result", id: request.id, ok: false, error: "Der Jira-Tab hat den Auftrag nicht angenommen." });
+    // Den ersten Tab nehmen, der wirklich antwortet. Ein verwaistes
+    // Content-Script (Extension neu geladen, Tab nicht) nimmt den Auftrag nicht
+    // an – dann ist der nächste Tab dran, statt den Auftrag zu verlieren.
+    for (const tab of orderedAiTabs(tabs)) {
+      if (!(await pingAgent(tab.id))) continue;
+      if (tellTab(tab.id, { ...request, type: "sc-hud-ai" })) return;
     }
+    failTransport(
+      request.id,
+      "Kein Jira-Tab in Chrome hat den Auftrag angenommen. Nach einem Neuladen der Erweiterung muss der Jira-Tab neu geladen werden (F5)."
+    );
   }
 
   async function abortAi(id) {

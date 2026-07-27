@@ -247,10 +247,55 @@ async function run() {
   {
     const env = makeSandbox();
     loadScripts(env.sandbox, ["src/config.js", "src/shared.js", "src/local-ai.js"]);
-    env.sandbox.LanguageModel = { availability: async () => "unavailable", create: async () => { throw new Error("darf nicht passieren"); } };
+    // Echte Timer: die Verfügbarkeitsprüfung fasst bei "unavailable" einmal kurz
+    // nach (siehe unten), und die Sandbox-Timer feuern nicht von selbst.
+    env.sandbox.setTimeout = (fn, ms) => setTimeout(fn, ms);
+    env.sandbox.clearTimeout = (id) => clearTimeout(id);
+    let probes = 0;
+    env.sandbox.LanguageModel = {
+      availability: async () => { probes++; return "unavailable"; },
+      create: async () => { throw new Error("darf nicht passieren"); }
+    };
     const result = await env.sandbox.StadtnetzCRM.localAi.prepareCall({ ticket: { key: "TNG-1" } });
     assert.strictEqual(result.status, "unavailable", "ohne Modell wird der Status durchgereicht");
     assert.strictEqual(result.data, undefined, "und es werden keine Daten erfunden");
+    // Ein einzelnes "unavailable" ist oft nur ein schlechter Moment (Modell wird
+    // gerade geladen/entladen). Deshalb wird nachgefasst, bevor die Oberfläche
+    // die KI als nicht nutzbar meldet.
+    assert.ok(probes > 1, "bei „unavailable“ wird nachgefasst statt sofort aufzugeben");
+  }
+
+  // --- Ein vorübergehendes „unavailable“ darf die KI nicht abschalten -------
+  // Der Fall aus dem Betrieb: die erste Aufgabe läuft, danach meldet Chrome
+  // kurzzeitig "unavailable" (Modell beschäftigt / wird nachgeladen). Früher
+  // hieß das für jede weitere Aufgabe „Modell nicht nutzbar" – obwohl es
+  // nachweislich eben noch gearbeitet hat. Jetzt wird es trotzdem versucht.
+  {
+    const env = makeSandbox();
+    loadScripts(env.sandbox, ["src/config.js", "src/shared.js", "src/local-ai.js"]);
+    env.sandbox.setTimeout = (fn, ms) => setTimeout(fn, ms);
+    env.sandbox.clearTimeout = (id) => clearTimeout(id);
+
+    let status = "available";
+    const answer = JSON.stringify({ ziel: "Z", punkte: ["a", "b"], fragen: ["f"], einwaende: [] });
+    env.sandbox.LanguageModel = {
+      availability: async () => status,
+      params: async () => ({ maxTemperature: 2, defaultTopK: 8, maxTopK: 128 }),
+      create: async () => ({ prompt: async () => answer, destroy() {} })
+    };
+    const localAi = env.sandbox.StadtnetzCRM.localAi;
+    const ticket = { key: "TNG-2", summary: "S", description: "D", comments: [] };
+
+    const first = await localAi.prepareCall({ ticket });
+    assert.strictEqual(first.status, "ok", "der erste Lauf klappt");
+
+    status = "unavailable"; // Chrome hat gerade einen schlechten Moment
+    const second = await localAi.prepareCall({ ticket });
+    assert.strictEqual(second.status, "ok", "der zweite Lauf wird trotzdem versucht – und klappt");
+
+    const caps = await localAi.capabilities();
+    assert.strictEqual(caps.usable, true, "die Oberfläche bleibt bedienbar");
+    assert.strictEqual(caps.provenWorking, true, "erkennbar daran, dass das Modell hier schon gearbeitet hat");
   }
 
   console.log("outbound.test.js: alle Szenarien bestanden.");

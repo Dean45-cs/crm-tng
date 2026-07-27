@@ -119,9 +119,17 @@
 
   // --- Verdrahtung ---------------------------------------------------------
 
-  chrome.runtime.onMessage.addListener((message) => {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message || typeof message.type !== "string") return;
     switch (message.type) {
+      // Lebt in diesem Tab ein ansprechbares Content-Script? Der Worker fragt
+      // das, BEVOR er einen KI-Auftrag hierher schickt (siehe hud-bridge.js).
+      // Ein nach einem Extension-Reload verwaistes Script antwortet nicht – der
+      // Auftrag ging vorher stumm ins Leere und die App wartete bis zum Timeout,
+      // um dann „Modell nicht nutzbar" zu melden.
+      case "sc-hud-ping":
+        sendResponse({ ok: true, pong: true, hasAi: Boolean(localAi) });
+        return;
       case "sc-hud-state":
         setConnected(message.connected);
         return;

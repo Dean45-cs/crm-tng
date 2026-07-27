@@ -14,24 +14,12 @@
   <link rel="stylesheet" href="hud.css">
 </head>
 <body>
-  <header class="hud-titlebar">
-    <div class="hud-drag">
-      <span class="hud-dot" data-role="hud-dot" title="Verbindung zu Chrome"></span>
-      <span class="hud-title">Stadtnetz CRM Copilot</span>
-      <span class="hud-context" data-role="hud-context"></span>
-    </div>
-    <div class="hud-actions">
-      <button type="button" class="hud-button" data-hud="notes" title="Notizen (Strg/Cmd+N)" aria-label="Notizen">✎</button>
-      <button type="button" class="hud-button" data-hud="pin" title="Immer im Vordergrund" aria-label="Immer im Vordergrund">⇧</button>
-      <button type="button" class="hud-button" data-hud="minimize" title="Minimieren" aria-label="Minimieren">–</button>
-      <button type="button" class="hud-button hud-button--close" data-hud="hide" title="Ins Tray legen" aria-label="Ins Tray legen">×</button>
-    </div>
-  </header>
-
-  <div class="hud-offline" data-role="hud-offline" hidden>
-    <strong>Chrome ist nicht verbunden.</strong>
-    <span>Ticketdaten und die lokale KI kommen aus der Extension – bitte Chrome mit einem Jira-Tab öffnen. Notizen funktionieren auch so.</span>
-  </div>
+  <!-- Bewusst leer: keine Titelleiste, keine Fensterknöpfe, kein Kreuz oben
+       rechts. Das Fenster IST die Auskunft – alles, was man sonst am Rahmen
+       bedient (immer im Vordergrund, Deckkraft, ausblenden, beenden), steht im
+       Panel unter „Einstellungen · Overlay". Gezogen wird am Kopf des Panels,
+       die Größe ändert der Anfasser unten rechts. -->
+  <div class="hud-resize" data-role="hud-resize" title="Größe ändern" aria-hidden="true"></div>
 
   <!-- Genau die Reihenfolge aus manifest.json – die Dateien bauen beim Laden
        aufeinander auf (rules.js greift zum Beispiel sofort auf jiraReader zu).
@@ -50,6 +38,10 @@
   <script src="../../extension/src/theme.js"></script>
   <script src="../../extension/src/ui.js"></script>
   <script src="notes.js"></script>
+  <!-- Ergänzt das Panel um das, was es nur auf dem Schreibtisch gibt:
+       Verbindungspunkt, Notizknopf, Offline-Hinweis, Overlay-Einstellungen.
+       Muss vor boot.js laufen, das anschließend mountet. -->
+  <script src="hud-host.js"></script>
   <script src="boot.js"></script>
 </body>
 </html>

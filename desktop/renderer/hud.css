@@ -1,75 +1,73 @@
-/* Fenster-Anpassungen.
+/* Anpassungen für das Overlay auf dem Schreibtisch.
  *
- * extension/styles/content.css bleibt unangetastet – es beschreibt ein Overlay,
- * das in einer fremden Seite schwebt. Hier bekommt dasselbe Panel stattdessen
- * das ganze Fenster: keine Ein-/Ausblende-Animation, kein Startknopf, kein
- * Freischweben. Positioniert wird ab jetzt durch Verschieben des Fensters.
+ * extension/styles/content.css bleibt unangetastet – es beschreibt dasselbe
+ * Panel, wie es in einer fremden Seite schwebt. Hier bekommt es das ganze
+ * Fenster: keine Ein-/Ausblende-Animation, kein Startknopf, kein Freischweben.
+ * Verschoben wird ab jetzt das Fenster selbst – angefasst am Kopf des Panels.
+ *
+ * Was hier bewusst NICHT steht: eine Titelleiste. Das Fenster hat keinen
+ * Rahmen, keine Fensterknöpfe und kein Kreuz oben rechts – es ist die Auskunft
+ * und sonst nichts. Immer-im-Vordergrund, Deckkraft, Ausblenden und Beenden
+ * stehen im Panel unter „Einstellungen · Overlay" (siehe hud-host.js).
  */
-
-:root {
-  --hud-titlebar: 38px;
-  --hud-bg: #ffffff;
-  --hud-bar: #0b2540;
-  --hud-bar-ink: #e8eefc;
-  --hud-line: #dfe1e6;
-}
 
 html, body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: var(--hud-bg);
+  /* Durchsichtig bis auf das Panel selbst: alles außerhalb der abgerundeten
+     Ecken ist Schreibtisch, nicht Programmfenster. */
+  background: transparent;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* --- Titelleiste ---------------------------------------------------------- */
+/* --- Das Panel ist das Fenster -------------------------------------------- */
 
-.hud-titlebar {
+#stadtnetzcrm-root .sc-panel {
   position: fixed;
-  z-index: 20000;
-  top: 0;
-  right: 0;
-  left: 0;
-  display: flex;
-  height: var(--hud-titlebar);
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 6px 0 10px;
-  background: var(--hud-bar);
-  color: var(--hud-bar-ink);
-  user-select: none;
+  inset: 0;
+  width: auto;
+  max-width: none;
+  border: 1px solid var(--sc-line);
+  border-radius: 12px;
+  /* Kein Schlagschatten: er müsste außerhalb der Fensterkante liegen und würde
+     dort abgeschnitten. Das Fenster selbst wirft ebenfalls keinen (hasShadow:
+     false in main.js) – ein Schatten ist das, was ein Overlay am ehesten wie
+     ein Fenster aussehen lässt. Abgehoben wird über die Kante. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  /* Im Fenster gibt es nichts ein- und auszublenden: das Panel ist das Fenster.
+     Die Klasse is-open aus ui.js bleibt damit ohne Wirkung. */
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  transition: none;
 }
 
-/* Der linke Teil zieht das Fenster – das Fenster hat ja keinen Systemrahmen
-   mehr, über den man es sonst anfassen würde. */
-.hud-drag {
-  display: flex;
-  overflow: hidden;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
+/* Startknopf und Minimieren-Kreuz des Panels führen hier ins Leere – das
+   Overlay blendet man über die Tastenkombination oder die Einstellungen aus. */
+#stadtnetzcrm-root .sc-launcher,
+#stadtnetzcrm-root [data-action="close-panel"] {
+  display: none !important;
+}
+
+/* --- Anfassen und verschieben --------------------------------------------- */
+
+/* Der Kopf des Panels ist der Griff: das Fenster hat ja keinen Rahmen mehr,
+   über den man es sonst zöge. Alles Bedienbare darin muss ausdrücklich
+   ausgenommen werden, sonst schluckt die Ziehfläche die Klicks. */
+#stadtnetzcrm-root .sc-panel-header,
+#stadtnetzcrm-root .sc-cockpit-header {
   -webkit-app-region: drag;
 }
 
-.hud-title {
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+#stadtnetzcrm-root .sc-panel-header button,
+#stadtnetzcrm-root .sc-cockpit-header button,
+.hud-resize {
+  -webkit-app-region: no-drag;
 }
 
-.hud-context {
-  overflow: hidden;
-  color: rgba(232, 238, 252, 0.62);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* Verbindungspunkt links im Kopf (hud-host.js). Er ersetzt die frühere
+   Titelzeile: mehr als „hört Chrome zu?" muss dort nicht stehen. */
 .hud-dot {
   width: 8px;
   height: 8px;
@@ -82,127 +80,109 @@ html, body {
 .hud-dot.is-connected { background: #2e7d46; }
 .hud-dot.is-offline { background: #d93f3c; }
 
-.hud-actions {
-  display: flex;
-  flex: none;
-  gap: 2px;
-  -webkit-app-region: no-drag;
+/* Größe ändern ohne Systemrahmen: unauffälliger Anfasser in der unteren
+   rechten Ecke, der die Mausbewegung ans Fenster weiterreicht (boot.js). */
+.hud-resize {
+  position: fixed;
+  z-index: 20002;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  /* Fester Farbwert statt --sc-line: der Anfasser liegt außerhalb des
+     Panel-Wurzelelements, dort ist die Variable nicht definiert – und eine
+     nicht auflösbare Variable macht die ganze Regel ungültig (unsichtbarer
+     Anfasser). */
+  background:
+    linear-gradient(135deg, transparent 50%, #9aa4b2 50%, #9aa4b2 62%, transparent 62%,
+      transparent 72%, #9aa4b2 72%, #9aa4b2 84%, transparent 84%);
+  cursor: nwse-resize;
+  opacity: 0.65;
 }
 
-.hud-button {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--hud-bar-ink);
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  place-items: center;
-}
-
-.hud-button:hover { background: rgba(255, 255, 255, 0.14); }
-.hud-button.is-active { background: rgba(255, 255, 255, 0.26); }
-.hud-button--close:hover { background: #c9372c; }
+.hud-resize:hover { opacity: 1; }
 
 /* --- Hinweis ohne Chrome -------------------------------------------------- */
 
+/* Sitzt jetzt im Panel (als Banner unter dem Kopf), nicht mehr als eigener
+   Streifen über allem – ein Overlay hat keine zweite Ebene, die es sich
+   leisten könnte. */
 .hud-offline {
-  position: fixed;
-  z-index: 19000;
-  top: var(--hud-titlebar);
-  right: 0;
-  left: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 8px 12px;
-  border-bottom: 1px solid #f0d3a0;
-  background: #fff7e6;
-  color: #7a4a06;
+  border-bottom: 1px solid var(--sc-line);
+  background: var(--sc-amber-soft);
+  color: var(--sc-warning);
   font-size: 11px;
   line-height: 1.4;
 }
 
-.hud-offline[hidden] { display: none; }
 .hud-offline strong { font-size: 12px; }
 
-/* Ab wo das Panel beginnt: unter der Titelleiste und, falls sichtbar, unter
- * dem Offline-Hinweis. Dessen Höhe hängt vom Zeilenumbruch und damit von der
- * Fensterbreite ab – sie wird deshalb in boot.js gemessen und hier gesetzt. */
-body { --hud-offset: var(--hud-titlebar); }
+/* --- Deckkraft-Regler in den Einstellungen -------------------------------- */
 
-/* --- Das Panel füllt das Fenster ------------------------------------------ */
-
-#stadtnetzcrm-root .sc-panel {
-  position: fixed;
-  top: var(--hud-offset);
-  right: 0;
-  bottom: 0;
-  left: 0;
-  width: auto;
-  max-width: none;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  /* Im Fenster gibt es nichts ein- und auszublenden: das Panel ist das Fenster.
-     Die Klasse is-open aus ui.js bleibt damit ohne Wirkung. */
-  opacity: 1;
-  pointer-events: auto;
-  transform: none;
-  transition: none;
+.hud-range {
+  width: 100%;
+  margin: 6px 0 2px;
+  accent-color: var(--sc-blue);
 }
 
-/* Startknopf und Minimieren-Kreuz des Panels führen hier ins Leere – das
-   Fenster hat dafür seine eigene Titelleiste. */
-#stadtnetzcrm-root .sc-launcher,
-#stadtnetzcrm-root [data-action="close-panel"] {
-  display: none !important;
+/* Die beiden Knöpfe hängen sonst direkt am Hinweistext des Reglers. */
+#stadtnetzcrm-root .hud-overlay-actions {
+  margin-top: 12px;
 }
 
-#stadtnetzcrm-root .sc-panel-header { min-height: 0; padding: 10px 14px; }
-
-/* --- Call-Cockpit --------------------------------------------------------- */
-
-/* In der Jira-Seite schwebt das Cockpit frei neben dem Panel und lässt sich
-   ziehen. Im schmalen Fenster wäre das nur im Weg: es legt sich stattdessen
-   fest über das Panel, solange ein Gespräch läuft. !important, weil ui.js beim
-   Ziehen Inline-Positionen setzt. */
-#stadtnetzcrm-root .sc-cockpit {
-  position: fixed !important;
-  z-index: 10002;
-  top: calc(var(--hud-offset) + 6px) !important;
-  right: 6px !important;
-  bottom: auto !important;
-  left: 6px !important;
-  width: auto !important;
-  max-width: none !important;
-  max-height: calc(100vh - var(--hud-offset) - 12px);
+#stadtnetzcrm-root .hud-version {
+  margin-top: 8px;
+  opacity: 0.75;
 }
-
-#stadtnetzcrm-root .sc-cockpit-header { cursor: default; }
-
-/* --- Befehlspalette ------------------------------------------------------- */
-
-#sc-jira-palette { z-index: 20001; }
-#sc-jira-palette .sc-palette-backdrop { top: var(--hud-titlebar); }
 
 /* --- Notizen -------------------------------------------------------------- */
 
+/* Legt sich über das ganze Overlay und bringt seinen eigenen Schließen-Knopf
+   mit – deshalb darf es bis unter den Kopf reichen.
+ *
+ * Die Farbvariablen setzt content.css am Wurzelelement des Panels; der
+ * Notizbereich liegt daneben (er darf nicht hinein, ui.js ersetzt dort bei
+ * jedem Zeichnen den gesamten Inhalt). Deshalb bekommt er hier seine eigene
+ * Kopie derselben Palette – hell und dunkel. Ein persönlich eingefärbtes Theme
+ * aus den Einstellungen erreicht ihn damit nicht; das wäre erst mit
+ * Variablen am Dokument statt am Wurzelelement zu haben. */
 .hud-notes {
+  --sc-ink: #172b4d;
+  --sc-muted: #5e6c84;
+  --sc-line: #dfe1e6;
+  --sc-surface: #ffffff;
+  --sc-soft: #f7f8fa;
+  --sc-blue: #0c66e4;
+  --sc-blue-dark: #0055cc;
+  --sc-success: #216e4e;
+  --sc-danger: #ae2e24;
   position: fixed;
   z-index: 19500;
-  top: var(--hud-offset);
-  right: 0;
-  bottom: 0;
-  left: 0;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  background: var(--hud-bg);
-  color: #172b4d;
+  border-radius: 12px;
+  background: var(--sc-surface);
+  color: var(--sc-ink);
   font-size: 13px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .hud-notes {
+    --sc-ink: #e6edf3;
+    --sc-muted: #9aa7b8;
+    --sc-line: #2d333b;
+    --sc-surface: #1c2128;
+    --sc-soft: #14181d;
+    --sc-blue: #4c9aff;
+    --sc-blue-dark: #77b0ff;
+    --sc-success: #7ee2b8;
+    --sc-danger: #ff9c8f;
+  }
 }
 
 .hud-notes[hidden] { display: none; }
@@ -213,14 +193,14 @@ body { --hud-offset: var(--hud-titlebar); }
   justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--hud-line);
+  border-bottom: 1px solid var(--sc-line);
 }
 
 .hud-notes-head strong { font-size: 13px; }
 
 .hud-notes-context {
   overflow: hidden;
-  color: #5e6c84;
+  color: var(--sc-muted);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -231,20 +211,22 @@ body { --hud-offset: var(--hud-titlebar); }
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--hud-line);
+  border-bottom: 1px solid var(--sc-line);
 }
 
 .hud-notes-editor textarea {
   min-height: 84px;
   padding: 8px 10px;
-  border: 1px solid var(--hud-line);
+  border: 1px solid var(--sc-line);
   border-radius: 8px;
+  background: var(--sc-soft);
+  color: inherit;
   font: inherit;
   resize: vertical;
 }
 
 .hud-notes-editor textarea:focus {
-  border-color: #0c66e4;
+  border-color: var(--sc-blue);
   outline: 2px solid rgba(12, 102, 228, 0.24);
   outline-offset: 0;
 }
@@ -259,19 +241,19 @@ body { --hud-offset: var(--hud-titlebar); }
   min-width: 0;
   flex: 1;
   padding: 6px 8px;
-  border: 1px solid var(--hud-line);
+  border: 1px solid var(--sc-line);
   border-radius: 8px;
   font: inherit;
 }
 
 .hud-notes-hint {
-  color: #5e6c84;
+  color: var(--sc-muted);
   font-size: 11px;
   line-height: 1.4;
 }
 
-.hud-notes-hint.is-error { color: #ae2e24; }
-.hud-notes-hint.is-ok { color: #216e4e; }
+.hud-notes-hint.is-error { color: var(--sc-danger); }
+.hud-notes-hint.is-ok { color: var(--sc-success); }
 
 .hud-notes-list {
   overflow-y: auto;
@@ -281,7 +263,7 @@ body { --hud-offset: var(--hud-titlebar); }
 
 .hud-note {
   padding: 8px 0;
-  border-bottom: 1px solid #eef0f3;
+  border-bottom: 1px solid var(--sc-line);
 }
 
 .hud-note-meta {
@@ -289,7 +271,7 @@ body { --hud-offset: var(--hud-titlebar); }
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  color: #5e6c84;
+  color: var(--sc-muted);
   font-size: 10px;
 }
 
@@ -307,7 +289,7 @@ body { --hud-offset: var(--hud-titlebar); }
 
 .hud-empty {
   padding: 18px 0;
-  color: #5e6c84;
+  color: var(--sc-muted);
   text-align: center;
 }
 
@@ -315,23 +297,44 @@ body { --hud-offset: var(--hud-titlebar); }
    die Chips im Panel, damit es nicht nach zwei Programmen aussieht. */
 .hud-chip {
   padding: 5px 10px;
-  border: 1px solid var(--hud-line);
+  border: 1px solid var(--sc-line);
   border-radius: 999px;
-  background: #fff;
-  color: #172b4d;
+  background: var(--sc-surface);
+  color: var(--sc-ink);
   cursor: pointer;
   font: inherit;
   font-size: 11px;
 }
 
-.hud-chip:hover { background: #f4f5f7; }
-.hud-chip--primary { border-color: #0055cc; background: #0c66e4; color: #fff; }
-.hud-chip--primary:hover { background: #0055cc; }
+.hud-chip:hover { background: var(--sc-soft); }
+.hud-chip--primary { border-color: var(--sc-blue-dark); background: var(--sc-blue); color: #fff; }
+.hud-chip--primary:hover { background: var(--sc-blue-dark); }
 .hud-chip--primary:disabled { border-color: #c7d3e6; background: #a9bfe0; cursor: default; }
-.hud-chip--danger { color: #ae2e24; }
+.hud-chip--danger { color: var(--sc-danger); }
 
-/* Kein dunkles Thema: content.css ist durchgehend hell aufgebaut (viele Farben
- * stehen dort fest im Regelwerk, nicht in Variablen). Nur die Notizen
- * umzufärben, ergäbe ein halb dunkles Fenster – deshalb bleibt hier alles auf
- * derselben hellen Palette wie im Jira-Tab. Ein echtes dunkles Thema gehört in
- * content.css und käme dann automatisch auch hier an. */
+/* Die Farben oben kommen aus denselben Variablen wie das Panel (content.css
+ * setzt sie am Wurzelelement, inklusive dunklem Modus und persönlichem Theme).
+ * Der Notizbereich liegt außerhalb dieses Wurzelelements – deshalb überall ein
+ * Rückfallwert, falls die Variable dort nicht ankommt. */
+
+/* --- Call-Cockpit --------------------------------------------------------- */
+
+/* In der Jira-Seite schwebt das Cockpit frei neben dem Panel und lässt sich
+   ziehen. Im schmalen Overlay wäre das nur im Weg: es legt sich stattdessen
+   fest über das Panel, solange ein Gespräch läuft. !important, weil ui.js beim
+   Ziehen Inline-Positionen setzt. */
+#stadtnetzcrm-root .sc-cockpit {
+  position: fixed !important;
+  z-index: 10002;
+  top: 6px !important;
+  right: 6px !important;
+  bottom: auto !important;
+  left: 6px !important;
+  width: auto !important;
+  max-width: none !important;
+  max-height: calc(100vh - 12px);
+}
+
+/* --- Befehlspalette ------------------------------------------------------- */
+
+#sc-jira-palette { z-index: 20001; }
