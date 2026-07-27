@@ -75,10 +75,15 @@
 
   function banner() {
     if (state.connected) return "";
+    // Einzeilig: derselbe Hinweis steht ausführlich noch einmal in der Karte
+    // darunter, und ein mehrzeiliger Block belegte im schmalen Overlay ein
+    // Drittel der Höhe. Der zweite Satz wird deshalb abgeschnitten (hud.css) –
+    // per title bleibt er trotzdem lesbar, ohne Platz zu kosten.
+    const detail = "Ticketdaten und die lokale KI kommen aus der Extension – bitte Chrome mit einem Jira-Tab öffnen. Notizen funktionieren auch so.";
     return `
       <div class="hud-offline">
         <strong>Chrome ist nicht verbunden.</strong>
-        <span>Ticketdaten und die lokale KI kommen aus der Extension – bitte Chrome mit einem Jira-Tab öffnen. Notizen funktionieren auch so.</span>
+        <span title="${escapeHtml(detail)}">${escapeHtml(detail)}</span>
       </div>`;
   }
 

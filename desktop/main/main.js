@@ -13,7 +13,7 @@
 // bestehen und liefert weiterhin Ticketdaten und die lokale KI (Gemini Nano
 // gibt es nur in Chrome selbst, siehe README).
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, globalShortcut, shell, nativeImage, screen } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, globalShortcut, shell, nativeImage, screen, nativeTheme } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
@@ -413,6 +413,15 @@ function installEditMenu() {
 app.on("second-instance", showWindow);
 
 app.whenReady().then(async () => {
+  // Das Overlay ist immer dunkel – auch auf einem Rechner, der gerade im hellen
+  // Modus läuft. Ein durchscheinend dunkles Panel legt sich über beliebige
+  // fremde Fenster, ohne sie zu überstrahlen; ein helles wäre über einem
+  // dunklen Schreibtisch ein Scheinwerfer. Damit greift in renderer/ zugleich
+  // der Dunkel-Block aus extension/styles/content.css, auf dem hud.css
+  // aufsetzt – ohne das blieben dort helle Reste stehen (fest verdrahtete
+  // Weißwerte, die nur der Dunkel-Block einfängt).
+  nativeTheme.themeSource = "dark";
+
   store = new Store(app.getPath("userData"));
 
   // Verbindungs-Diagnose: hält die letzten Andock-Versuche der Extension fest
