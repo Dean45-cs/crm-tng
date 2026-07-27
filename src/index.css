@@ -7621,16 +7621,29 @@ table.crm-table tbody tr:hover td:first-child {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 10px;
-  align-items: start;
+  /* stretch statt start: Widgets einer Zeile enden bündig auf gleicher Höhe.
+     Zusammen mit dem lückenlosen Spalten-Packen (packRows) bleibt so weder
+     rechts noch unter einer kürzeren Karte ein Loch stehen. */
+  align-items: stretch;
   margin-bottom: 10px;
 }
-.cgrid-item { position: relative; min-width: 0; }
-.cgrid-body { min-width: 0; }
+.cgrid-item { position: relative; min-width: 0; display: flex; flex-direction: column; }
+.cgrid-body { min-width: 0; min-height: 0; flex: 1 1 auto; display: flex; }
+/* Widget-Wurzel auf die volle Zeilenhöhe ziehen (alle Dashboard-Widgets
+   rendern genau ein Wurzelelement). */
+.cgrid-body > * { flex: 1 1 auto; min-width: 0; }
+/* Kennzahlen-Kacheln verteilen die Höhe mit, statt unten Luft zu lassen. */
+.cgrid-body > .widget-mini-grid { grid-auto-rows: 1fr; align-content: stretch; }
 .cgrid.is-editing .cgrid-item {
   outline: 1px dashed var(--border-strong);
   outline-offset: 3px;
   border-radius: var(--widget-radius);
 }
+.cgrid.is-editing .cgrid-item.is-resizing,
+.cgrid.is-editing .cgrid-item.is-dragging {
+  outline-color: var(--tng-blue);
+}
+.cgrid-item.is-dragging { opacity: 0.5; }
 .cgrid-bar {
   display: flex;
   align-items: center;
