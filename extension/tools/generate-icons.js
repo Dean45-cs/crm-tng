@@ -115,10 +115,17 @@ function drawIcon(size) {
 
 // --- Ausgabe ----------------------------------------------------------------
 
-const outDir = path.join(__dirname, "..", "icons");
-fs.mkdirSync(outDir, { recursive: true });
-[16, 32, 48, 128].forEach((size) => {
-  const file = path.join(outDir, `icon${size}.png`);
-  fs.writeFileSync(file, drawIcon(size));
-  console.log(`icon${size}.png geschrieben (${fs.statSync(file).size} Bytes)`);
-});
+// Als Modul geladen wird nur gezeichnet, nicht geschrieben: die Desktop-App
+// braucht dasselbe Motiv in Programmsymbol-Größe (desktop/tools/generate-app-icon.js).
+// Ein Symbol, zwei Auslieferungen – sonst laufen sie auseinander.
+module.exports = { drawIcon };
+
+if (require.main === module) {
+  const outDir = path.join(__dirname, "..", "icons");
+  fs.mkdirSync(outDir, { recursive: true });
+  [16, 32, 48, 128].forEach((size) => {
+    const file = path.join(outDir, `icon${size}.png`);
+    fs.writeFileSync(file, drawIcon(size));
+    console.log(`icon${size}.png geschrieben (${fs.statSync(file).size} Bytes)`);
+  });
+}

@@ -73,6 +73,15 @@
     // Getrennt von state.settings, weil saveSettings() dessen Objekt komplett
     // neu aufbaut statt zu mergen — Theme-Werte würden das nicht überleben.
     theme: { presetId: "jira", overrides: {} },
+    // Übernahme des CRM-Farbschemas (opt-in). `cached` hält das bereits
+    // übersetzte Ergebnis, damit der Kaltstart ohne Netz richtig aussieht;
+    // `status`/`error` sind rein transient für die Anzeige in den Einstellungen.
+    themeSync: { useCrm: false, cached: null, at: 0, status: "idle", error: "" },
+    // Eigene Tastenkürzel: nur die Abweichungen von CONFIG.hotkeys.
+    // `capture` ist rein transient – die id der Zeile, die gerade auf einen
+    // Tastendruck wartet, plus eine Meldung, wenn er nicht angenommen wurde.
+    hotkeys: {},
+    hotkeyCapture: { id: "", error: "" },
     // Widget-Layout der Tabs (Phase 3). `customizeMode` ist der transiente
     // Bearbeitungsmodus (nicht persistiert). `tabs[tabId]` = { order, hidden }
     // hält die persönliche Reihenfolge/Sichtbarkeit; leer = Standard.
@@ -206,6 +215,97 @@
 
   function persistTheme() {
     safeLocalSet({ [CONFIG.storageKeys.theme]: state.theme });
+  }
+
+  function persistHotkeys() {
+    safeLocalSet({ [CONFIG.storageKeys.hotkeys]: state.hotkeys });
+  }
+
+  /** Was für diese id gerade gilt (eigene Einstellung, sonst Voreinstellung). */
+  function hotkey(id) {
+    return shared.hotkeyFor(id, state.hotkeys);
+  }
+
+  function persistThemeSync() {
+    // Nur das Dauerhafte sichern — status/error sind Anzeigezustand.
+    safeLocalSet({
+      [CONFIG.storageKeys.themeSync]: {
+        useCrm: state.themeSync.useCrm,
+        cached: state.themeSync.cached,
+        at: state.themeSync.at
+      }
+    });
+  }
+
+  /**
+   * Das Theme, das gerade gelten soll. Ist die CRM-Übernahme an UND liegt ein
+   * übersetztes Schema vor, gewinnt dieses; sonst das lokal im Panel gewählte.
+   *
+   * Bewusst als Ableitung statt state.theme zu überschreiben: schaltet jemand
+   * die Übernahme wieder aus, steht die eigene Auswahl unversehrt da.
+   */
+  function effectiveTheme() {
+    if (state.themeSync.useCrm && state.themeSync.cached) return state.themeSync.cached;
+    return state.theme;
+  }
+
+  function applyCurrentTheme(target) {
+    themeEngine.applyTheme(target || root(), effectiveTheme());
+  }
+
+  /**
+   * Holt das CRM-Farbschema und übersetzt es ins Rollen-Schema dieser
+   * Extension. `silent` unterdrückt Toasts — für den Abgleich beim Start, der
+   * ungefragt läuft.
+   */
+  async function refreshCrmTheme(options) {
+    const silent = Boolean(options && options.silent);
+    if (!supabaseClient || typeof supabaseClient.fetchUserAppearance !== "function") {
+      state.themeSync.status = "error";
+      state.themeSync.error = "Diese Version kann das CRM-Schema nicht lesen.";
+      if (!silent) render();
+      return;
+    }
+
+    state.themeSync.status = "loading";
+    state.themeSync.error = "";
+    if (!silent) render();
+
+    const res = await supabaseClient.fetchUserAppearance();
+    if (!res || !res.ok) {
+      state.themeSync.status = "error";
+      state.themeSync.error =
+        (res && res.reason === "not-logged-in") ? "Nicht im CRM angemeldet." :
+        (res && res.reason === "not-configured") ? "Supabase ist nicht eingerichtet." :
+        (res && res.error) || "Abruf fehlgeschlagen.";
+      // Ein gescheiterter Abgleich lässt das zuletzt übernommene Schema stehen,
+      // statt das Panel auf Standardfarben zurückspringen zu lassen.
+      render();
+      if (!silent) toast(`Farbschema: ${state.themeSync.error}`);
+      return;
+    }
+
+    const palette = res.data && res.data.palette;
+    state.themeSync.cached = themeEngine.crmPaletteToTheme(palette);
+    state.themeSync.at = Date.now();
+    state.themeSync.status = "ok";
+    persistThemeSync();
+    applyCurrentTheme();
+    render();
+    if (!silent) {
+      const count = Object.keys(state.themeSync.cached.overrides).length;
+      toast(count > 0
+        ? "Farbschema aus dem CRM übernommen."
+        : "Im CRM ist das Standard-Schema eingestellt — das Panel bleibt bei seinen Farben.");
+    }
+  }
+
+  function toggleCrmTheme(nextOn) {
+    state.themeSync.useCrm = Boolean(nextOn);
+    persistThemeSync();
+    applyCurrentTheme();
+    render();
+    if (state.themeSync.useCrm) void refreshCrmTheme({ silent: false });
   }
 
   function persistLayout() {
@@ -1986,34 +2086,205 @@
     ["amber", "Outbound-Akzent"]
   ];
 
+  /** Statuszeile der CRM-Übernahme — sagt, woher die Farben gerade kommen. */
+  function crmThemeStatusText() {
+    const sync = state.themeSync;
+    if (sync.status === "loading") return "Wird abgeglichen …";
+    if (sync.status === "error") return sync.error || "Abgleich fehlgeschlagen.";
+    if (!sync.cached) return "Noch nicht abgeglichen.";
+    const count = Object.keys(sync.cached.overrides).length;
+    if (count === 0) return "Im CRM ist das Standard-Schema eingestellt — hier gelten die Panel-Farben.";
+    const when = sync.at ? new Date(sync.at).toLocaleString("de-DE") : "";
+    return `${count} Farbrollen aus dem CRM übernommen${when ? ` · Stand ${when}` : ""}.`;
+  }
+
   function renderThemeSection() {
-    const theme = state.theme;
+    const useCrm = state.themeSync.useCrm;
+    // Die Swatches zeigen, was tatsächlich gilt — bei aktiver Übernahme also
+    // die CRM-Farben, nicht die (weiterhin gespeicherte) lokale Auswahl.
+    const theme = effectiveTheme();
     const colors = themeEngine.resolveThemeColors(theme);
+    const locked = useCrm ? " disabled" : "";
     return `
       <section class="sc-section">
         <div class="sc-section-title-row">
           <h3>Darstellung</h3>
-          <span class="sc-local-label">nur lokal</span>
+          <span class="sc-local-label">${useCrm ? "aus dem CRM" : "nur lokal"}</span>
         </div>
+        <label class="sc-check-label">
+          <input type="checkbox" data-action="toggle-theme-from-crm" ${useCrm ? "checked" : ""}>
+          <span>Farbschema aus dem CRM übernehmen<small>Übernimmt die im CRM unter „Einstellungen → Darstellung" gewählten Farben, damit Panel und CRM gleich aussehen. Hell/Dunkel richtet sich weiterhin nach dem Betriebssystem.</small></span>
+        </label>
+        ${useCrm ? `
+        <div class="sc-theme-sync">
+          <span class="sc-theme-sync-status">${escapeHtml(crmThemeStatusText())}</span>
+          <button class="sc-theme-preset" type="button" data-action="refresh-crm-theme"${state.themeSync.status === "loading" ? " disabled" : ""}>Jetzt abgleichen</button>
+        </div>` : ""}
         <div class="sc-theme-presets">
-          <button class="sc-theme-preset ${theme.presetId === "jira" ? "is-active" : ""}" type="button" data-action="set-theme-preset" data-preset="jira">Jira</button>
-          <button class="sc-theme-preset ${theme.presetId === "crm" ? "is-active" : ""}" type="button" data-action="set-theme-preset" data-preset="crm">CRM</button>
-          <button class="sc-theme-preset" type="button" data-action="reset-theme">Zurücksetzen</button>
+          <button class="sc-theme-preset ${!useCrm && theme.presetId === "jira" ? "is-active" : ""}" type="button" data-action="set-theme-preset" data-preset="jira"${locked}>Jira</button>
+          <button class="sc-theme-preset ${!useCrm && theme.presetId === "crm" ? "is-active" : ""}" type="button" data-action="set-theme-preset" data-preset="crm"${locked}>CRM</button>
+          <button class="sc-theme-preset" type="button" data-action="reset-theme"${locked}>Zurücksetzen</button>
         </div>
         <div class="sc-theme-colors">
           ${THEME_COLOR_FIELDS.map(([role, label]) => `
             <label class="sc-theme-swatch" title="${escapeHtml(label)}">
-              <input type="color" data-role="set-theme-color-${role}" value="${colors[role]}" aria-label="${escapeHtml(label)}">
+              <input type="color" data-role="set-theme-color-${role}" value="${colors[role]}" aria-label="${escapeHtml(label)}"${locked}>
               <span>${label}</span>
             </label>`).join("")}
         </div>
       </section>`;
   }
 
+  // --- Tastenkürzel ---------------------------------------------------------
+
+  // Systemweite Kürzel registriert die Desktop-App, nicht die Seite. In Chrome
+  // gibt es sie deshalb gar nicht – dort werden ihre Zeilen weggelassen, statt
+  // Schalter anzubieten, die nichts bewirken.
+  function globalHotkeysAvailable() {
+    const host = hudHost();
+    return Boolean(host && typeof host.globalHotkey === "function");
+  }
+
+  function hotkeyRows() {
+    return shared.hotkeyDefs().filter((def) => def.scope !== "global" || globalHotkeysAvailable());
+  }
+
+  /** Wie bei hotkey(), aber systemweite kommen aus dem Speicher der App. */
+  function hotkeyValue(def) {
+    if (def.scope !== "global") return hotkey(def.id);
+    const host = hudHost();
+    // Ohne Gastgeber (also in Chrome) ist der wahre Stand nicht bekannt – dort
+    // gilt für die Kollisionsprüfung die Voreinstellung. Besser als gar nichts:
+    // die systemweiten Kürzel greifen auch im Browser, und wer sich hier ⌘⇧Space
+    // auf die Palette legte, bekäme statt ihrer die Auskunft.
+    return host ? host.globalHotkey(def.id) : shared.hotkeyDefault(def.id);
+  }
+
+  // Warum ein Kürzel nicht wirkt, obwohl es dasteht: ein anderes Programm hat
+  // es systemweit belegt (die Desktop-App meldet das zurück). Ohne diesen
+  // Hinweis sucht man den Fehler bei sich.
+  function hotkeyProblem(def) {
+    if (def.scope !== "global") return "";
+    const host = hudHost();
+    return (typeof host.globalHotkeyError === "function" && host.globalHotkeyError(def.id)) || "";
+  }
+
+  function renderHotkeyRow(def) {
+    const capturing = state.hotkeyCapture.id === def.id;
+    const binding = hotkeyValue(def);
+    const label = binding ? shared.hotkeyLabel(binding) : "aus";
+    const problem = hotkeyProblem(def);
+    const changed = binding !== def.default;
+    return `
+      <div class="sc-hotkey-row ${capturing ? "is-capturing" : ""}">
+        <div class="sc-hotkey-text">
+          <strong>${escapeHtml(def.label)}</strong>
+          <small>${escapeHtml(def.hint)}${def.scope === "global" ? " Gilt nur auf diesem Gerät." : ""}</small>
+          ${capturing && state.hotkeyCapture.error ? `<small class="sc-hotkey-error">${escapeHtml(state.hotkeyCapture.error)}</small>` : ""}
+          ${!capturing && problem ? `<small class="sc-hotkey-error">${escapeHtml(problem)}</small>` : ""}
+        </div>
+        <button class="sc-hotkey-key ${capturing ? "is-capturing" : ""} ${binding ? "" : "is-off"}" type="button"
+                data-action="capture-hotkey" data-hotkey="${escapeHtml(def.id)}"
+                title="Anklicken und die gewünschte Tastenkombination drücken">${capturing ? "Taste drücken …" : escapeHtml(label)}</button>
+        <button class="sc-icon-button sc-hotkey-reset" type="button" data-action="reset-hotkey" data-hotkey="${escapeHtml(def.id)}"
+                title="Auf ${escapeHtml(shared.hotkeyLabel(def.default))} zurücksetzen" aria-label="Zurücksetzen"${changed ? "" : " disabled"}>↺</button>
+      </div>`;
+  }
+
+  function renderHotkeySection() {
+    const rows = hotkeyRows();
+    if (!rows.length) return "";
+    return `
+      <section class="sc-section">
+        <div class="sc-section-title-row">
+          <h3>Tastenkürzel</h3>
+          <span class="sc-local-label">nur lokal</span>
+        </div>
+        <p class="sc-section-intro">Anklicken und die gewünschte Kombination drücken. <strong>Esc</strong> bricht ab, <strong>Rücktaste</strong> schaltet ein Kürzel ganz aus. Doppelt vergeben geht nicht – die Meldung sagt dann, wer die Taste schon hat.</p>
+        ${rows.map(renderHotkeyRow).join("")}
+        <div class="sc-inline-actions">
+          <button class="sc-secondary-button" type="button" data-action="reset-hotkeys">Alle zurücksetzen</button>
+        </div>
+      </section>`;
+  }
+
+  // Während einer Aufnahme gehört jeder Tastendruck der Zeile – sonst löste man
+  // beim Belegen genau die Aktion aus, die man gerade umlegen will.
+  function captureHotkeyFromEvent(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = state.hotkeyCapture.id;
+    if (event.key === "Escape") {
+      state.hotkeyCapture = { id: "", error: "" };
+      render();
+      return;
+    }
+    if (event.key === "Backspace" || event.key === "Delete") {
+      applyHotkey(id, "");
+      return;
+    }
+    const binding = shared.hotkeyFromEvent(event);
+    // Nur Zusatztasten gedrückt: weiter warten, das ist noch kein Kürzel.
+    if (binding) applyHotkey(id, binding);
+  }
+
+  function applyHotkey(id, binding) {
+    const def = shared.hotkeyDefs().find((entry) => entry.id === id);
+    if (!def) return;
+
+    // Gegen alles prüfen, was gerade gilt – auch gegen die systemweiten, denn
+    // die schlucken den Tastendruck, bevor das Panel ihn sieht.
+    const current = {};
+    shared.hotkeyDefs().forEach((entry) => { current[entry.id] = hotkeyValue(entry); });
+    const clash = binding ? shared.hotkeyConflict(id, binding, current) : "";
+    if (clash) {
+      const other = shared.hotkeyDefs().find((entry) => entry.id === clash);
+      state.hotkeyCapture = { id, error: `Schon belegt: ${(other && other.label) || clash}` };
+      render();
+      return;
+    }
+
+    if (def.scope === "global") {
+      hudHost().setGlobalHotkey(id, binding);
+    } else if (binding === def.default) {
+      // Zurück auf die Voreinstellung heißt: keine eigene Angabe mehr. Sonst
+      // bliebe eine Kopie stehen, die eine spätere Änderung der Voreinstellung
+      // still aussitzt.
+      delete state.hotkeys[id];
+      persistHotkeys();
+    } else {
+      state.hotkeys[id] = binding;
+      persistHotkeys();
+    }
+    state.hotkeyCapture = { id: "", error: "" };
+    render();
+  }
+
+  function resetHotkey(id) {
+    const def = shared.hotkeyDefs().find((entry) => entry.id === id);
+    if (!def) return;
+    applyHotkey(id, def.default);
+  }
+
+  function resetAllHotkeys() {
+    shared.hotkeyDefs().forEach((def) => {
+      if (def.scope === "global") {
+        if (globalHotkeysAvailable()) hudHost().setGlobalHotkey(def.id, def.default);
+        return;
+      }
+      delete state.hotkeys[def.id];
+    });
+    persistHotkeys();
+    state.hotkeyCapture = { id: "", error: "" };
+    render();
+    toast("Tastenkürzel zurückgesetzt.");
+  }
+
   function renderSettings() {
     const s = state.settings;
     return `
       ${hostHtml("settings")}
+      ${renderHotkeySection()}
       ${renderSupabaseLoginSection()}
       ${renderThemeSection()}
       <section class="sc-section">
@@ -2086,7 +2357,8 @@
     aiCache.init(null);
     state.settings = { ...CONFIG.settingsDefaults };
     state.theme = { presetId: "jira", overrides: {} };
-    themeEngine.applyTheme(root(), state.theme);
+    state.themeSync = { useCrm: false, cached: null, at: 0, status: "idle", error: "" };
+    applyCurrentTheme();
     state.layout = { customizeMode: false, tabs: {} };
     state.activeCall = null;
     state.callOverlay = { mode: "full", pos: null, dismissedForCallId: null };
@@ -2461,7 +2733,10 @@
     // Chrome-Kontext — dann die Palette gar nicht erst öffnen (der Listener
     // lässt sich ohne eigenen Shutdown-Pfad in ui.js nicht sauber abmelden).
     if (!extensionAlive()) return;
-    const isToggleCombo = (event.metaKey || event.ctrlKey) && String(event.key).toLowerCase() === "k";
+    // Nimmt eine Zeile in den Einstellungen gerade ein Kürzel auf, gehört ihr
+    // jeder Tastendruck.
+    if (state.hotkeyCapture.id) { captureHotkeyFromEvent(event); return; }
+    const isToggleCombo = shared.hotkeyMatches(event, hotkey("palette"));
     if (isToggleCombo) {
       event.preventDefault();
       if (state.palette && state.palette.open) closePalette(); else openPalette();
@@ -3134,7 +3409,25 @@
       case "toggle-settings":
         syncInputsFromDom();
         state.settingsOpen = !state.settingsOpen;
+        // Eine offene Aufnahme gehört zur Ansicht, nicht zum Zustand – beim
+        // Verlassen der Einstellungen läge sie sonst still weiter und schluckte
+        // den nächsten Tastendruck.
+        state.hotkeyCapture = { id: "", error: "" };
         render();
+        return;
+      case "capture-hotkey":
+        state.hotkeyCapture = {
+          // Nochmal derselbe Knopf: Aufnahme abbrechen.
+          id: state.hotkeyCapture.id === control.dataset.hotkey ? "" : control.dataset.hotkey,
+          error: ""
+        };
+        render();
+        return;
+      case "reset-hotkey":
+        resetHotkey(control.dataset.hotkey);
+        return;
+      case "reset-hotkeys":
+        resetAllHotkeys();
         return;
       case "close-settings":
         state.settingsOpen = false;
@@ -3142,19 +3435,27 @@
         return;
       case "save-settings": saveSettings(); return;
       case "set-theme-preset": {
+        if (state.themeSync.useCrm) return; // Auswahl gesperrt, solange das CRM führt
         state.theme.presetId = control.dataset.preset === "crm" ? "crm" : "jira";
-        themeEngine.applyTheme(root(), state.theme);
+        applyCurrentTheme();
         persistTheme();
         render();
         return;
       }
       case "reset-theme": {
+        if (state.themeSync.useCrm) return;
         state.theme = { presetId: "jira", overrides: {} };
-        themeEngine.applyTheme(root(), state.theme);
+        applyCurrentTheme();
         persistTheme();
         render();
         return;
       }
+      case "toggle-theme-from-crm":
+        toggleCrmTheme(control.checked);
+        return;
+      case "refresh-crm-theme":
+        await refreshCrmTheme({ silent: false });
+        return;
       case "toggle-customize":
         state.layout.customizeMode = !state.layout.customizeMode;
         if (state.layout.customizeMode) state.settingsOpen = false;
@@ -3267,10 +3568,13 @@
     else if (role === "set-supabase-anon-key") state.settings.supabaseAnonKey = event.target.value;
     else if (role === "set-bridge-token") state.settings.bridgeToken = event.target.value;
     else if (role && role.indexOf("set-theme-color-") === 0) {
+      // Solange das CRM führt, ist die eigene Farbwahl gesperrt — sonst
+      // schriebe ein Klick eine Farbe in state.theme, die niemand sieht.
+      if (state.themeSync.useCrm) return;
       const themeRole = role.slice("set-theme-color-".length);
       if (themeEngine.ROLE_TO_VAR[themeRole]) {
         state.theme.overrides[themeRole] = event.target.value;
-        themeEngine.applyTheme(root(), state.theme);
+        applyCurrentTheme();
         persistTheme();
       }
     }
@@ -3358,7 +3662,9 @@
       CONFIG.storageKeys.lookupResult,
       CONFIG.storageKeys.bridgeState,
       CONFIG.storageKeys.theme,
-      CONFIG.storageKeys.layout
+      CONFIG.storageKeys.themeSync,
+      CONFIG.storageKeys.layout,
+      CONFIG.storageKeys.hotkeys
     ]);
     if (typeof saved[CONFIG.storageKeys.isOpen] === "boolean") state.isOpen = saved[CONFIG.storageKeys.isOpen];
     if (CONFIG.tabs.some((tab) => tab.id === saved[CONFIG.storageKeys.activeTab])) state.activeTab = saved[CONFIG.storageKeys.activeTab];
@@ -3383,11 +3689,24 @@
     state.lookup.result = saved[CONFIG.storageKeys.lookupResult] || null;
     state.bridgeState = saved[CONFIG.storageKeys.bridgeState] || null;
     state.theme = themeEngine.normalizeThemeState(saved[CONFIG.storageKeys.theme]);
-    themeEngine.applyTheme(container, state.theme);
+    const savedSync = saved[CONFIG.storageKeys.themeSync];
+    if (savedSync && typeof savedSync === "object") {
+      state.themeSync.useCrm = savedSync.useCrm === true;
+      state.themeSync.cached = savedSync.cached
+        ? themeEngine.normalizeThemeState(savedSync.cached)
+        : null;
+      state.themeSync.at = typeof savedSync.at === "number" ? savedSync.at : 0;
+    }
+    // Zuerst der zwischengespeicherte Stand: das Panel steht sofort in den
+    // richtigen Farben, auch offline. Der Abgleich läuft danach im Hintergrund
+    // und zeichnet bei einer Änderung neu.
+    applyCurrentTheme(container);
     const savedLayout = saved[CONFIG.storageKeys.layout];
     if (savedLayout && typeof savedLayout === "object" && savedLayout.tabs && typeof savedLayout.tabs === "object") {
       state.layout.tabs = savedLayout.tabs;
     }
+    const savedHotkeys = saved[CONFIG.storageKeys.hotkeys];
+    if (savedHotkeys && typeof savedHotkeys === "object") state.hotkeys = { ...savedHotkeys };
 
     state.ticket = jiraReader.read();
     hydrateAiFromCache(state.ticket);
@@ -3403,6 +3722,10 @@
 
     loadCapabilities();
     loadShift();
+    // Farbschema stillschweigend nachziehen, falls die Übernahme an ist. Kein
+    // await: der Panel-Aufbau darf nicht auf das Netz warten — bis die Antwort
+    // da ist, gilt der zwischengespeicherte Stand von oben.
+    if (state.themeSync.useCrm) void refreshCrmTheme({ silent: true });
   }
 
   // Bug-Historie: die folgenden Registrierungen standen früher direkt in
@@ -3527,6 +3850,11 @@
     // Neu zeichnen, ohne das Ticket erneut zu lesen: das braucht der Gastgeber,
     // wenn sich nur bei ihm etwas geändert hat (Verbindung, Overlay-Schalter).
     rerender: render,
-    loadCapabilities
+    loadCapabilities,
+    // Tastenkürzel: das Panel hält den gespeicherten Stand, andere Teile der
+    // Auskunft (Notizen, Startbild) fragen hier nach, statt eine zweite Kopie
+    // zu führen.
+    hotkey,
+    isCapturingHotkey: () => Boolean(state.hotkeyCapture.id)
   };
 })();

@@ -8,9 +8,10 @@
     "test": "node test/run-all.js",
     "start": "electron .",
     "dev": "electron . --hud-dev",
+    "icon": "node tools/generate-app-icon.js",
     "pack:mac": "electron-builder --mac --dir",
     "pack:win": "electron-builder --win --dir",
-    "dist": "electron-builder --mac --win"
+    "dist": "npm run icon && electron-builder --mac --win"
   },
   "devDependencies": {
     "electron": "^43.0.0",
@@ -21,7 +22,22 @@
     "productName": "Stadtnetz CRM Copilot",
     "files": ["main/**", "preload/**", "renderer/**", "package.json"],
     "extraResources": [{ "from": "../extension", "to": "extension", "filter": ["src/**", "styles/**", "icons/**"] }],
-    "mac": { "category": "public.app-category.productivity", "target": ["dmg"] },
-    "win": { "target": ["nsis"] }
+    "afterPack": "build/afterPack.js",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }]
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    }
   }
 }

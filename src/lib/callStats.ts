@@ -220,6 +220,15 @@ export function campaignPerformance(calls: Call[], campaigns: Campaign[]): Campa
   return rows.sort((a, b) => b.totalCalls - a.totalCalls);
 }
 
+/** Klartext je Disposition — geteilt von Team-Dashboard und Berichten. */
+export const DISPOSITION_LABEL: Record<CallDisposition, string> = {
+  gehalten: 'Gehalten',
+  gekuendigt: 'Gekündigt',
+  rueckruf: 'Rückruf vereinbart',
+  'kein-interesse': 'Kein Interesse',
+  sonstige: 'Sonstige',
+};
+
 /** Verteilung der Dispositionen (für eine kompakte Übersicht/Pie). */
 export function dispositionBreakdown(calls: Call[]): { disposition: CallDisposition; count: number }[] {
   const counts = new Map<CallDisposition, number>();

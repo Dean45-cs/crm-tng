@@ -13,7 +13,7 @@
 // bestehen und liefert weiterhin Ticketdaten und die lokale KI (Gemini Nano
 // gibt es nur in Chrome selbst, siehe README).
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, globalShortcut, shell, nativeImage, screen, nativeTheme } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, globalShortcut, shell, nativeImage, screen, nativeTheme, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
@@ -29,8 +29,12 @@ const DEFAULT_BOUNDS = { width: 420, height: 760 };
 // herausholt. Beide Tastenkombinationen gelten systemweit, auch wenn das
 // Overlay gerade keine Klicks annimmt – zusammen mit dem Tray-Menü sind das
 // die Rettungsanker.
-const TOGGLE_ACCELERATOR = process.platform === "darwin" ? "Command+Shift+Space" : "Control+Shift+Space";
-const CLICK_THROUGH_ACCELERATOR = process.platform === "darwin" ? "Command+Shift+D" : "Control+Shift+D";
+//
+// Welche Tasten das sind, steht in der gemeinsamen Kürzel-Liste
+// (extension/src/config.js, scope "global") und ist in den Einstellungen
+// änderbar; die geänderte Fassung liegt je Gerät im eigenen Speicher. Die
+// Schreibweise ("Mod+Shift+Space") übersetzt shared.js nach Electron.
+const GLOBAL_HOTKEY_IDS = ["toggleOverlay", "clickThrough"];
 
 const MIN_OPACITY = 0.35;
 
@@ -59,6 +63,20 @@ function extensionDir() {
 
 function iconPath(size) {
   return path.join(extensionDir(), "icons", `icon${size}.png`);
+}
+
+// Die Kürzel-Liste und die Umsetzung ihres Formats liegen dort, wo auch das
+// Panel sie liest (extension/src) – der Hauptprozess lädt genau dieselben
+// Dateien statt einer zweiten Kopie. Beide sind reine Skripte ohne Abhängigkeit
+// zu Chrome oder zum DOM; sie hängen ihr Ergebnis an globalThis.
+let sharedCache = null;
+function sharedApi() {
+  if (!sharedCache) {
+    require(path.join(extensionDir(), "src", "config.js"));
+    require(path.join(extensionDir(), "src", "shared.js"));
+    sharedCache = globalThis.StadtnetzCRM;
+  }
+  return sharedCache;
 }
 
 // --- Fenster ---------------------------------------------------------------
@@ -236,13 +254,187 @@ function setClickThrough(enabled) {
   return value;
 }
 
+// Beim Anmelden mitstarten. Das ist für ein Overlay keine Bequemlichkeit,
+// sondern der Unterschied zwischen „da" und „nicht da": die App hat kein
+// Dock-Symbol und keinen Eintrag im Programmumschalter – wer sie einmal beendet
+// hat (oder neu gestartet ist), findet sie nur wieder, wenn er weiß, wo sie
+// liegt. Und ohne laufende App führt auch kein Weg aus Chrome zu ihr: die
+// Erweiterung kann eine Verbindung aufbauen, aber kein Programm starten.
+//
+// Gefragt wird das System, nicht der eigene Speicher: den Eintrag kann man auch
+// in den Systemeinstellungen wegnehmen, und dann stimmte ein eigener Merker
+// nicht mehr.
+function autoStartEnabled() {
+  try {
+    return Boolean(app.getLoginItemSettings().openAtLogin);
+  } catch (error) {
+    return false;
+  }
+}
+
+function setAutoStart(enabled) {
+  const value = Boolean(enabled);
+  // Eine ausdrückliche Entscheidung – sie hält den Selbsteintrag unten davon ab,
+  // sie beim nächsten Start wieder umzuwerfen.
+  store.hudSet("autoStartChoice", value);
+  try {
+    app.setLoginItemSettings({ openAtLogin: value });
+  } catch (error) {
+    // Ein gesperrter Rechner kann das verweigern – dann bleibt es beim Handstart.
+    console.error(`Autostart konnte nicht gesetzt werden: ${error.message}`);
+  }
+  rebuildTrayMenu();
+  broadcastOverlay();
+  return autoStartEnabled();
+}
+
+// Beim allerersten Start trägt sich die App selbst ein.
+//
+// Das ist die Voreinstellung und nicht bloß eine Bequemlichkeit: die App wird im
+// Team verteilt, und dort kann niemand voraussetzen, dass jede Person nach der
+// Installation noch in die Systemeinstellungen geht. Ohne Anmeldeobjekt ist die
+// Auskunft nach dem ersten Neustart des Rechners weg – ohne Dock-Symbol, ohne
+// Fenster, und aus Chrome heraus unerreichbar, weil eine Erweiterung kein
+// Programm starten kann. Genau das ist der Zustand, in dem „das HUD lässt sich
+// nicht öffnen" entsteht.
+//
+// Genau einmal: wer den Schalter umlegt, hat entschieden (autoStartChoice), und
+// diese Entscheidung wird nie überschrieben.
+function ensureAutoStart() {
+  // Aus dem Quellstand heraus (`npm start`) trüge sich Electron selbst ein –
+  // das brächte niemandem etwas und hinterließe einen falschen Eintrag.
+  if (!app.isPackaged) return;
+  if (store.hudGet("autoStartChoice", null) !== null) return;
+  store.hudSet("autoStartChoice", true);
+  try {
+    app.setLoginItemSettings({ openAtLogin: true });
+  } catch (error) {
+    console.error(`Autostart konnte nicht eingerichtet werden: ${error.message}`);
+  }
+}
+
+// Aus dem Ordner heraus, in den das Programm gehört.
+//
+// Nach dem Ziehen aus dem Installationsabbild liegt die App oft in „Downloads"
+// oder wird direkt aus dem Abbild gestartet. Beides trägt sich als Anmeldeobjekt
+// zwar ein, zeigt aber auf einen Pfad, den es beim nächsten Anmelden vielleicht
+// nicht mehr gibt – die Auskunft startet dann stillschweigend nie wieder.
+// Deshalb einmalig anbieten, sich selbst an den richtigen Ort zu legen.
+function ensureInApplicationsFolder() {
+  if (process.platform !== "darwin" || !app.isPackaged) return false;
+  if (typeof app.isInApplicationsFolder !== "function" || app.isInApplicationsFolder()) return false;
+  if (store.hudGet("moveDeclined", false)) return false;
+
+  const answer = dialog.showMessageBoxSync({
+    type: "question",
+    buttons: ["In den Programme-Ordner legen", "Hier lassen"],
+    defaultId: 0,
+    cancelId: 1,
+    title: "Stadtnetz CRM Copilot",
+    message: "Die Auskunft in den Programme-Ordner legen?",
+    detail: "Von dort startet sie bei jeder Anmeldung zuverlässig und ist über die Spotlight-Suche zu finden. Bleibt sie, wo sie jetzt liegt, kann sie beim nächsten Anmelden fehlen – etwa wenn der Ordner aufgeräumt oder das Installationsabbild ausgeworfen wurde."
+  });
+
+  if (answer !== 0) {
+    store.hudSet("moveDeclined", true);
+    return false;
+  }
+
+  try {
+    // Erst die Einmal-Sperre abgeben, dann verschieben: der Umzug startet die
+    // App am neuen Ort neu, und diese frische Instanz käme sonst nicht herein,
+    // solange die hier noch am Beenden ist. Sie würde sich still verabschieden –
+    // die App hätte sich dann installiert und wäre danach einfach nicht da.
+    // Genau dieser Zustand ist beim Ausprobieren aufgetreten.
+    if (typeof app.releaseSingleInstanceLock === "function") app.releaseSingleInstanceLock();
+    // Verschiebt und startet neu; ab hier läuft diese Instanz nicht weiter.
+    const moved = app.moveToApplicationsFolder();
+    // Nicht verschoben (im Dialog abgebrochen): die Sperre wieder holen, sonst
+    // liefe diese Instanz ohne Schutz gegen eine zweite weiter.
+    if (!moved) app.requestSingleInstanceLock();
+    return moved;
+  } catch (error) {
+    app.requestSingleInstanceLock();
+    dialog.showMessageBoxSync({
+      type: "warning",
+      title: "Stadtnetz CRM Copilot",
+      message: "Das Verschieben hat nicht geklappt.",
+      detail: `${error.message}\n\nBitte die App von Hand in den Programme-Ordner ziehen.`
+    });
+    return false;
+  }
+}
+
+// --- Systemweite Tastenkürzel ----------------------------------------------
+
+// Was gerade gilt: die eigene Angabe, sonst die Voreinstellung aus der
+// gemeinsamen Liste. Je Gerät gespeichert, denn welche Tasten frei sind, hängt
+// am Rechner (ein anderes Programm kann eine belegen).
+function globalHotkey(id) {
+  const saved = store.hudGet("hotkeys", {}) || {};
+  return sharedApi().shared.hotkeyFor(id, saved);
+}
+
+// Kürzel, die das System nicht hergibt. Ohne diese Rückmeldung stünde in den
+// Einstellungen eine Taste, die nachweislich nichts tut – und man suchte den
+// Fehler bei sich statt beim Programm, das sie schon belegt.
+const globalHotkeyErrors = {};
+
+function applyGlobalHotkeys() {
+  const { shared } = sharedApi();
+  const handlers = {
+    toggleOverlay: toggleWindow,
+    clickThrough: () => setClickThrough(!store.hudGet("clickThrough", false))
+  };
+
+  globalShortcut.unregisterAll();
+  GLOBAL_HOTKEY_IDS.forEach((id) => {
+    delete globalHotkeyErrors[id];
+    const binding = globalHotkey(id);
+    // Leer heißt bewusst abgeschaltet – dann gibt es dieses Kürzel eben nicht.
+    if (!binding) return;
+    const accelerator = shared.hotkeyToAccelerator(binding);
+    let ok;
+    try {
+      ok = globalShortcut.register(accelerator, handlers[id]);
+    } catch (error) {
+      // Unbrauchbare Kombination (z. B. nur eine Zusatztaste) – Electron wirft.
+      ok = false;
+    }
+    if (!ok) globalHotkeyErrors[id] = "Diese Taste ist auf diesem Gerät schon belegt – bitte eine andere wählen.";
+  });
+
+  rebuildTrayMenu();
+  broadcastOverlay();
+}
+
+function setGlobalHotkey(id, binding) {
+  if (GLOBAL_HOTKEY_IDS.indexOf(id) < 0) return;
+  const { shared } = sharedApi();
+  const saved = { ...(store.hudGet("hotkeys", {}) || {}) };
+  const value = typeof binding === "string" ? binding : "";
+  // Zurück auf die Voreinstellung heißt: keine eigene Angabe mehr (sonst
+  // bliebe eine Kopie stehen, die eine spätere Änderung der Liste aussitzt).
+  if (value === shared.hotkeyDefault(id)) delete saved[id];
+  else saved[id] = value;
+  store.hudSet("hotkeys", saved);
+  applyGlobalHotkeys();
+}
+
 function overlayState() {
+  const hotkeys = {};
+  GLOBAL_HOTKEY_IDS.forEach((id) => { hotkeys[id] = globalHotkey(id); });
   return {
     alwaysOnTop: store.hudGet("alwaysOnTop", true),
     opacity: store.hudGet("opacity", 1),
     clickThrough: store.hudGet("clickThrough", false),
-    toggleShortcut: TOGGLE_ACCELERATOR,
-    clickThroughShortcut: CLICK_THROUGH_ACCELERATOR
+    autoStart: autoStartEnabled(),
+    // In der Entwicklung (`npm start`) trüge sich Electron selbst als
+    // Anmeldeobjekt ein, nicht die App – das Panel sagt das dann dazu, statt
+    // einen Schalter anzubieten, der etwas anderes bewirkt als er verspricht.
+    packaged: app.isPackaged,
+    hotkeys,
+    hotkeyErrors: { ...globalHotkeyErrors }
   };
 }
 
@@ -282,6 +474,13 @@ function toggleWindow() {
 
 // --- Tray ------------------------------------------------------------------
 
+// Electron erwartet im Menü seine eigene Schreibweise; undefined heißt „keine
+// Beschriftung", und genau das ist bei einem abgeschalteten Kürzel richtig.
+function trayAccelerator(id) {
+  const binding = globalHotkey(id);
+  return binding ? sharedApi().shared.hotkeyToAccelerator(binding) : undefined;
+}
+
 function rebuildTrayMenu() {
   if (!tray) return;
   const connected = bridge && bridge.connected;
@@ -289,7 +488,10 @@ function rebuildTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: connected ? "Mit Chrome verbunden" : "Wartet auf Chrome…", enabled: false },
     { type: "separator" },
-    { label: "Auskunft einblenden", accelerator: TOGGLE_ACCELERATOR, click: showWindow },
+    // accelerator im Tray-Menü ist nur Beschriftung – registriert sind die
+    // Kürzel über applyGlobalHotkeys(). Ein leeres Kürzel (abgeschaltet) darf
+    // hier deshalb auch keinen Text zeigen.
+    { label: "Auskunft einblenden", accelerator: trayAccelerator("toggleOverlay"), click: showWindow },
     {
       label: "Immer im Vordergrund",
       type: "checkbox",
@@ -301,9 +503,15 @@ function rebuildTrayMenu() {
       // durchgereicht hat, kommt hier immer wieder heraus.
       label: "Klicks durchreichen",
       type: "checkbox",
-      accelerator: CLICK_THROUGH_ACCELERATOR,
+      accelerator: trayAccelerator("clickThrough"),
       checked: store.hudGet("clickThrough", false),
       click: (item) => setClickThrough(item.checked)
+    },
+    {
+      label: "Beim Anmelden starten",
+      type: "checkbox",
+      checked: autoStartEnabled(),
+      click: (item) => setAutoStart(item.checked)
     },
     { type: "separator" },
     { label: "Beenden", click: () => { quitting = true; app.quit(); } }
@@ -356,6 +564,12 @@ function registerIpc() {
         return;
       case "click-through":
         setClickThrough(args.enabled);
+        return;
+      case "auto-start":
+        setAutoStart(args.enabled);
+        return;
+      case "set-hotkey":
+        setGlobalHotkey(args.id, args.binding);
         return;
       case "resize-by":
         resizeBy(args.dx, args.dy);
@@ -424,6 +638,12 @@ app.whenReady().then(async () => {
 
   store = new Store(app.getPath("userData"));
 
+  // Beides gehört vor alles Übrige: das Verschieben startet die App neu, und
+  // dann wäre jede Vorbereitung davor umsonst gewesen (und der Port doppelt
+  // belegt).
+  if (ensureInApplicationsFolder()) return;
+  ensureAutoStart();
+
   // Verbindungs-Diagnose: hält die letzten Andock-Versuche der Extension fest
   // (angenommen/abgelehnt inkl. Grund), damit "wird nicht grün" nachvollziehbar
   // wird, ohne die Service-Worker-Konsole in Chrome öffnen zu müssen. Die Datei
@@ -439,6 +659,11 @@ app.whenReady().then(async () => {
     store,
     port: Number(process.env.HUD_PORT) || DEFAULT_PORT,
     onStatus: rebuildTrayMenu,
+    // Der Rückweg aus Chrome: dort ist das Panel abgebaut, solange die App
+    // läuft – ohne diesen Haken bliebe eine ausgeblendete Auskunft nur über
+    // Tastenkombination und Tray erreichbar, und wer beides nicht kennt, hält
+    // die App für weg.
+    onShow: () => showWindow(),
     log: bridgeLog
   });
 
@@ -456,8 +681,7 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
-  globalShortcut.register(TOGGLE_ACCELERATOR, toggleWindow);
-  globalShortcut.register(CLICK_THROUGH_ACCELERATOR, () => setClickThrough(!store.hudGet("clickThrough", false)));
+  applyGlobalHotkeys();
 
   app.on("activate", showWindow);
 });

@@ -1034,3 +1034,150 @@ html, body {
 /* --- Befehlspalette ------------------------------------------------------- */
 
 #sc-jira-palette { z-index: 20001; }
+
+/* --- Startbild -------------------------------------------------------------
+ *
+ * Liegt über allem, bis das Panel steht (siehe boot.js). Es hat die Form des
+ * Fensters – gleiche Rundung, gleiche Kante, gleiches Glas –, damit der Start
+ * nicht als fremde Zwischenseite wirkt, sondern als dieselbe Fläche, die gleich
+ * das Cockpit trägt.
+ *
+ * Die Farbwerte stehen hier ausgeschrieben statt als Variablen: das Startbild
+ * liegt außerhalb von #stadtnetzcrm-root und existiert schon, bevor ui.js
+ * dessen Palette anlegt.
+ */
+
+.hud-boot {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(17, 20, 27, 0.94);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: #eef2f8;
+  text-align: center;
+  /* Auch das Startbild lässt sich schon verschieben: das Fenster hat keinen
+     Rahmen, und wer es beim Start woanders haben will, soll nicht warten
+     müssen, bis das Panel steht. */
+  -webkit-app-region: drag;
+  transition: opacity 260ms ease;
+}
+
+.hud-boot.is-done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hud-boot-mark {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(90, 162, 255, 0.14);
+  color: #5aa2ff;
+}
+
+.hud-boot-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+
+/* Ein Balken ohne Prozentzahl: wie lange der Abgleich mit Chrome dauert, weiß
+   niemand vorher – eine erfundene Fortschrittsanzeige wäre eine Behauptung. */
+.hud-boot-bar {
+  width: 132px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.hud-boot-bar > span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(90, 162, 255, 0.25), #5aa2ff);
+  animation: hud-boot-slide 1150ms ease-in-out infinite;
+}
+
+@keyframes hud-boot-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(240%); }
+}
+
+.hud-boot-step {
+  margin: 0;
+  min-height: 17px;
+  max-width: 260px;
+  color: #98a5b8;
+  font-size: 12px;
+}
+
+/* Hängt der Start (Chrome-Abgleich, Panelaufbau), tritt an die Stelle des
+   Balkens ein Weg nach vorn – ein Overlay ohne Titelleiste hat sonst keinen. */
+.hud-boot.is-error .hud-boot-bar { display: none; }
+.hud-boot.is-error .hud-boot-step { color: #ff8f80; }
+
+.hud-boot-retry {
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #eef2f8;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  -webkit-app-region: no-drag;
+}
+
+.hud-boot-retry:hover { background: rgba(255, 255, 255, 0.085); }
+.hud-boot-retry[hidden] { display: none; }
+
+/* Der Weg zurück, wenn das Overlay einmal weg ist. Er steht hier, weil das
+   Startbild die einzige Stelle ist, die jede Sitzung einmal zu sehen bekommt –
+   in den Einstellungen steht er zwar auch, aber dorthin sieht nur, wer die
+   Auskunft schon vor sich hat. */
+.hud-boot-hint {
+  margin: 0;
+  color: #6f7d92;
+  font-size: 11px;
+}
+
+.hud-boot-hint kbd {
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #98a5b8;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.hud-boot-version {
+  margin: 0;
+  color: rgba(152, 165, 184, 0.45);
+  font-size: 10.5px;
+}
+
+/* Wer Bewegung abgestellt hat, bekommt einen ruhigen Balken statt gar keiner
+   Rückmeldung. */
+@media (prefers-reduced-motion: reduce) {
+  .hud-boot { transition: none; }
+  .hud-boot-bar > span {
+    width: 100%;
+    animation: none;
+    opacity: 0.5;
+  }
+}

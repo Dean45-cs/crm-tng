@@ -82,12 +82,81 @@
       // bleibt es beim heutigen Standard (Jira-Theme, keine Overrides) — rein
       // opt-in, bleibt lokal.
       theme: "stadtnetzCrm.theme",
+      // Übernahme des im CRM gewählten Farbschemas (Migration 022):
+      // { useCrm: bool, cached: <Theme-Zustand>|null, at: <ms> }. `cached` ist
+      // das bereits ins Rollen-Schema dieser Extension übersetzte Ergebnis,
+      // damit das Panel beim Kaltstart sofort richtig aussieht und ohne Netz
+      // funktioniert. Standard aus — rein opt-in, bleibt lokal.
+      themeSync: "stadtnetzCrm.themeSync",
       // Persönliches Widget-Layout der Tabs: { tabs: { <tabId>: { order: [ids],
       // hidden: [ids] } } }. Erlaubt, einzelne Abschnitte (Widgets) im Panel
       // auszublenden und umzusortieren. Fehlt der Schlüssel, gilt die
       // Standard-Reihenfolge, nichts ausgeblendet — rein opt-in, bleibt lokal.
-      layout: "stadtnetzCrm.layout"
+      layout: "stadtnetzCrm.layout",
+      // Eigene Tastenkürzel: { <id>: "Mod+K", ... }. Nur die abweichenden –
+      // was fehlt, gilt in der Voreinstellung aus CONFIG.hotkeys. Ein leerer
+      // Wert heißt „abgeschaltet", das ist etwas anderes als „nicht gesetzt".
+      // Bleibt lokal. Die systemweiten Kürzel der Desktop-App stehen NICHT
+      // hier, sondern in deren eigenem Speicher (siehe unten).
+      hotkeys: "stadtnetzCrm.hotkeys"
     },
+
+    // --- Tastenkürzel ------------------------------------------------------
+    //
+    // Eine Liste für alles, was auf eine Taste hört. Sie ist die einzige
+    // Wahrheit: die Einstellungen bauen ihre Zeilen daraus, und jeder
+    // Verbraucher fragt über dieselbe id nach seinem Kürzel. Wer ein neues
+    // Kürzel einführt, trägt es hier ein – dann steht es automatisch auch in
+    // den Einstellungen und ist änderbar.
+    //
+    // Schreibweise: Teile mit "+" verbunden, Reihenfolge Mod, Ctrl, Alt, Shift,
+    // Taste. „Mod" ist die Befehlstaste (macOS) bzw. Strg (Windows/Linux) – ein
+    // Kürzel muss deshalb nicht je Betriebssystem doppelt gepflegt werden.
+    // Umgesetzt wird das in shared.js (hotkeyMatches/hotkeyLabel/hotkeyFromEvent).
+    //
+    // scope sagt, wer es ausführt und wo es gilt:
+    //   panel  – im Panel/Cockpit der Seite und in der Auskunft (chrome.storage)
+    //   hud    – nur in der Auskunft auf dem Schreibtisch (chrome.storage)
+    //   global – systemweit, auch ohne Fokus; registriert die Desktop-App
+    //            (Electron globalShortcut), gespeichert je Gerät in deren
+    //            eigenem Speicher.
+    hotkeys: [
+      {
+        id: "palette",
+        label: "Befehlspalette",
+        hint: "Kundensuche über alle Vorgänge – im Jira-Panel, im timio-Cockpit und in der Auskunft.",
+        default: "Mod+K",
+        scope: "panel"
+      },
+      {
+        id: "notes",
+        label: "Notizen",
+        hint: "Notizblock der Auskunft auf- und zuklappen.",
+        default: "Mod+N",
+        scope: "hud"
+      },
+      {
+        id: "saveNote",
+        label: "Notiz sichern",
+        hint: "Im Notizfeld: den Entwurf als Notiz ablegen.",
+        default: "Mod+Enter",
+        scope: "hud"
+      },
+      {
+        id: "toggleOverlay",
+        label: "Auskunft ein-/ausblenden",
+        hint: "Systemweit, auch wenn ein anderes Programm vorn ist. Der Weg zurück zu einer ausgeblendeten Auskunft.",
+        default: "Mod+Shift+Space",
+        scope: "global"
+      },
+      {
+        id: "clickThrough",
+        label: "Klicks durchreichen",
+        hint: "Systemweit. Schaltet um, ob die Maus durch die Auskunft hindurchgreift – und wieder zurück.",
+        default: "Mod+Shift+D",
+        scope: "global"
+      }
+    ],
 
     // Cache der KI-Ergebnisse pro Ticket, damit ein bereits besuchtes Ticket
     // nicht jedes Mal neu generiert werden muss. Bleibt ausschließlich lokal.

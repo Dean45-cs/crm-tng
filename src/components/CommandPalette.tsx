@@ -23,6 +23,13 @@ import { useStore } from '../store/useStore';
 import { useRouter, type Route } from '../router';
 import { useQuickAdd } from './QuickAdd';
 import { buildCustomerSummaries, formatCurrency } from '../lib/utils';
+import {
+  getStoredHotkeys,
+  hotkeyMatches,
+  onHotkeysChange,
+  resolveHotkey,
+  type HotkeyMap,
+} from '../lib/hotkeys';
 
 interface CmdItem {
   id: string;
@@ -41,17 +48,21 @@ interface CmdItem {
  */
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
+  // Welches Kürzel gilt, steht in den Einstellungen (lib/hotkeys.ts). Der
+  // Zustand hier hält es aktuell, ohne dass die Seite neu geladen werden muss.
+  const [hotkeys, setHotkeysState] = useState<HotkeyMap>(getStoredHotkeys);
+  useEffect(() => onHotkeysChange(setHotkeysState), []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if (hotkeyMatches(e, resolveHotkey('palette', hotkeys))) {
         e.preventDefault();
         setOpen((o) => !o);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [hotkeys]);
 
   if (!open) return null;
   return <PaletteDialog close={() => setOpen(false)} />;

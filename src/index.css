@@ -7963,3 +7963,221 @@ table.crm-table tbody tr:hover td:first-child {
   color: var(--text-tertiary);
 }
 
+
+/* ===========================================================
+   Berichte (Reports.tsx)
+   =========================================================== */
+
+.reports-page { padding-bottom: 8px; }
+
+/* Filterleiste */
+.reports-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.reports-toolbar-spacer { flex: 1 1 auto; }
+.reports-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.reports-filter > span {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.reports-filter input[type='date'] { min-width: 150px; }
+.reports-range-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: right;
+}
+.reports-range-info strong { font-size: 14px; letter-spacing: -0.2px; }
+
+/* Hinweiszeilen (Kampagnenfilter, abgeschnittene Daten, Ladefehler) */
+.reports-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 9px 13px;
+  border-radius: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.reports-note svg { flex-shrink: 0; }
+.reports-note-warn {
+  background: var(--orange-bg);
+  border-color: transparent;
+  color: #aa5f00;
+}
+:root[data-theme='dark'] .reports-note-warn { color: #e0a64a; }
+
+/* Abschnitte */
+.reports-section { margin-top: 12px; }
+.reports-section-head { margin-bottom: 10px; gap: 12px; }
+.reports-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.reports-grid-2 > .reports-section { margin-top: 0; }
+.reports-chart { margin: 2px -4px 0; }
+.reports-empty {
+  padding: 22px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+.reports-more {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border-top: 1px solid var(--separator);
+}
+.reports-highlight {
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+/* Verteilungslisten (Gesprächsergebnisse, Kündigungsgründe, Produkte) */
+.reports-barlist { display: flex; flex-direction: column; gap: 8px; }
+.reports-barlist-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 34%) 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.reports-barlist-label {
+  font-size: 12.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reports-barlist-track {
+  height: 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.reports-barlist-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+.reports-barlist-value {
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 66px;
+  text-align: right;
+}
+.reports-barlist-pct {
+  margin-left: 6px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+/* Kopfzeile nur für den Ausdruck — auf dem Bildschirm steht sie in der Filterleiste. */
+.reports-print-head { display: none; }
+
+@media print {
+  .reports-page .team-kpis {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .reports-page .widget,
+  .reports-page .table-wrap {
+    box-shadow: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .reports-page .reports-chart { break-inside: avoid; }
+  .reports-print-head {
+    display: block;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-strong);
+    font-size: 12px;
+  }
+  .reports-page,
+  .reports-page * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+/* --- Tastenkürzel (Einstellungen) ----------------------------------------- */
+
+.hotkey-row {
+  display: grid;
+  align-items: center;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+  gap: 12px;
+  grid-template-columns: 1fr auto auto;
+}
+
+.hotkey-row:first-of-type { border-top: none; }
+
+.hotkey-text strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hotkey-text small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hotkey-error { color: var(--danger); }
+
+/* Sieht aus wie eine Taste, ist aber ein Knopf: anklicken und drücken. */
+.hotkey-key {
+  min-width: 86px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.hotkey-key:hover { border-color: var(--accent); }
+
+.hotkey-key.capturing {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Abgeschaltet: sichtbar anders als „belegt" – sonst hält man „aus" für eine Taste. */
+.hotkey-key.off {
+  border-style: dashed;
+  color: var(--text-muted);
+  font-weight: 500;
+}

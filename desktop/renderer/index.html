@@ -21,6 +21,29 @@
        die Größe ändert der Anfasser unten rechts. -->
   <div class="hud-resize" data-role="hud-resize" title="Größe ändern" aria-hidden="true"></div>
 
+  <!-- Startbild. Zwischen „Fenster ist da" und „Cockpit steht" liegen der
+       Abgleich mit Chrome und der Aufbau des Panels; ohne diese Ebene wäre das
+       Overlay so lange eine leere dunkle Fläche – bei einem rahmenlosen Fenster
+       ohne Titelleiste sieht das nach Absturz aus. Es steht direkt im HTML und
+       nicht in JavaScript, damit es schon im ersten Bild da ist.
+       boot.js blendet es aus, sobald das Panel steht; bleibt der Start hängen,
+       sagt es das hier und bietet einen neuen Versuch an. -->
+  <div class="hud-boot" data-role="hud-boot" role="status" aria-live="polite">
+    <div class="hud-boot-mark" aria-hidden="true">
+      <svg viewBox="0 0 44 44" width="44" height="44" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+        <path d="M14 27a11 11 0 0 1 16 0" opacity="0.85"></path>
+        <path d="M9 21a18 18 0 0 1 26 0" opacity="0.5"></path>
+        <circle cx="22" cy="33" r="2.4" fill="currentColor" stroke="none"></circle>
+      </svg>
+    </div>
+    <p class="hud-boot-name">Stadtnetz CRM Copilot</p>
+    <div class="hud-boot-bar" data-role="hud-boot-bar" aria-hidden="true"><span></span></div>
+    <p class="hud-boot-step" data-role="hud-boot-step">Startet …</p>
+    <button class="hud-boot-retry" type="button" data-role="hud-boot-retry" hidden>Neu starten</button>
+    <p class="hud-boot-hint">Ein- und ausblenden mit <kbd data-role="hud-boot-shortcut">⌘⇧Leertaste</kbd></p>
+    <p class="hud-boot-version" data-role="hud-boot-version"></p>
+  </div>
+
   <!-- Genau die Reihenfolge aus manifest.json – die Dateien bauen beim Laden
        aufeinander auf (rules.js greift zum Beispiel sofort auf jiraReader zu).
        An zwei Stellen steht statt der Originaldatei ein Shim: für das, was es

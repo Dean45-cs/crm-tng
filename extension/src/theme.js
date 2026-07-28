@@ -90,11 +90,129 @@
     return { presetId, overrides };
   }
 
+  // ---------------------------------------------------------------------------
+  // Übernahme des CRM-Farbschemas (src/lib/palette.ts)
+  // ---------------------------------------------------------------------------
+  //
+  // Beide Seiten benutzen ein rollenbasiertes Schema, aber NICHT dasselbe: das
+  // CRM kennt background/textPrimary/textMuted/border, die Extension
+  // soft/ink/muted/line. Schlimmer noch, die Preset-Namen kollidieren mit
+  // unterschiedlicher Bedeutung — "crm" heißt hier #00336e (TNG-Navy), im CRM
+  // dagegen #0066b3. Ein direktes Durchreichen des gespeicherten Zustands
+  // würde also falsche Farben setzen. Deshalb wird die CRM-Palette hier zuerst
+  // zu konkreten Farbwerten aufgelöst und dann Rolle für Rolle übersetzt.
+  //
+  // Die CRM-Presets sind bewusst dupliziert: die Extension hat keinen
+  // Build-Schritt und kann nicht aus src/lib/palette.ts importieren. Ein
+  // geteiltes Paket wäre Stufe 4 aus KONZEPT-INTEGRATION.md. Ändert sich dort
+  // ein Preset, muss es hier nachgezogen werden — die Tests in
+  // test/theme-crm.test.js halten die Werte fest.
+  const CRM_ROLE_TO_ROLE = {
+    accent: "accent",
+    accentDark: "accentDark",
+    surface: "surface",
+    background: "soft",
+    textPrimary: "ink",
+    textMuted: "muted",
+    border: "line",
+    success: "success",
+    warning: "warning",
+    danger: "danger"
+  };
+
+  const CRM_PRESETS = {
+    crm: {
+      accent: "#0066b3", accentDark: "#004a85", background: "#f2f3f7",
+      surface: "#ffffff", textPrimary: "#1d1d1f", textMuted: "#5e5e63",
+      border: "#e2e2e6", success: "#34c759", warning: "#ff9500",
+      danger: "#ff3b30"
+    },
+    jira: {
+      accent: "#0c66e4", accentDark: "#0055cc", background: "#f7f8fa",
+      surface: "#ffffff", textPrimary: "#172b4d", textMuted: "#5e6c84",
+      border: "#dfe1e6", success: "#216e4e", warning: "#974f0c",
+      danger: "#ae2e24"
+    }
+  };
+
+  /** Standard-Preset der CRM-Seite — Abweichung davon heißt "der Nutzer hat gewählt". */
+  const CRM_DEFAULT_PRESET = "crm";
+
+  function hexToRgb(hex) {
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || "").trim());
+    if (!m) return null;
+    return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+  }
+
+  function mixWithWhite(rgb, amount) {
+    const mix = (c) => Math.round(c + (255 - c) * amount);
+    return `rgb(${mix(rgb[0])}, ${mix(rgb[1])}, ${mix(rgb[2])})`;
+  }
+
+  function resolveCrmPaletteColors(palette) {
+    const presetId = palette && CRM_PRESETS[palette.presetId] ? palette.presetId : CRM_DEFAULT_PRESET;
+    const overrides = (palette && palette.overrides && typeof palette.overrides === "object")
+      ? palette.overrides
+      : {};
+    return { ...CRM_PRESETS[presetId], ...overrides };
+  }
+
+  /**
+   * CRM-Palette → Theme-Zustand dieser Extension.
+   *
+   * Übersetzt werden nur die Rollen, die im CRM tatsächlich vom Standard
+   * abweichen — genau dieselbe Regel, die applyTheme() oben und applyPalette()
+   * im CRM anwenden. Grund: content.css definiert für jede Rolle einen
+   * @media(prefers-color-scheme:dark)-Wert, und ein Inline-Style gewinnt dagegen
+   * immer. Würden hier pauschal alle zehn Rollen gesetzt, wäre der automatische
+   * Dunkelmodus des Panels tot — auch für jemanden, der im CRM nie eine Farbe
+   * angefasst hat. Bei unveränderter CRM-Palette kommt darum bewusst ein leeres
+   * Override-Objekt heraus, und die Extension bleibt bei ihren eigenen Farben.
+   *
+   * `presetId` bleibt "jira": die übersetzten Farben reisen als Overrides, weil
+   * es kein Extension-Preset gibt, das der CRM-Auswahl entspricht.
+   */
+  function crmPaletteToTheme(palette) {
+    const presetId = palette && CRM_PRESETS[palette.presetId] ? palette.presetId : CRM_DEFAULT_PRESET;
+    const rawOverrides = (palette && palette.overrides && typeof palette.overrides === "object")
+      ? palette.overrides
+      : {};
+    const presetChanged = presetId !== CRM_DEFAULT_PRESET;
+    const colors = resolveCrmPaletteColors(palette);
+    const overrides = {};
+
+    Object.keys(CRM_ROLE_TO_ROLE).forEach((crmRole) => {
+      const touched = presetChanged || Object.prototype.hasOwnProperty.call(rawOverrides, crmRole);
+      if (!touched) return;
+      const value = colors[crmRole];
+      if (typeof value !== "string" || !value) return;
+      overrides[CRM_ROLE_TO_ROLE[crmRole]] = value;
+    });
+
+    // amber/amberSoft haben im CRM keine Entsprechung (dort trägt "warning"
+    // beides). Aus der Warnfarbe abgeleitet, damit die Hinweisflächen im Panel
+    // nicht als einzige in der alten Farbe stehen bleiben. Nur bei Hex-Werten —
+    // sonst lieber unangetastet lassen als etwas Falsches zu berechnen.
+    if (overrides.warning) {
+      const rgb = hexToRgb(overrides.warning);
+      if (rgb) {
+        overrides.amber = overrides.warning;
+        overrides.amberSoft = mixWithWhite(rgb, 0.88);
+      }
+    }
+
+    return { presetId: "jira", overrides };
+  }
+
   globalThis.StadtnetzCRM.themeEngine = {
     PRESETS,
     DEFAULT_THEME,
     ROLE_TO_VAR,
+    CRM_PRESETS,
+    CRM_ROLE_TO_ROLE,
     resolveThemeColors,
+    resolveCrmPaletteColors,
+    crmPaletteToTheme,
     applyTheme,
     normalizeThemeState
   };

@@ -366,6 +366,9 @@
   // angefasst hat. Ein gespeicherter Wert aus dem Storage gewinnt weiterhin.
   let callMode = "outbound";
   let customerSearchJql = ""; // optionale eigene JQL-Vorlage aus den Einstellungen
+  // Abweichende Tastenkürzel aus den Einstellungen des Panels. Leer = alles
+  // steht auf Voreinstellung (CONFIG.hotkeys).
+  let hotkeyOverrides = {};
 
   // Kundenakte (Stufe 1, KONZEPT-INTEGRATION.md): { callId, customerNumber,
   // status: "loading"|"ok"|"not-found"|"not-logged-in"|"not-configured"|
@@ -1255,7 +1258,9 @@
 
   function onGlobalKeydown(event) {
     if (stopped) return;
-    const isToggleCombo = (event.metaKey || event.ctrlKey) && String(event.key).toLowerCase() === "k";
+    // Dieselbe Palette wie im Jira-Panel, deshalb dasselbe Kürzel aus denselben
+    // Einstellungen (siehe CONFIG.hotkeys, id "palette").
+    const isToggleCombo = app.shared.hotkeyMatches(event, app.shared.hotkeyFor("palette", hotkeyOverrides));
     if (isToggleCombo) {
       event.preventDefault();
       if (paletteState && paletteState.open) closePalette(); else openPalette();
@@ -1691,7 +1696,8 @@
       CONFIG.storageKeys.ticketContext,
       CONFIG.storageKeys.timioOverlay,
       CONFIG.storageKeys.callMode,
-      CONFIG.storageKeys.settings
+      CONFIG.storageKeys.settings,
+      CONFIG.storageKeys.hotkeys
     ], (data) => {
       if (stopped || !data) return;
       queueStats = data[CONFIG.storageKeys.queueStats] || queueStats;
@@ -1703,6 +1709,8 @@
       if (storedMode) callMode = callModeMeta(storedMode).id;
       const settings = data[CONFIG.storageKeys.settings];
       if (settings && typeof settings === "object") customerSearchJql = settings.customerSearchJql || "";
+      const hotkeys = data[CONFIG.storageKeys.hotkeys];
+      if (hotkeys && typeof hotkeys === "object") hotkeyOverrides = hotkeys;
       const prefs = data[CONFIG.storageKeys.timioOverlay];
       if (prefs && typeof prefs === "object") {
         if (prefs.mode === "mini" || prefs.mode === "full") overlayPrefs.mode = prefs.mode;
@@ -1726,6 +1734,11 @@
       if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.settings)) {
         const next = changes[CONFIG.storageKeys.settings].newValue;
         customerSearchJql = (next && next.customerSearchJql) || "";
+      }
+      // Im Panel geändertes Kürzel gilt hier sofort – sonst hörte dieser Tab
+      // bis zum nächsten Neuladen weiter auf die alte Taste.
+      if (Object.prototype.hasOwnProperty.call(changes, CONFIG.storageKeys.hotkeys)) {
+        hotkeyOverrides = changes[CONFIG.storageKeys.hotkeys].newValue || {};
       }
     });
   } catch (error) {

@@ -364,6 +364,141 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Tastenkürzel
+  //
+  // Ein Kürzel ist eine Zeichenkette wie "Mod+Shift+K": Teile mit "+" verbunden,
+  // Reihenfolge Mod, Ctrl, Alt, Shift, Taste. „Mod" ist die Befehlstaste auf
+  // macOS und Strg auf Windows/Linux – deshalb steht in der Konfiguration je
+  // Kürzel nur eine Angabe und nicht zwei, die auseinanderlaufen können.
+  //
+  // Diese vier Funktionen sind der einzige Ort, an dem das Format ausgelegt
+  // wird: erkennen (aus einem Tastendruck), vergleichen (passt ein Tastendruck),
+  // beschriften (⌘⇧K bzw. Strg+Umschalt+K) und übersetzen (für Electrons
+  // systemweite Kürzel). Die Liste der Kürzel selbst steht in config.js.
+  // ---------------------------------------------------------------------------
+
+  // Reine Zusatztasten sind für sich noch kein Kürzel – solange sie allein
+  // gedrückt sind, wartet die Aufnahme weiter.
+  const HOTKEY_DEAD_KEYS = ["Meta", "Control", "Alt", "Shift", "AltGraph", "CapsLock", "Dead", "OS", "Unidentified"];
+
+  function isMacPlatform() {
+    const platform = (globalThis.navigator && (globalThis.navigator.platform || globalThis.navigator.userAgent)) || "";
+    return /Mac|iPhone|iPad/.test(String(platform));
+  }
+
+  // Einheitliche Schreibweise der Taste selbst: Buchstaben groß, Leertaste als
+  // "Space", alles Übrige so, wie der Browser es nennt ("Enter", "F5", "ArrowUp").
+  function normalizeHotkeyKey(key) {
+    const value = String(key == null ? "" : key);
+    if (!value) return "";
+    if (value === " " || value === "Spacebar") return "Space";
+    if (value.length === 1) return value.toUpperCase();
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  }
+
+  // Aus einem Tastendruck ein Kürzel machen (für die Aufnahme in den
+  // Einstellungen). Leer, solange nur Zusatztasten gedrückt sind.
+  function hotkeyFromEvent(event) {
+    if (!event) return "";
+    const key = normalizeHotkeyKey(event.key);
+    if (!key || HOTKEY_DEAD_KEYS.indexOf(String(event.key)) >= 0) return "";
+
+    const mac = isMacPlatform();
+    const parts = [];
+    if (mac ? event.metaKey : event.ctrlKey) parts.push("Mod");
+    // Auf dem Mac ist Strg eine eigene Taste neben der Befehlstaste; auf
+    // Windows IST Strg die Modifikator-Taste und taucht deshalb nur als "Mod" auf.
+    if (mac && event.ctrlKey) parts.push("Ctrl");
+    if (event.altKey) parts.push("Alt");
+    if (event.shiftKey) parts.push("Shift");
+    parts.push(key);
+    return parts.join("+");
+  }
+
+  function parseHotkey(binding) {
+    const parts = String(binding || "").split("+").filter(Boolean);
+    const key = parts.pop() || "";
+    return {
+      key,
+      mod: parts.indexOf("Mod") >= 0,
+      ctrl: parts.indexOf("Ctrl") >= 0,
+      alt: parts.indexOf("Alt") >= 0,
+      shift: parts.indexOf("Shift") >= 0
+    };
+  }
+
+  // Passt dieser Tastendruck zu diesem Kürzel? Ein leeres Kürzel passt nie –
+  // so schaltet man ein Kürzel ab, ohne den Verbraucher anfassen zu müssen.
+  function hotkeyMatches(event, binding) {
+    if (!event || !binding) return false;
+    const want = parseHotkey(binding);
+    if (!want.key) return false;
+    const mac = isMacPlatform();
+    if (Boolean(mac ? event.metaKey : event.ctrlKey) !== want.mod) return false;
+    if (mac && Boolean(event.ctrlKey) !== want.ctrl) return false;
+    if (Boolean(event.altKey) !== want.alt) return false;
+    if (Boolean(event.shiftKey) !== want.shift) return false;
+    return normalizeHotkeyKey(event.key) === want.key;
+  }
+
+  // Für die Anzeige: auf dem Mac die Zeichen, die auf den Tasten stehen, sonst
+  // ausgeschriebene Namen.
+  function hotkeyLabel(binding) {
+    if (!binding) return "";
+    const mac = isMacPlatform();
+    const parts = String(binding).split("+").map((part) => {
+      if (part === "Mod") return mac ? "⌘" : "Strg";
+      if (part === "Ctrl") return mac ? "⌃" : "Strg";
+      if (part === "Alt") return mac ? "⌥" : "Alt";
+      if (part === "Shift") return mac ? "⇧" : "Umschalt";
+      if (part === "Space") return "Leertaste";
+      if (part === "Enter") return mac ? "⏎" : "Enter";
+      if (part === "Escape") return "Esc";
+      return part;
+    });
+    return parts.join(mac ? "" : "+");
+  }
+
+  // Übersetzung in Electrons Schreibweise für systemweite Kürzel
+  // (globalShortcut.register). Nur dort gebraucht, steht aber hier, damit
+  // Format und Übersetzung beieinanderliegen.
+  function hotkeyToAccelerator(binding) {
+    if (!binding) return "";
+    return String(binding).split("+").map((part) => {
+      if (part === "Mod") return "CommandOrControl";
+      if (part === "Ctrl") return "Control";
+      return part;
+    }).join("+");
+  }
+
+  // Nachschlagen, was für eine id gerade gilt: die eigene Einstellung, sonst die
+  // Voreinstellung aus config.js. Ein ausdrücklich leerer Eintrag bleibt leer –
+  // das ist „abgeschaltet" und darf nicht auf die Voreinstellung zurückfallen.
+  function hotkeyDefs() {
+    return (app.CONFIG && app.CONFIG.hotkeys) || [];
+  }
+
+  function hotkeyDefault(id) {
+    const def = hotkeyDefs().find((entry) => entry.id === id);
+    return def ? def.default : "";
+  }
+
+  function hotkeyFor(id, overrides) {
+    const map = overrides || {};
+    return Object.prototype.hasOwnProperty.call(map, id) ? String(map[id] || "") : hotkeyDefault(id);
+  }
+
+  // Belegt ein anderes Kürzel dieselbe Taste? Bewusst über alle Bereiche hinweg
+  // geprüft: in der Auskunft greifen Panel-, Fenster- und systemweite Kürzel
+  // gleichzeitig, und ein systemweites schluckt den Tastendruck, bevor das
+  // Panel ihn je sieht. Zwei gleiche Kürzel sind deshalb immer ein Fehler.
+  function hotkeyConflict(id, binding, overrides) {
+    if (!binding) return "";
+    const clash = hotkeyDefs().find((def) => def.id !== id && hotkeyFor(def.id, overrides) === binding);
+    return clash ? clash.id : "";
+  }
+
+  // ---------------------------------------------------------------------------
   // Netz-Auskunft: DOM-Automatisierungs-Helfer (Baustatus/FTTX + Churn/GFIZ)
   //
   // Diese Helfer fassen das DOM erst zur LAUFZEIT an (in den Scraper-Content-
@@ -667,6 +802,16 @@
     calcTariffCommission,
     groupProductsByCategory,
     todayIso,
+    // Tastenkürzel
+    hotkeyFromEvent,
+    hotkeyMatches,
+    hotkeyLabel,
+    hotkeyToAccelerator,
+    normalizeHotkeyKey,
+    hotkeyDefs,
+    hotkeyDefault,
+    hotkeyFor,
+    hotkeyConflict,
     // Netz-Auskunft: DOM-Helfer + reine Parser
     sleep,
     waitForCondition,

@@ -36,6 +36,7 @@ const Customers = lazy(() => import('./pages/Customers').then((m) => ({ default:
 const CustomerDetail = lazy(() => import('./pages/CustomerDetail').then((m) => ({ default: m.CustomerDetail })));
 const Leaderboard = lazy(() => import('./pages/Leaderboard').then((m) => ({ default: m.Leaderboard })));
 const MonthlyReport = lazy(() => import('./pages/MonthlyReport').then((m) => ({ default: m.MonthlyReport })));
+const Reports = lazy(() => import('./pages/Reports').then((m) => ({ default: m.Reports })));
 const TeamDashboard = lazy(() => import('./pages/TeamDashboard').then((m) => ({ default: m.TeamDashboard })));
 const TeamManagement = lazy(() => import('./pages/TeamManagement').then((m) => ({ default: m.TeamManagement })));
 const TeamReport = lazy(() => import('./pages/TeamReport').then((m) => ({ default: m.TeamReport })));
@@ -58,6 +59,7 @@ const TITLES: Record<RouteName, string> = {
   leaderboard: 'Leaderboard',
   settings: 'Einstellungen',
   report: 'Monatsbericht',
+  reports: 'Berichte',
   teamdashboard: 'Team-Dashboard',
   teammanager: 'Team-Verwaltung',
   teamreport: 'Team-Bericht',
@@ -99,6 +101,7 @@ function prefetchAllPages() {
       import('./pages/CustomerDetail'),
       import('./pages/Leaderboard'),
       import('./pages/MonthlyReport'),
+      import('./pages/Reports'),
       import('./pages/TeamDashboard'),
       import('./pages/TeamManagement'),
       import('./pages/TeamReport'),
@@ -171,6 +174,7 @@ function Shell() {
               {route.name === 'customers' && <Customers />}
               {route.name === 'customer' && <CustomerDetail kdnr={route.kdnr} />}
               {route.name === 'leaderboard' && <Leaderboard />}
+              {route.name === 'reports' && <Reports />}
               {route.name === 'settings' && <Settings />}
               {route.name === 'teamdashboard' && <TeamDashboard />}
               {route.name === 'teammanager' && <TeamManagement />}

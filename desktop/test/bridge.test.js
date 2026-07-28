@@ -35,11 +35,12 @@ async function makeBridge() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hud-bridge-"));
   const store = new Store(dir);
   const port = nextPort++;
-  const bridge = new Bridge({ store, port });
+  const shown = [];
+  const bridge = new Bridge({ store, port, onShow: () => shown.push(Date.now()) });
   const win = fakeWindow();
   bridge.attachWindow(win);
   await bridge.listen();
-  return { bridge, store, win, port };
+  return { bridge, store, win, port, shown };
 }
 
 async function run() {
@@ -174,6 +175,30 @@ async function run() {
     assert.deepStrictEqual(bridge.ticket, ticket,
       "der letzte bekannte Vorgang bleibt stehen – er ist nützlicher als ein leeres Panel");
 
+    bridge.close();
+  }
+
+  // --- Auskunft aus Chrome hervorholen ------------------------------------
+  {
+    const { bridge, port, shown } = await makeBridge();
+
+    // Solange die App läuft, hat der Jira-Tab kein eigenes Panel mehr. Der
+    // Klick auf das Symbol der Erweiterung (bzw. auf die Sprechblase in der
+    // Seite) ist dann der einzige Weg aus Chrome heraus zur Auskunft – bricht
+    // er weg, wirkt eine ausgeblendete App wie eine abgestürzte.
+    const extension = await connect(port);
+    await extension.waitFor("sync");
+
+    extension.send({ t: "show" });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.strictEqual(shown.length, 1, "der Auftrag aus Chrome erreicht das Fenster");
+
+    // Zweimal klicken heißt zweimal nach vorn holen – nichts wird zusammengefasst.
+    extension.send({ t: "show" });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.strictEqual(shown.length, 2);
+
+    extension.close();
     bridge.close();
   }
 

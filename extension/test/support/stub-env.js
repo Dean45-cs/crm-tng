@@ -131,6 +131,9 @@ function makeSandbox(bus) {
     open(url) { openedUrls.push(url); return null; },
     document: documentStub,
     chrome: makeChromeStub(sharedBus),
+    // Wie in makePanelSandbox: „Mod" ist je nach System die Befehls- oder die
+    // Strg-Taste, und die Tests drücken ⌘ (shared.js, Tastenkürzel).
+    navigator: { platform: "MacIntel" },
     console
   };
   globalObj.window = globalObj; // window === globalThis, wie im Content-Script
@@ -376,7 +379,11 @@ function makePanelSandbox(options) {
     document: documentStub,
     // Der Ticket-Key wird aus dem Pfad gelesen (jiraReader.ticketKey).
     location: { pathname: opts.pathname || "/browse/TNG-1592568" },
-    navigator: { clipboard: { writeText: async (text) => { copied.push(text); } } },
+    // platform gehört dazu, seit Tastenkürzel konfigurierbar sind: „Mod" ist je
+    // nach System die Befehls- oder die Strg-Taste (shared.js). Ohne Angabe
+    // liefe die Prüfung auf einem gedachten Windows-Rechner, während die Tests
+    // ⌘ drücken – dann passt kein einziges Kürzel.
+    navigator: { platform: "MacIntel", clipboard: { writeText: async (text) => { copied.push(text); } } },
     innerWidth: 1400,
     innerHeight: 900,
     // Steuerbare Timer (nur die Palette-Debounce nutzt window.setTimeout in

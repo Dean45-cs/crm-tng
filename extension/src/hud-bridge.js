@@ -34,7 +34,10 @@
     KEYS.isOpen, KEYS.activeTab, KEYS.emailTemplates, KEYS.tone, KEYS.settings,
     KEYS.aiCache, KEYS.activeCall, KEYS.queueStats, KEYS.callOverlay,
     KEYS.ticketContext, KEYS.timioOverlay, KEYS.callMode, KEYS.callbacks,
-    KEYS.callOutcome, KEYS.supabaseSession, KEYS.customerCard
+    KEYS.callOutcome, KEYS.supabaseSession, KEYS.customerCard,
+    // Eigene Tastenkürzel: im Panel geändert, gelten sie auch in der Auskunft
+    // (und umgekehrt) – ohne Spiegelung hörte jede Seite auf andere Tasten.
+    KEYS.hotkeys
   ].filter(Boolean);
 
   let socket = null;
@@ -56,6 +59,17 @@
     } catch (error) {
       return false;
     }
+  }
+
+  // --- Auskunft nach vorn holen --------------------------------------------
+
+  // Läuft die App, verschwindet das Panel aus dem Jira-Tab (siehe hud-agent.js).
+  // Damit die Auskunft dann nicht nur über die systemweite Tastenkombination
+  // und das Symbol in der Menü-/Infoleiste erreichbar ist, kann Chrome sie von
+  // sich aus hervorholen. Liefert false, wenn die App gar nicht läuft – der
+  // Aufrufer macht dann etwas anderes (siehe background.js).
+  function showHud() {
+    return send({ t: "show" });
   }
 
   // --- Storage -------------------------------------------------------------
@@ -154,6 +168,12 @@
   // Overlay in der Seite dann aus – sonst stünde dasselbe Cockpit zweimal da.
   async function broadcastState() {
     const isConnected = connected();
+    // Der Klick auf das Symbol der Erweiterung führt je nach Lage woanders hin
+    // (App da: Auskunft nach vorn, sonst timio). Der Hinweis am Symbol nennt
+    // das – er muss deshalb beim Verbinden und beim Trennen neu geschrieben
+    // werden, sonst steht dort bis zum nächsten Rückruf-Ereignis das Falsche.
+    const background = app.background || {};
+    if (typeof background.refresh === "function") background.refresh({ notify: false });
     const tabs = await queryTabs({ url: JIRA_MATCH });
     tabs.forEach((tab) => tellTab(tab.id, { type: "sc-hud-state", connected: isConnected }));
   }
@@ -330,6 +350,10 @@
         case "sc-hud-state?":
           sendResponse({ connected: connected() });
           return undefined;
+        // Die Sprechblase im Jira-Tab (content.js) holt die Auskunft nach vorn.
+        case "sc-hud-show":
+          sendResponse({ ok: showHud() });
+          return undefined;
         case "sc-hud-ticket":
           if (sender && sender.tab && message.ticket) preferredTabId = sender.tab.id;
           send({ t: "ticket", ticket: message.ticket || null });
@@ -371,7 +395,7 @@
     });
   }
 
-  app.hudBridge = { connect, connected, requestTicket };
+  app.hudBridge = { connect, connected, requestTicket, showHud };
 
   connect();
 })();

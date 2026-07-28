@@ -274,7 +274,8 @@
   }
 
   function handleKeydown(event) {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    // Konfigurierbar wie alles andere (CONFIG.hotkeys, id "saveNote").
+    if (app.shared.hotkeyMatches(event, app.ui.hotkey("saveNote"))) {
       event.preventDefault();
       addNote();
     }

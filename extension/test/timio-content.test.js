@@ -564,10 +564,16 @@ async function runPaletteFlow() {
   assert.strictEqual(env.getElementById(PALETTE_ID), null, "nach dem Öffnen schließt sich die Palette");
 
   // 5) Erneutes ⌘K öffnet wieder, ein zweites ⌘K schließt (Toggle).
+  env.fireKeydown(key("k", { metaKey: true }));
+  assert.ok(env.getElementById(PALETTE_ID), "⌘K öffnet die Palette wieder");
+  env.fireKeydown(key("k", { metaKey: true }));
+  assert.strictEqual(env.getElementById(PALETTE_ID), null, "zweites ⌘K schließt die Palette (Toggle)");
+
+  // Auf diesem System ist „Mod" die Befehlstaste – Strg+K gehört hier dem
+  // Betriebssystem und ist seit der Kürzel-Einstellung kein zweiter Weg mehr
+  // in die Palette (auf Windows ist Strg umgekehrt genau „Mod").
   env.fireKeydown(key("k", { ctrlKey: true }));
-  assert.ok(env.getElementById(PALETTE_ID), "Ctrl+K öffnet die Palette ebenfalls");
-  env.fireKeydown(key("k", { ctrlKey: true }));
-  assert.strictEqual(env.getElementById(PALETTE_ID), null, "zweites ⌘K/Ctrl+K schließt die Palette (Toggle)");
+  assert.strictEqual(env.getElementById(PALETTE_ID), null, "Strg+K öffnet auf dem Mac nichts");
 
   // 6) Abgelaufenes Login -> Palette bleibt offen und crasht nicht.
   searchResult = { ok: false, reason: "not-logged-in" };

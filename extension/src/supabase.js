@@ -605,6 +605,70 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Optik aus dem CRM (Migration 022, user_settings.theme_pref/palette)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Liest das im CRM gewählte Farbschema des angemeldeten Users. Zurück kommt
+   * der ROHE Wert der `palette`-Spalte — die Übersetzung ins Rollen-Schema
+   * dieser Extension macht themeEngine.crmPaletteToTheme(), damit die
+   * Netzwerkschicht nichts über Farben wissen muss.
+   *
+   * `theme_pref` (hell/dunkel/system) wird bewusst mitgelesen, aber nicht
+   * angewandt: das Panel folgt via @media(prefers-color-scheme) dem
+   * Betriebssystem, und ein Inline-Override für alle Rollen würde diesen
+   * Automatismus abschalten (siehe applyTheme in src/theme.js). Der Wert steht
+   * für eine spätere Entscheidung zur Verfügung.
+   *
+   * Fehlt die Zeile, ist das kein Fehler: `data` ist dann null und heißt „im
+   * CRM noch nie eine Farbe gewählt".
+   */
+  async function fetchUserAppearance() {
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    const query =
+      `select=theme_pref,palette` +
+      `&user_id=eq.${encodeURIComponent(session.userId || "")}` +
+      `&limit=1`;
+
+    try {
+      const res = await fetch(`${config.url}/rest/v1/user_settings?${query}`, {
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${session.accessToken}`
+        }
+      });
+
+      if (res.status === 401) {
+        clearSession();
+        return { ok: false, reason: "not-logged-in" };
+      }
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
+      }
+
+      const rows = await res.json().catch(() => null);
+      const row = Array.isArray(rows) && rows[0];
+      if (!row) return { ok: true, data: null };
+
+      return {
+        ok: true,
+        data: {
+          themePref: row.theme_pref || null,
+          palette: row.palette || null
+        }
+      };
+    } catch (error) {
+      return { ok: false, reason: "network", error: String((error && error.message) || error) };
+    }
+  }
+
   // Interner Helfer für die neuen Stufe-3-Inserts: config/session werden vom
   // Aufrufer übergeben (statt hier erneut aufgelöst), damit ein Aufruf, der
   // zusätzlich created_by/agent_id aus der Session braucht, sie nicht zweimal
@@ -1067,6 +1131,7 @@
     endCall,
     patchCallDisposition,
     fetchCurrentShift,
+    fetchUserAppearance,
     insertNote,
     upsertTicketSummaryNote,
     insertLead,

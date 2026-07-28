@@ -16,6 +16,7 @@ import {
   type PaletteRole,
 } from '../lib/palette';
 import { pushThemePref, pushPalette } from '../lib/appearanceSync';
+import { HotkeySettings } from '../components/HotkeySettings';
 import type {
   ProductCategory,
   TariffChangeType,
@@ -277,6 +278,8 @@ export function Settings() {
           ))}
         </div>
       </div>
+
+      <HotkeySettings />
 
       <div className="widget" style={{ marginBottom: 10 }}>
         <h3 className="widget-title">Allgemein</h3>

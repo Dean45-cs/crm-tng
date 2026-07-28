@@ -1167,6 +1167,46 @@ export async function fetchCallsSince(iso: string): Promise<Call[]> {
   return (data as CallRow[]).map(mapCall);
 }
 
+/** Obergrenze je Seite; PostgREST deckelt ohnehin bei 1000 Zeilen pro Antwort. */
+const CALL_PAGE_SIZE = 1000;
+/** Sicherung gegen einen versehentlich riesigen Zeitraum (≈ 20 000 Anrufe). */
+const CALL_MAX_PAGES = 20;
+
+/**
+ * Anrufe in einem geschlossenen Zeitfenster — Grundlage der Berichte, die
+ * beliebige Zeiträume auswerten (nicht nur „seit Monatsbeginn").
+ *
+ * Blättert bewusst seitenweise: PostgREST liefert pro Antwort höchstens 1000
+ * Zeilen und meldet das **nicht** als Fehler. Ein Jahresbericht eines
+ * telefonierenden Teams läge darüber und wäre ohne Paginierung stillschweigend
+ * abgeschnitten — die Zahlen sähen plausibel aus und wären falsch. Nach
+ * `CALL_MAX_PAGES` wird abgebrochen, damit ein versehentlich riesiger Zeitraum
+ * den Browser nicht lahmlegt; der Aufrufer erkennt das an `truncated`.
+ */
+export async function fetchCallsBetween(
+  fromIso: string,
+  toIso: string,
+): Promise<{ calls: Call[]; truncated: boolean }> {
+  const sb = getSupabase();
+  const calls: Call[] = [];
+
+  for (let page = 0; page < CALL_MAX_PAGES; page += 1) {
+    const { data, error } = await sb
+      .from('calls')
+      .select('*')
+      .gte('started_at', fromIso)
+      .lte('started_at', toIso)
+      .order('started_at', { ascending: false })
+      .range(page * CALL_PAGE_SIZE, (page + 1) * CALL_PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const rows = (data ?? []) as CallRow[];
+    calls.push(...rows.map(mapCall));
+    if (rows.length < CALL_PAGE_SIZE) return { calls, truncated: false };
+  }
+  return { calls, truncated: true };
+}
+
 // ============================================================================
 // CUSTOMER PURGE — Recht auf Vergessenwerden (Art. 17 DSGVO)
 // ============================================================================

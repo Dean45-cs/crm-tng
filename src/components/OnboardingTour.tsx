@@ -30,6 +30,7 @@ import {
   Gauge,
 } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
+import { hotkeyLabel, resolveHotkey } from '../lib/hotkeys';
 import { useOnboarding } from '../store/useOnboarding';
 import { useRouter, type Route } from '../router';
 import { TngTile } from './TngLogo';
@@ -241,7 +242,7 @@ export function OnboardingTour() {
             <kbd className="onboarding-inline-kbd">K</kbd> durchsuchst du Kunden, Verträge,
             Tarifwechsel und Notizen gleichzeitig — und legst von dort auch Neues an.
           </p>
-          <Tip>Einmal ausprobiert, willst du nie wieder klicken: ⌘K ist der schnellste Weg.</Tip>
+          <Tip>Einmal ausprobiert, willst du nie wieder klicken: {hotkeyLabel(resolveHotkey('palette'))} ist der schnellste Weg.</Tip>
         </>
       ),
     },

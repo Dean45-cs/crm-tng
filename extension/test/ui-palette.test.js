@@ -71,10 +71,17 @@ async function run() {
   assert.strictEqual(env.getElementById(PALETTE_ID), null, "nach dem Öffnen schließt sich die Palette");
 
   // 5) Toggle: ⌘K öffnet, erneutes ⌘K schließt.
+  env.fireKeydown(key("k", { metaKey: true }));
+  assert.ok(env.getElementById(PALETTE_ID), "⌘K öffnet die Palette");
+  env.fireKeydown(key("k", { metaKey: true }));
+  assert.strictEqual(env.getElementById(PALETTE_ID), null, "zweites ⌘K schließt (Toggle)");
+
+  // 5b) Auf diesem System (Mac-Sandbox) ist „Mod" die Befehlstaste – und nur
+  // die. Strg+K gehört hier dem Betriebssystem (Zeile löschen im Textfeld);
+  // früher öffnete es die Palette gleich mit, was auf einem Mac ein Fehler war.
+  // Wer Strg+K trotzdem will, kann es jetzt in den Einstellungen belegen.
   env.fireKeydown(key("k", { ctrlKey: true }));
-  assert.ok(env.getElementById(PALETTE_ID), "Ctrl+K öffnet die Palette");
-  env.fireKeydown(key("k", { ctrlKey: true }));
-  assert.strictEqual(env.getElementById(PALETTE_ID), null, "zweites ⌘K/Ctrl+K schließt (Toggle)");
+  assert.strictEqual(env.getElementById(PALETTE_ID), null, "Strg+K ist auf dem Mac nicht das Panel-Kürzel");
 
   // 6) Escape schließt die offene Palette.
   env.fireKeydown(key("k", { metaKey: true }));

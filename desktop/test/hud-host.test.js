@@ -129,6 +129,12 @@ async function run() {
     fireInput(env, "hud-click-through", { checked: true });
     assert.strictEqual(JSON.stringify(commands.pop()), JSON.stringify({ name: "click-through", args: { enabled: true } }));
 
+    // Ohne Autostart ist die Auskunft nach jedem Neustart des Rechners weg –
+    // und ohne laufende App führt kein Weg aus Chrome zu ihr zurück.
+    assert.ok(html.includes("Beim Anmelden starten"), "Autostart steht in den Einstellungen");
+    fireInput(env, "hud-auto-start", { checked: true });
+    assert.strictEqual(JSON.stringify(commands.pop()), JSON.stringify({ name: "auto-start", args: { enabled: true } }));
+
     fireInput(env, "hud-opacity", { value: "70" });
     assert.strictEqual(JSON.stringify(commands.pop()), JSON.stringify({ name: "opacity", args: { value: 0.7 } }));
 
@@ -152,6 +158,33 @@ async function run() {
     assert.ok(!html.includes("hud-titlebar"), "keine eigene Titelleiste");
     assert.ok(!/data-hud="(hide|minimize|pin)"/.test(html), "keine Fensterknöpfe über der Auskunft");
     assert.ok(html.includes('data-role="hud-resize"'), "Anfasser für die Größe ist da");
+  }
+
+  // --- 7. Startbild: sichtbar ab dem ersten Bild ---------------------------
+  {
+    // Es muss im HTML stehen und darf nicht erst von JavaScript gebaut werden:
+    // gerade der Fall „Skript kommt nicht durch" ist der, für den es da ist.
+    const html = fs.readFileSync(path.join(__dirname, "..", "renderer", "index.html"), "utf8");
+    assert.ok(html.includes('data-role="hud-boot"'), "das Startbild steht im HTML");
+    assert.ok(html.includes('data-role="hud-boot-step"'), "es sagt, worauf gewartet wird");
+    assert.ok(html.includes('data-role="hud-boot-retry"'), "und bietet einen Ausweg, wenn der Start hängt");
+    assert.ok(html.indexOf('data-role="hud-boot"') < html.indexOf('<script src="boot.js">'),
+      "das Startbild steht vor den Skripten – sonst käme es zu spät");
+    // Der Weg zurück gehört auf das Startbild: es ist die einzige Ansicht, die
+    // jede Sitzung einmal zu sehen bekommt.
+    assert.ok(html.includes("Leertaste"), "die Tastenkombination steht dabei");
+  }
+
+  // --- 8. Wege zurück zur ausgeblendeten Auskunft --------------------------
+  {
+    const { env } = await mount();
+    env.click("toggle-settings");
+    const html = env.html();
+    // Ausgeblendet ist die Auskunft nur so wiederzufinden – und wer den Weg
+    // nicht kennt, hält sie für abgestürzt. Die Einstellungen müssen deshalb
+    // alle Wege nennen, nicht nur die Tastenkombination.
+    assert.ok(/Menü-\/Infoleiste/.test(html), "das Symbol in der Menü-/Infoleiste steht dabei");
+    assert.ok(/Erweiterung in Chrome/.test(html), "der Klick auf das Symbol der Erweiterung steht dabei");
   }
 
   console.log("hud-host.test.js: alle Szenarien bestanden.");

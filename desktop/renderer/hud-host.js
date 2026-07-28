@@ -29,31 +29,38 @@
       alwaysOnTop: true,
       opacity: 1,
       clickThrough: false,
-      toggleShortcut: "",
-      clickThroughShortcut: ""
+      autoStart: false,
+      packaged: true,
+      // Systemweite Tastenkürzel je id, plus die, die dieses Gerät nicht
+      // hergibt (schon von einem anderen Programm belegt).
+      hotkeys: {},
+      hotkeyErrors: {}
     }
   };
 
   // --- Darstellungshilfen ----------------------------------------------------
 
-  // "Command+Shift+Space" ist die Schreibweise von Electron, nicht die, die auf
-  // den Tasten steht.
-  function shortcutLabel(accelerator) {
-    if (!accelerator) return "";
-    // navigator.platform kann fehlen (Test-Umgebung) – dann eben die
-    // ausgeschriebenen Namen.
-    const mac = String((window.navigator && window.navigator.platform) || "").indexOf("Mac") === 0;
-    return accelerator
-      .split("+")
-      .map((part) => {
-        if (part === "Command") return "⌘";
-        if (part === "Control") return mac ? "⌃" : "Strg";
-        if (part === "Shift") return mac ? "⇧" : "Umschalt";
-        if (part === "Alt") return mac ? "⌥" : "Alt";
-        if (part === "Space") return mac ? "Leertaste" : "Leertaste";
-        return part;
-      })
-      .join(mac ? "" : "+");
+  // Beschriftung eines Kürzels ("Mod+Shift+Space" → "⌘⇧Leertaste"). Dieselbe
+  // Umsetzung wie im Panel – deshalb aus shared.js und nicht noch einmal hier.
+  function shortcutLabel(binding) {
+    return app.shared.hotkeyLabel(binding || "");
+  }
+
+  // Was systemweit gilt – gesetzt wird es im Hauptprozess, hier steht nur der
+  // zuletzt gemeldete Stand (siehe setOverlay).
+  function globalHotkey(id) {
+    return (state.overlay.hotkeys && state.overlay.hotkeys[id]) || "";
+  }
+
+  function globalHotkeyError(id) {
+    return (state.overlay.hotkeyErrors && state.overlay.hotkeyErrors[id]) || "";
+  }
+
+  // Das Panel hat ein neues Kürzel aufgenommen. Registrieren kann es nur der
+  // Hauptprozess; die Antwort kommt als frischer Overlay-Zustand zurück (dort
+  // steht dann auch, wenn die Taste schon belegt ist).
+  function setGlobalHotkey(id, binding) {
+    window.hud.command("set-hotkey", { id, binding });
   }
 
   function opacityPercent() {
@@ -70,7 +77,10 @@
 
   function headerActions() {
     const open = app.hudNotes && app.hudNotes.isOpen();
-    return `<button class="sc-icon-button ${open ? "is-active" : ""}" type="button" data-action="hud-notes" title="Notizen (⌘/Strg+N)" aria-label="Notizen">✎</button>`;
+    // Die Taste steht in den Einstellungen und ist änderbar – der Knopf darf
+    // deshalb keine feste behaupten.
+    const key = shortcutLabel(app.ui.hotkey("notes"));
+    return `<button class="sc-icon-button ${open ? "is-active" : ""}" type="button" data-action="hud-notes" title="Notizen${key ? ` (${escapeHtml(key)})` : ""}" aria-label="Notizen">✎</button>`;
   }
 
   function banner() {
@@ -89,8 +99,10 @@
 
   function settings() {
     const o = state.overlay;
-    const toggle = shortcutLabel(o.toggleShortcut);
-    const clickThrough = shortcutLabel(o.clickThroughShortcut);
+    // Beide Kürzel sind änderbar (Einstellungen → Tastenkürzel) – hier steht
+    // deshalb, was gerade gilt, nicht ein fest verdrahteter Text.
+    const toggle = shortcutLabel(globalHotkey("toggleOverlay"));
+    const clickThrough = shortcutLabel(globalHotkey("clickThrough"));
     return `
       <section class="sc-section">
         <div class="sc-section-title-row">
@@ -104,7 +116,13 @@
         </label>
         <label class="sc-check-label">
           <input type="checkbox" data-role="hud-click-through" ${o.clickThrough ? "checked" : ""}>
-          <span>Klicks durchreichen<small>Die Auskunft ist dann nur noch Anzeige, die Maus greift durch auf das Fenster darunter. Zurück geht es mit <strong>${escapeHtml(clickThrough)}</strong> oder über das Symbol in der Menü-/Infoleiste – im Panel selbst käme kein Klick mehr an.</small></span>
+          <span>Klicks durchreichen<small>Die Auskunft ist dann nur noch Anzeige, die Maus greift durch auf das Fenster darunter. Zurück geht es ${clickThrough ? `mit <strong>${escapeHtml(clickThrough)}</strong> oder ` : ""}über das Symbol in der Menü-/Infoleiste – im Panel selbst käme kein Klick mehr an.</small></span>
+        </label>
+        <label class="sc-check-label">
+          <input type="checkbox" data-role="hud-auto-start" ${o.autoStart ? "checked" : ""} ${o.packaged ? "" : "disabled"}>
+          <span>Beim Anmelden starten<small>${o.packaged
+            ? "Ab Werk an, und das aus gutem Grund: ausgeschaltet ist die Auskunft nach dem nächsten Neustart weg – sie hat kein Dock-Symbol, und aus Chrome heraus lässt sich ein nicht laufendes Programm nicht starten. Was hier steht, gilt; die App legt den Schalter nie wieder von selbst um."
+            : "Nur in der installierten App: aus dem Quellstand heraus trüge sich Electron selbst als Anmeldeobjekt ein."}</small></span>
         </label>
         <label class="sc-input-label">Deckkraft
           <input type="range" class="hud-range" data-role="hud-opacity" min="35" max="100" step="5" value="${opacityPercent()}" aria-label="Deckkraft">
@@ -114,7 +132,7 @@
           <button class="sc-secondary-button" type="button" data-action="hud-hide">Ausblenden${toggle ? ` (${escapeHtml(toggle)})` : ""}</button>
           <button class="sc-secondary-button sc-danger-button" type="button" data-action="hud-quit">Beenden</button>
         </div>
-        <p class="sc-input-hint">Ausgeblendet läuft die Auskunft weiter und meldet fällige Rückrufe; dieselbe Tastenkombination holt sie zurück. Beendet heißt: bis zum nächsten Start keine Anrufanzeige und keine Erinnerungen.</p>
+        <p class="sc-input-hint">Ausgeblendet läuft die Auskunft weiter und meldet fällige Rückrufe. Zurück holen sie: ${toggle ? `<strong>${escapeHtml(toggle)}</strong>, ` : ""}das Symbol in der Menü-/Infoleiste, ein Klick auf das Symbol der Erweiterung in Chrome oder die Sprechblase „Auskunft“ unten rechts im Jira-Tab. Beendet heißt: bis zum nächsten Start keine Anrufanzeige und keine Erinnerungen.</p>
         ${state.version ? `<p class="sc-input-hint hud-version">Stadtnetz CRM Copilot ${escapeHtml(state.version)}</p>` : ""}
       </section>`;
   }
@@ -151,6 +169,11 @@
       window.hud.command("click-through", { enabled: target.checked });
       return true;
     }
+    if (role === "hud-auto-start") {
+      state.overlay.autoStart = target.checked;
+      window.hud.command("auto-start", { enabled: target.checked });
+      return true;
+    }
     if (role === "hud-opacity") {
       state.overlay.opacity = (Number(target.value) || 100) / 100;
       window.hud.command("opacity", { value: state.overlay.opacity });
@@ -176,8 +199,11 @@
     if (!next || typeof next !== "object") return;
     const before = state.overlay;
     state.overlay = { ...before, ...next };
-    const changedBesidesOpacity = ["alwaysOnTop", "clickThrough", "toggleShortcut", "clickThroughShortcut"]
-      .some((key) => before[key] !== state.overlay[key]);
+    const changedBesidesOpacity = ["alwaysOnTop", "clickThrough", "autoStart", "packaged"]
+      .some((key) => before[key] !== state.overlay[key])
+      // Kürzel kommen als Objekt – da zählt der Inhalt, nicht die Kennung.
+      || JSON.stringify(before.hotkeys) !== JSON.stringify(state.overlay.hotkeys)
+      || JSON.stringify(before.hotkeyErrors) !== JSON.stringify(state.overlay.hotkeyErrors);
     if (changedBesidesOpacity) app.ui.rerender();
     else syncOpacityLabel();
   }
@@ -204,6 +230,14 @@
     setOverlay,
     setConnected,
     setVersion,
-    isConnected: () => state.connected
+    isConnected: () => state.connected,
+    // Auch das Startbild nennt die Tastenkombination – und zwar in derselben
+    // Schreibweise wie die Einstellungen (boot.js).
+    shortcutLabel,
+    // Systemweite Tastenkürzel: ui.js zeigt sie in den Einstellungen an und
+    // reicht Änderungen hierüber an den Hauptprozess weiter.
+    globalHotkey,
+    globalHotkeyError,
+    setGlobalHotkey
   };
 })();

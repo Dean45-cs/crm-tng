@@ -10,6 +10,7 @@ export type Route =
   | { name: 'leaderboard' }
   | { name: 'settings' }
   | { name: 'report' }
+  | { name: 'reports' }
   | { name: 'teamdashboard' }
   | { name: 'teammanager' }
   | { name: 'teamreport' }

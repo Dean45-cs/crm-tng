@@ -51,6 +51,7 @@ Genau darauf ist der Modus zugeschnitten.
 
 Ein Anruf, der ohne Klingel-Phase direkt verbunden ist, stammt typischerweise aus timios Anrufliste. Das Cockpit bietet dann einen dezenten Hinweis „Wirkt ausgehend – umschalten?" an. Das ist ein **Indiz, keine Automatik** – umgeschaltet wird nur auf deinen Klick.
 
+- **Befehlspalette (`Cmd/Strg + K`)** – Schnellsuche über Kunden, Verträge und Notizen, im Jira-Panel wie im timio-Cockpit. Wie alle Tastenkürzel änderbar unter ⚙ → „Tastenkürzel".
 - **Kundennummer → Ticket in einem Klick** – der eigentliche Engpass. Die Extension kann Jira nicht durchsuchen (sie liest nur die sichtbare Seite), aber sie kann eine Suche als Link öffnen: ein Klick auf „Ticket zu Kundennummer … suchen" öffnet die Jira-Trefferliste in einem neuen Tab. Voreingestellt ist eine Volltextsuche; kennst du den JQL-Feldnamen deines Kundenfelds, hinterlege in den Einstellungen eine treffsicherere Vorlage (z. B. `"Oikonomikos-ID" ~ "{q}"`). Hilft eingehend genauso.
 - **KI-Gesprächsvorbereitung** – aus dem Ticket entstehen Anrufziel, 2–3 Gesprächspunkte, die offenen Fragen und die zu erwartenden Einwände mit Antwort. Läuft im Outbound-Modus **automatisch im Voraus** und wird pro Ticket gecacht, ist also fertig, bevor timio wählt – nach dem Verbinden bleibt dafür keine Zeit. Ziel und Punkte erscheinen auch im Cockpit **auf der timio-Seite**, wo du während des Gesprächs hinsiehst.
 - **Outbound-Leitfaden & Einwandkarten** – Eigenvorstellung und Anlass, Erlaubnis/Zeit abholen, Sachstand, Ziel klären, Ergebnis bestätigen. Dazu die Einwände, die es nur ausgehend gibt („Ich habe gerade keine Zeit", „Woher haben Sie meine Nummer?").
@@ -81,7 +82,7 @@ Läuft ihr über **timio** (`ccc.my-phone.cloud`), erkennt ein zweites, separate
 Ein Hintergrund-Service-Worker (`src/background.js`) zeigt die Zahl der Anrufer im Wartefeld direkt als **Badge auf dem Extension-Icon** in der Chrome-Symbolleiste – sichtbar in **jedem** Tab, egal ob gerade Jira, timio oder etwas ganz anderes offen ist, und ohne dass ein timio-Tab im Vordergrund sein muss. Damit kannst du z. B. den timio-**Portal**-Tab im Hintergrund offen lassen (liefert die Zahlen) und in einem zweiten timio-Tab wirklich telefonieren – die Warteschlange bleibt trotzdem überall im Blick.
 
 - **Farbe** signalisiert den Zustand: rot = es warten Anrufer, grün = Wartefeld frei, grau = Daten veraltet (kein Portal-Tab offen). Der **Tooltip** (Maus übers Icon) listet die Zahl pro Gruppe und – falls gerade telefoniert wird – den aktiven Anruf auf.
-- **Klick aufs Icon** springt zum offenen timio-Tab (oder öffnet timio, falls keiner offen ist) – erspart das Suchen des Tabs.
+- **Klick aufs Icon** springt zum offenen timio-Tab (oder öffnet timio, falls keiner offen ist) – erspart das Suchen des Tabs. Läuft die Desktop-App, holt derselbe Klick stattdessen deren Auskunft nach vorn: dort steckt dann das Cockpit, und ausgeblendet wäre es aus Chrome heraus sonst nicht erreichbar. Was gerade gilt, steht im Tooltip.
 - **Optionale Desktop-Benachrichtigung**, sobald aus einem leeren Wartefeld ein Anruf zu warten beginnt – so musst du das Wartefeld gar nicht mehr aktiv beobachten. Standardmäßig an, in den Einstellungen (⚙) abschaltbar. Es wird bewusst nur bei der steigenden Flanke „niemand → jemand wartet" gemeldet, nicht bei jedem weiteren Anrufer, und nicht beim Browserstart.
 
 > Tipp: Das Icon ggf. in Chrome anpinnen (Puzzle-Symbol → Stecknadel), damit das Badge dauerhaft sichtbar ist. Falls Chrome den Portal-Tab im Energiesparmodus „entlädt", pausiert dessen Datenlieferung, bis er wieder aktiv ist – das Badge wird dann grau (veraltet). Für einen dauerhaft offenen Portal-Tab ggf. unter `chrome://settings/performance` vom Energiesparmodus ausnehmen.
@@ -151,6 +152,8 @@ Falls sich die Jira-Domain ändert, in `manifest.json` den Eintrag unter `conten
 Dasselbe Cockpit gibt es auch als eigenes Fenster, das immer im Vordergrund bleibt – unabhängig davon, welcher Tab gerade offen ist, und mit Notizen als zusätzlicher Funktion. Siehe [`desktop/`](../desktop/README.md).
 
 Die Extension bleibt dabei bestehen: sie liefert weiterhin den Vorgang und die lokale KI, denn beides gibt es nur in Chrome. Läuft die App, baut die Extension ihr Panel in der Jira-Seite nicht zusätzlich auf (`src/hud-agent.js`, `src/hud-bridge.js`) – sonst liefen beide Fassungen parallel.
+
+An die Stelle des Panels tritt dann unten rechts die Sprechblase **„Auskunft"**: ein Klick holt das Overlay der App nach vorn (ebenso der Klick aufs Symbolleisten-Icon). Die App hat kein Dock-Symbol und keine Titelleiste – ohne diesen Weg käme man aus Chrome heraus an eine ausgeblendete Auskunft nicht mehr heran.
 
 ## Voraussetzungen für die lokale KI
 

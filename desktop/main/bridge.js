@@ -16,7 +16,12 @@ const IN = {
   TICKET: "ticket",
   AI_RESULT: "ai-result",
   AI_CHUNK: "ai-chunk",
-  AI_DOWNLOAD: "ai-download"
+  AI_DOWNLOAD: "ai-download",
+  // Der einzige Auftrag, den Chrome der App erteilt: „hol dich nach vorn".
+  // Läuft die App, baut der Jira-Tab sein eigenes Panel ab (hud-agent.js) –
+  // ohne diesen Weg gäbe es aus Chrome heraus keine Möglichkeit mehr, an die
+  // Auskunft zu kommen, wenn sie gerade ausgeblendet ist.
+  SHOW: "show"
 };
 
 // Nachrichten HUD → Extension
@@ -30,9 +35,10 @@ const OUT = {
 };
 
 class Bridge {
-  constructor({ store, port, onStatus, log }) {
+  constructor({ store, port, onStatus, onShow, log }) {
     this.store = store;
     this.onStatus = onStatus || (() => {});
+    this.onShow = onShow || (() => {});
     this.log = typeof log === "function" ? log : () => {};
     this.window = null;
 
@@ -152,6 +158,13 @@ class Bridge {
       case IN.AI_CHUNK:
       case IN.AI_DOWNLOAD:
         this.toRenderer("hud:ai", message);
+        return;
+
+      // Angefordert wird das aus Chrome (Klick auf das Symbol der Erweiterung
+      // oder auf die Sprechblase im Jira-Tab). Was „nach vorn holen" genau
+      // bedeutet, entscheidet main.js – hier wird nur weitergereicht.
+      case IN.SHOW:
+        this.onShow();
         return;
 
       default:

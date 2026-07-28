@@ -791,6 +791,36 @@
 
 #stadtnetzcrm-root .sc-theme-preset:hover { color: var(--sc-ink); }
 
+#stadtnetzcrm-root .sc-theme-preset:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Statuszeile der CRM-Farbübernahme (opt-in, siehe src/theme.js). */
+#stadtnetzcrm-root .sc-theme-sync {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 6px 0 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--sc-line);
+  border-radius: 7px;
+  background: var(--sc-soft);
+}
+
+#stadtnetzcrm-root .sc-theme-sync-status {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--sc-muted);
+}
+
+#stadtnetzcrm-root .sc-theme-colors input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 #stadtnetzcrm-root .sc-theme-preset.is-active {
   background: var(--sc-surface);
   color: var(--sc-blue);
@@ -2346,4 +2376,131 @@
   color: var(--sc-ink);
   font-size: 13px;
   white-space: pre-line;
+}
+
+/* --- Sprechblase „Auskunft einblenden" -------------------------------------
+ *
+ * Sichtbar nur, solange die Desktop-App läuft. Dann baut sich das Panel in
+ * dieser Seite ab (siehe hud-agent.js) und das Cockpit liegt als Overlay auf
+ * dem Schreibtisch – ausgeblendet wäre es von hier aus sonst nur noch über die
+ * systemweite Tastenkombination erreichbar.
+ *
+ * Steht bewusst außerhalb von #stadtnetzcrm-root: dieses Element gibt es auch
+ * dann, wenn es kein Panel gibt. Alles Erbbare wird deshalb ausgeschrieben,
+ * sonst schlüge Jiras eigenes Schriftbild durch.
+ */
+
+#stadtnetzcrm-hud-launcher {
+  position: fixed;
+  z-index: 10000;
+  right: 16px;
+  bottom: 20px;
+  display: inline-flex;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 10px 11px;
+  border: 1px solid #172b4d;
+  border-radius: 999px;
+  background: #253858;
+  box-shadow: 0 5px 16px rgba(9, 30, 66, 0.3);
+  color: #fff;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  transform: translateY(0);
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+/* Dunkler als der gewohnte blaue Knopf und mit eigenem Zeichen: er führt nicht
+   ins Panel, sondern aus der Seite heraus auf den Schreibtisch. */
+#stadtnetzcrm-hud-launcher > span:first-child {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+#stadtnetzcrm-hud-launcher:hover {
+  background: #344563;
+  transform: translateY(-1px);
+}
+
+#stadtnetzcrm-hud-launcher:focus-visible {
+  outline: 2px solid #0c66e4;
+  outline-offset: 2px;
+}
+
+/* --- Tastenkürzel in den Einstellungen ------------------------------------ */
+
+#stadtnetzcrm-root .sc-hotkey-row {
+  display: grid;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--sc-line);
+  gap: 10px;
+  grid-template-columns: 1fr auto auto;
+}
+
+#stadtnetzcrm-root .sc-hotkey-row:first-of-type { border-top: none; }
+
+#stadtnetzcrm-root .sc-hotkey-text strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-hotkey-text small {
+  display: block;
+  color: var(--sc-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+#stadtnetzcrm-root .sc-hotkey-error { color: var(--sc-danger); }
+
+/* Sieht aus wie eine Taste, ist aber ein Knopf: anklicken und drücken. */
+#stadtnetzcrm-root .sc-hotkey-key {
+  min-width: 74px;
+  padding: 5px 10px;
+  border: 1px solid var(--sc-line);
+  border-radius: 7px;
+  background: var(--sc-soft);
+  color: var(--sc-ink);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: center;
+  white-space: nowrap;
+}
+
+#stadtnetzcrm-root .sc-hotkey-key:hover { border-color: var(--sc-blue); }
+
+#stadtnetzcrm-root .sc-hotkey-key.is-capturing {
+  border-color: var(--sc-blue);
+  background: var(--sc-blue);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Abgeschaltet: sichtbar anders als „belegt", sonst hält man „aus" für eine Taste. */
+#stadtnetzcrm-root .sc-hotkey-key.is-off {
+  border-style: dashed;
+  color: var(--sc-muted);
+  font-weight: 500;
+}
+
+#stadtnetzcrm-root .sc-hotkey-reset {
+  font-size: 13px;
+  line-height: 1;
+}
+
+#stadtnetzcrm-root .sc-hotkey-reset:disabled {
+  cursor: default;
+  opacity: 0.35;
 }

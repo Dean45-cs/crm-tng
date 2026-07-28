@@ -143,8 +143,30 @@ try {
       if (chrome.action.setBadgeTextColor) {
         try { chrome.action.setBadgeTextColor({ color: "#FFFFFF" }); } catch (error) { /* ältere Chrome-Version */ }
       }
-      chrome.action.setTitle({ title: badge.title || "Stadtnetz CRM Outbound" });
+      chrome.action.setTitle({ title: [badge.title || "Stadtnetz CRM Outbound", clickHint()].join("\n\n") });
     } catch (error) { /* Worker beendet */ }
+  }
+
+  // --- Klick auf das Symbol -------------------------------------------------
+
+  // Läuft die Desktop-App, ist sie das Cockpit: das Panel im Jira-Tab baut sich
+  // dafür ab (siehe hud-agent.js). Dann führt der Klick auf das Symbol dorthin –
+  // sonst wäre eine ausgeblendete Auskunft aus Chrome heraus gar nicht mehr
+  // erreichbar, sondern nur über die systemweite Tastenkombination und das
+  // Symbol in der Menü-/Infoleiste. Ohne App bleibt es beim timio-Tab.
+  function hudRunning() {
+    return Boolean(app.hudBridge && app.hudBridge.connected());
+  }
+
+  function clickHint() {
+    return hudRunning() ? "Klick: Auskunft einblenden" : "Klick: timio öffnen";
+  }
+
+  function onActionClicked() {
+    // showHud() meldet false, wenn die Verbindung zwischen Prüfen und Senden
+    // weggebrochen ist – dann lieber timio öffnen als gar nichts zu tun.
+    if (hudRunning() && app.hudBridge.showHud()) return;
+    focusTimio();
   }
 
   function fireCallbackNotification(item) {
@@ -241,7 +263,7 @@ try {
   }
 
   if (chrome.action && chrome.action.onClicked) {
-    chrome.action.onClicked.addListener(() => { focusTimio(); });
+    chrome.action.onClicked.addListener(() => { onActionClicked(); });
   }
   if (chrome.notifications && chrome.notifications.onClicked) {
     chrome.notifications.onClicked.addListener((id) => {
