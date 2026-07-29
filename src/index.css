@@ -246,6 +246,33 @@ code {
   padding: 14px 12px 4px;
 }
 
+.sidebar-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.sidebar-section-toggle:hover { color: var(--text-secondary); }
+
+.sidebar-chevron,
+.sidebar-section-toggle svg {
+  transition: transform var(--dur-2) var(--ease-out);
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.sidebar-chevron.sidebar-chevron-open,
+.sidebar-section-toggle svg.sidebar-chevron-open {
+  transform: rotate(90deg);
+}
+
+.sidebar-item-more .sidebar-chevron {
+  margin-left: auto;
+}
+
 .sidebar-item {
   display: flex;
   align-items: center;
