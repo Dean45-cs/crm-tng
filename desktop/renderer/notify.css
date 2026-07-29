@@ -1,0 +1,176 @@
+/* Aussehen der Mitteilungen.
+ *
+ * Vorbild ist das Banner der Mitteilungszentrale: eine Materialfläche mit
+ * kräftiger Rundung, links das App-Symbol, daneben fetter Titel und zwei
+ * Zeilen Text, rechts oben die Zeit, beim Überfahren ein Schließen-Kreis in
+ * der oberen linken Ecke.
+ *
+ * Weil das hier HTML ist und keine System-Meldung, sieht es unter Windows
+ * genauso aus wie auf dem Mac — das war der Zweck der Übung (siehe
+ * main/notifications.js).
+ *
+ * Immer dunkles Glas, wie das übrige Overlay (hud.css): eine Mitteilung legt
+ * sich über beliebige fremde Fenster, und eine helle Fläche wäre über einem
+ * dunklen Schreibtisch ein Scheinwerfer.
+ */
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* Der Bereich zwischen den Bannern ist Schreibtisch, kein Fenster: Klicks
+     dort gehören dem, was darunter liegt. Die Banner holen sich die Zeiger-
+     Ereignisse einzeln zurück. */
+  cursor: default;
+  user-select: none;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 1px;
+}
+
+.banner {
+  position: relative;
+  border-radius: 17px;
+  background: rgba(38, 41, 49, 0.82);
+  /* Unschärfe plus Sättigung: ohne saturate() wirkt die Fläche grau statt
+     milchig — derselbe Kniff wie im Web-Banner. */
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 14px 38px rgba(0, 0, 0, 0.5),
+    0 3px 10px rgba(0, 0, 0, 0.32),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.14);
+  color: #f0f2f6;
+  animation: banner-in 0.42s cubic-bezier(0.3, 0.7, 0.35, 1) both;
+}
+
+@keyframes banner-in {
+  from { opacity: 0; transform: translateX(24px) scale(0.96); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+.banner.is-leaving {
+  animation: banner-out 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes banner-out {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to   { opacity: 0; transform: translateX(20px) scale(0.97); }
+}
+
+.banner-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 13px 14px;
+  background: none;
+  border: none;
+  border-radius: inherit;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.banner-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #2f7fd4, #1f5fa8);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.banner-icon svg { display: block; }
+
+/* Der Farbton sitzt am Symbol, nicht auf der Fläche — sonst wird aus einer
+   Mitteilung ein Warnschild. */
+.banner.tone-success .banner-icon { background: linear-gradient(180deg, #34c759, #23a047); }
+.banner.tone-warn .banner-icon { background: linear-gradient(180deg, #ff9f0a, #e07d00); }
+.banner.tone-danger .banner-icon { background: linear-gradient(180deg, #ff453a, #d92e24); }
+
+.banner-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.banner-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.banner-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.banner-time {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.banner-msg {
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.72);
+  /* Zwei Zeilen wie im Original; alles Weitere steht im Postfach im CRM. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Schließen sitzt in der oberen linken Ecke und erscheint erst beim
+   Überfahren — im Ruhezustand zeigt das Banner nichts als seinen Inhalt. */
+.banner-close {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 0.5px solid rgba(255, 255, 255, 0.16);
+  background: rgba(72, 76, 84, 0.98);
+  color: #e9ebef;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.banner:hover .banner-close,
+.banner-close:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner,
+  .banner.is-leaving { animation: none; }
+}

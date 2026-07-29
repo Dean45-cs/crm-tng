@@ -8,6 +8,8 @@ import { CommandPalette } from './components/CommandPalette';
 import { CustomerSearchBar } from './components/CustomerSearchBar';
 import { StatusBar } from './components/StatusBar';
 import { LiveCallBar } from './components/LiveCallBar';
+import { NotificationBell } from './components/NotificationBell';
+import { PushBannerHost } from './components/PushBanner';
 import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
 import { SupabaseSetup } from './components/SupabaseSetup';
@@ -21,6 +23,8 @@ import { useStatus } from './store/useStatus';
 import { useCalls } from './store/useCalls';
 import { useShifts } from './store/useShifts';
 import { useMonthCalls } from './store/useMonthCalls';
+import { useNotifications } from './store/useNotifications';
+import { useSwaps } from './store/useSwaps';
 import { subscribeAppearance } from './lib/appearanceSync';
 import { isConfigured, onConfigChange } from './lib/supabase';
 
@@ -48,6 +52,7 @@ const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m
 const NettoRechner = lazy(() => import('./pages/NettoRechner').then((m) => ({ default: m.NettoRechner })));
 const Schedule = lazy(() => import('./pages/Schedule').then((m) => ({ default: m.Schedule })));
 const CampaignManager = lazy(() => import('./pages/CampaignManager').then((m) => ({ default: m.CampaignManager })));
+const Postfach = lazy(() => import('./pages/Postfach').then((m) => ({ default: m.Postfach })));
 
 const TITLES: Record<RouteName, string> = {
   dashboard: 'Dashboard',
@@ -71,6 +76,7 @@ const TITLES: Record<RouteName, string> = {
   netto: 'Netto-Rechner',
   schedule: 'Schichtplan',
   campaignmanager: 'Kampagnen-Verwaltung',
+  postfach: 'Postfach',
 };
 
 function PageFallback() {
@@ -113,6 +119,7 @@ function prefetchAllPages() {
       import('./pages/NettoRechner'),
       import('./pages/Schedule'),
       import('./pages/CampaignManager'),
+      import('./pages/Postfach'),
     ]);
   });
 }
@@ -153,6 +160,7 @@ function Shell() {
           <div className="row" style={{ gap: 14, alignItems: 'center' }}>
             <CustomerSearchBar />
             <LiveCallBar />
+            <NotificationBell />
             <StatusBar />
             <span className="muted titlebar-date">
               {new Date().toLocaleDateString('de-DE', {
@@ -186,6 +194,7 @@ function Shell() {
               {route.name === 'netto' && <NettoRechner />}
               {route.name === 'schedule' && <Schedule />}
               {route.name === 'campaignmanager' && <CampaignManager />}
+              {route.name === 'postfach' && <Postfach />}
             </Suspense>
           </div>
         </div>
@@ -284,6 +293,17 @@ export default function App() {
   const subscribeMonthCalls = useMonthCalls((s) => s.subscribeRealtime);
   const resetMonthCalls = useMonthCalls((s) => s.reset);
 
+  // Postfach: beim Login laden und live halten — die Glocke muss auch dann
+  // zählen, wenn die Postfach-Seite nie geöffnet wird. Offene Tauschanfragen
+  // hängen mit dran, weil die Meldungen dazu Knöpfe tragen.
+  const loadNotifications = useNotifications((s) => s.load);
+  const subscribeNotifications = useNotifications((s) => s.subscribeRealtime);
+  const resetNotifications = useNotifications((s) => s.reset);
+
+  const loadSwaps = useSwaps((s) => s.load);
+  const subscribeSwaps = useSwaps((s) => s.subscribeRealtime);
+  const resetSwaps = useSwaps((s) => s.reset);
+
   const [configured, setConfigured] = useState(isConfigured());
 
   // Tour-Steuerung: „." + „o" gleichzeitig öffnet die Einführungstour erneut
@@ -305,6 +325,8 @@ export default function App() {
       resetCalls();
       resetShifts();
       resetMonthCalls();
+      resetNotifications();
+      resetSwaps();
       return;
     }
     loadAll();
@@ -312,11 +334,15 @@ export default function App() {
     loadCalls();
     loadMonthCalls();
     loadShiftContext(currentUserKey);
+    loadNotifications();
+    loadSwaps();
     const unsub = subscribeRealtime();
     const unsubStatus = subscribeStatus();
     const unsubCalls = subscribeCalls();
     const unsubShifts = subscribeShifts();
     const unsubMonthCalls = subscribeMonthCalls();
+    const unsubNotifications = subscribeNotifications();
+    const unsubSwaps = subscribeSwaps();
     // Optik (Theme/Palette) surface-übergreifend: Pull + Seed + Realtime auf die
     // eigene user_settings-Zeile. localStorage bleibt der Sofort-Cache.
     const unsubAppearance = subscribeAppearance(currentUserKey);
@@ -326,6 +352,8 @@ export default function App() {
       unsubCalls();
       unsubShifts();
       unsubMonthCalls();
+      unsubNotifications();
+      unsubSwaps();
       unsubAppearance();
     };
   }, [
@@ -346,6 +374,12 @@ export default function App() {
     loadMonthCalls,
     subscribeMonthCalls,
     resetMonthCalls,
+    loadNotifications,
+    subscribeNotifications,
+    resetNotifications,
+    loadSwaps,
+    subscribeSwaps,
+    resetSwaps,
   ]);
 
   useEffect(() => onConfigChange(() => setConfigured(isConfigured())), []);
@@ -383,6 +417,7 @@ export default function App() {
         {showTour && <OnboardingTour />}
         <CommandPalette />
         <ToastHost />
+        <PushBannerHost />
       </QuickAddProvider>
     </Router>
   );

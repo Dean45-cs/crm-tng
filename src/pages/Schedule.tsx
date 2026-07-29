@@ -9,16 +9,21 @@ import {
   Ban,
   Eraser,
   MousePointerClick,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
 import { useStore } from '../store/useStore';
 import { useShifts } from '../store/useShifts';
+import { useSwaps, swapForCell } from '../store/useSwaps';
+import { notify } from '../store/useNotifications';
 import { fetchShiftsForWeek, upsertShift, deleteShiftRow } from '../lib/supabaseApi';
 import { weekStart, weekLabel, formatDateObj, parseLocalDate } from '../lib/utils';
+import { shortDay, shiftLabel, swapSummary, SWAP_STATUS_LABEL } from '../lib/notifications';
 import { toast } from '../store/useToast';
 import { SkeletonTable } from '../components/Skeleton';
 import { Modal } from '../components/Modal';
-import type { Shift, ShiftType } from '../types';
+import { SwapActions } from '../components/SwapActions';
+import type { Shift, ShiftType, ShiftSwapRequest } from '../types';
 
 const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
@@ -86,12 +91,24 @@ interface CellOp {
  * bearbeiten. Bearbeiten geht auf zwei Wegen: „malen" (Werkzeug wählen, Zellen
  * anklicken — auch ganze Zeilen/Spalten über die Kopfzellen) für schnelles
  * Verteilen, und das Detail-Formular pro Zelle für die Feinarbeit.
+ *
+ * Der Plan bleibt Chef-Sache, der Anstoß kommt aber aus dem Team: über
+ * „Schicht tauschen" fragt eine Person eine andere, und erst die Bestätigung
+ * durch den Chef verschiebt tatsächlich etwas (Migration 023). Zellen, für die
+ * gerade eine Anfrage läuft, sind markiert — sonst verplant der Chef eine
+ * Schicht, über die zwei Leute schon verhandeln.
  */
 export function Schedule() {
   const { isManager, getCurrentUser } = useAuth();
   const users = useAuth((s) => s.users);
   const { campaigns } = useStore();
   const manager = isManager();
+
+  const swaps = useSwaps((s) => s.requests);
+  const loadSwaps = useSwaps((s) => s.load);
+  const [swapOpen, setSwapOpen] = useState(false);
+  /** Vorbelegter eigener Tag, wenn der Dialog aus einer Zelle heraus aufgeht. */
+  const [swapSeed, setSwapSeed] = useState<string | null>(null);
 
   // Schichten der aktuell angezeigten Woche kommen aus dem geteilten Store, der
   // per Realtime live bleibt (crm-tng-shifts). Passt der geladene Wochenschlüssel
@@ -120,6 +137,12 @@ export function Schedule() {
   useEffect(() => {
     loadWeek(weekStartKey, weekEndKey);
   }, [weekStartKey, weekEndKey, loadWeek]);
+
+  // Offene Tauschanfragen sind nicht wochen-scoped (sie können über die
+  // Wochengrenze gehen) — einmal laden reicht, live bleibt der Store selbst.
+  useEffect(() => {
+    loadSwaps();
+  }, [loadSwaps]);
 
   // Nur die Daten der aktuell angezeigten Woche gelten; nach einem Wochenwechsel
   // ist das noch null, bis der neue Fetch zurück ist → Skeleton.
@@ -204,6 +227,7 @@ export function Schedule() {
         }),
       );
       await reload();
+      notifyAffected(ops);
     } catch {
       toast.error('Speichern fehlgeschlagen – Plan neu geladen.');
       await reload().catch(() => {});
@@ -213,16 +237,52 @@ export function Schedule() {
     }
   }
 
+  /**
+   * Wer von einer Änderung betroffen ist, erfährt davon — sonst müsste jede:r
+   * den Plan im Auge behalten. Eine Meldung je Person, nicht je Zelle: beim
+   * Füllen einer ganzen Zeile wären das sonst sieben Meldungen für dieselbe
+   * Sache. `notify` lässt den Auslöser selbst aus.
+   */
+  function notifyAffected(ops: CellOp[]) {
+    const byUser = new Map<string, CellOp[]>();
+    for (const op of ops) {
+      const list = byUser.get(op.userId);
+      if (list) list.push(op);
+      else byUser.set(op.userId, [op]);
+    }
+    const kw = weekLabel(refDate);
+    for (const [userId, list] of byUser) {
+      const body =
+        list.length === 1
+          ? `${shortDay(list[0].dateKey)}: ${list[0].clear ? 'Schicht entfernt' : shiftLabel(list[0].shiftType)}`
+          : `${list.length} Tage in ${kw} geändert.`;
+      void notify([userId], {
+        kind: 'shift-changed',
+        title: `Dein Schichtplan (${kw}) wurde geändert`,
+        body,
+        link: { route: 'schedule' },
+      });
+    }
+  }
+
   const paintOp = (userId: string, dateKey: string): CellOp =>
     tool === 'clear'
       ? { userId, dateKey, clear: true }
       : { userId, dateKey, shiftType: tool as ShiftType, campaignId: tool === 'frei' ? '' : paintCampaignId };
 
   // Klick auf eine Zelle: im „malen"-Modus direkt setzen/löschen, sonst das
-  // Detail-Formular öffnen.
+  // Detail-Formular öffnen. Ohne Chef-Rechte ist die eigene Zeile trotzdem
+  // anklickbar — dort führt der Klick in den Tausch-Dialog, denn das ist die
+  // einzige Einflussmöglichkeit, die Agent:innen auf den Plan haben.
   const onCellClick = (u: { key: string; displayName: string }, day: Date) => {
-    if (!manager || busy) return;
     const dateKey = toDateKey(day);
+    if (!manager) {
+      if (u.key !== currentUser?.key) return;
+      setSwapSeed(dateKey);
+      setSwapOpen(true);
+      return;
+    }
+    if (busy) return;
     if (tool === 'edit') {
       setEditTarget({
         userId: u.key,
@@ -333,6 +393,28 @@ export function Schedule() {
   const TOOLS: Tool[] = ['edit', 'frueh', 'spaet', 'frei', 'clear'];
   const toolLabel = (t: Tool) => (t === 'edit' ? 'Bearbeiten' : t === 'clear' ? 'Leeren' : SHIFT_LABEL[t]);
 
+  // Tauschanfragen, die mich betreffen: als Beteiligte:r immer, als Chef alle,
+  // die auf Bestätigung warten. Sie stehen oben auf der Seite, damit niemand
+  // erst ins Postfach wechseln muss, um zu antworten.
+  const myOpenSwaps = useMemo(
+    () =>
+      swaps.filter(
+        (r) =>
+          r.requesterId === currentUser?.key ||
+          r.partnerId === currentUser?.key ||
+          (manager && r.status === 'accepted'),
+      ),
+    [swaps, currentUser?.key, manager],
+  );
+
+  /** Habe ich in der angezeigten Woche überhaupt etwas anzubieten? */
+  const iHaveShiftsThisWeek = (shifts ?? []).some((s) => s.userId === currentUser?.key);
+
+  const openSwapDialog = (seed?: string) => {
+    setSwapSeed(seed ?? null);
+    setSwapOpen(true);
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -341,10 +423,22 @@ export function Schedule() {
           <p>
             {manager
               ? 'Werkzeug wählen und Zellen anklicken — auch ganze Zeilen (Person) oder Spalten (Tag). Für Details ein Klick im Modus „Bearbeiten".'
-              : 'Der vollständige Wochenplan des Teams — nur Chefs können ihn bearbeiten.'}
+              : 'Der vollständige Wochenplan des Teams. Bearbeiten können ihn nur Chefs — deine eigenen Schichten kannst du zum Tausch anbieten.'}
           </p>
         </div>
         <div className="row" style={{ gap: 8 }}>
+          <button
+            className="btn btn-sm"
+            onClick={() => openSwapDialog()}
+            disabled={!iHaveShiftsThisWeek}
+            title={
+              iHaveShiftsThisWeek
+                ? 'Eine eigene Schicht einer Kolleg:in zum Tausch anbieten'
+                : 'In dieser Woche hast du keine Schicht, die du anbieten könntest.'
+            }
+          >
+            <ArrowLeftRight size={13} /> Schicht tauschen
+          </button>
           <button className="btn btn-sm" onClick={() => setRefDate(weekStart(new Date(refDate.getTime() - 7 * 86400000)))} aria-label="Vorherige Woche">
             <ChevronLeft size={14} />
           </button>
@@ -355,6 +449,31 @@ export function Schedule() {
           <button className="btn btn-sm" onClick={() => setRefDate(weekStart())}>Heute</button>
         </div>
       </div>
+
+      {myOpenSwaps.length > 0 && (
+        <div className="widget swap-panel">
+          <div className="swap-panel-head">
+            <ArrowLeftRight size={14} />
+            <strong>Offene Tauschanfragen</strong>
+            <span className="muted">{myOpenSwaps.length}</span>
+          </div>
+          {myOpenSwaps.map((r) => (
+            <div key={r.id} className="swap-panel-row">
+              <div className="swap-panel-text">
+                <span className="swap-panel-people">
+                  {users[r.requesterId]?.displayName ?? 'Unbekannt'}
+                  {' ↔ '}
+                  {users[r.partnerId]?.displayName ?? 'Unbekannt'}
+                </span>
+                <span className="swap-panel-detail">
+                  {swapSummary(r)} · {SWAP_STATUS_LABEL[r.status]}
+                </span>
+              </div>
+              <SwapActions swap={r} myId={currentUser?.key ?? ''} manager={manager} />
+            </div>
+          ))}
+        </div>
+      )}
 
       {manager && (
         <div className="schedule-toolbar">
@@ -442,6 +561,10 @@ export function Schedule() {
                       const dateKey = toDateKey(d);
                       const s = shiftFor(u.key, dateKey);
                       const weekend = i >= 5;
+                      const pendingSwap = swapForCell(swaps, u.key, dateKey);
+                      // Eigene Zeile ohne Chef-Rechte: klickbar, führt in den
+                      // Tausch-Dialog. Fremde Zeilen bleiben es nicht.
+                      const swappable = !manager && u.key === currentUser?.key;
                       return (
                         <td
                           key={dateKey}
@@ -449,9 +572,16 @@ export function Schedule() {
                         >
                           <button
                             type="button"
-                            className={`shift-cell ${manager ? 'editable' : ''} ${manager && tool !== 'edit' ? 'paintable' : ''}`}
+                            className={`shift-cell ${manager ? 'editable' : ''} ${manager && tool !== 'edit' ? 'paintable' : ''} ${swappable ? 'swappable' : ''} ${pendingSwap ? 'has-swap' : ''}`}
                             onClick={() => onCellClick(u, d)}
-                            disabled={!manager || busy}
+                            disabled={manager ? busy : !swappable}
+                            title={
+                              pendingSwap
+                                ? `Tauschanfrage läuft — ${SWAP_STATUS_LABEL[pendingSwap.status]}`
+                                : swappable
+                                  ? 'Diese Schicht zum Tausch anbieten'
+                                  : undefined
+                            }
                           >
                             {s ? (
                               <>
@@ -464,7 +594,12 @@ export function Schedule() {
                                 )}
                               </>
                             ) : (
-                              <span className="shift-empty">+</span>
+                              <span className="shift-empty">{swappable ? '' : '+'}</span>
+                            )}
+                            {pendingSwap && (
+                              <span className="shift-swap-flag" aria-label="Tauschanfrage läuft">
+                                <ArrowLeftRight size={10} />
+                              </span>
                             )}
                           </button>
                         </td>
@@ -517,7 +652,205 @@ export function Schedule() {
           onClose={() => setEditTarget(null)}
         />
       )}
+
+      {swapOpen && currentUser && (
+        <SwapDialog
+          myId={currentUser.key}
+          days={days}
+          shifts={shifts ?? []}
+          colleagues={agentRows.filter((u) => u.key !== currentUser.key)}
+          openSwaps={swaps}
+          seedDate={swapSeed}
+          onClose={() => {
+            setSwapOpen(false);
+            setSwapSeed(null);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * „Schicht tauschen" in einem Bild: links der eigene Tag, rechts der Tag der
+ * Kolleg:in, dazwischen ein Pfeil und darunter im Klartext, was danach gilt.
+ *
+ * Bewusst kein mehrstufiger Assistent: beide Seiten stehen gleichzeitig da,
+ * jede Auswahl aktualisiert die Vorschau sofort. Wer sich vertut, sieht es an
+ * der Vorschau, nicht erst an der Rückmeldung der Kolleg:in.
+ */
+function SwapDialog({
+  myId,
+  days,
+  shifts,
+  colleagues,
+  openSwaps,
+  seedDate,
+  onClose,
+}: {
+  myId: string;
+  days: Date[];
+  shifts: Shift[];
+  colleagues: { key: string; displayName: string }[];
+  openSwaps: ShiftSwapRequest[];
+  seedDate: string | null;
+  onClose: () => void;
+}) {
+  const request = useSwaps((s) => s.request);
+  const busy = useSwaps((s) => s.busy);
+
+  const myShifts = useMemo(
+    () => days.map((d) => ({ dateKey: toDateKey(d), shift: shifts.find((s) => s.userId === myId && s.shiftDate === toDateKey(d)) })),
+    [days, shifts, myId],
+  );
+
+  // Voreinstellung: der angeklickte Tag, sonst der erste eigene Tag mit
+  // Schicht. Ein Dialog, der schon sinnvoll gefüllt aufgeht, spart den halben
+  // Weg — geändert werden kann beides weiterhin.
+  const firstOwn = myShifts.find((d) => d.shift)?.dateKey ?? myShifts[0]?.dateKey ?? '';
+  const [myDate, setMyDate] = useState(seedDate ?? firstOwn);
+  // Kolleg:in und gewählter Tag stecken in einem Zustand: der Tag gehört zur
+  // Person, und ein Wechsel muss beides gemeinsam setzen — sonst bliebe der
+  // Tag der vorigen Person stehen und wäre bestenfalls zufällig richtig.
+  const [pick, setPick] = useState({ partnerId: colleagues[0]?.key ?? '', date: '' });
+  const { partnerId, date: partnerDate } = pick;
+  const [message, setMessage] = useState('');
+
+  const partnerShifts = useMemo(
+    () =>
+      days.map((d) => ({
+        dateKey: toDateKey(d),
+        shift: shifts.find((s) => s.userId === partnerId && s.shiftDate === toDateKey(d)),
+      })),
+    [days, shifts, partnerId],
+  );
+
+  const myShift = myShifts.find((d) => d.dateKey === myDate)?.shift;
+  const partnerShift = partnerShifts.find((d) => d.dateKey === partnerDate)?.shift;
+  const partnerName = colleagues.find((c) => c.key === partnerId)?.displayName ?? '';
+
+  // Läuft für eine der beiden Zellen schon etwas, wäre eine zweite Anfrage nur
+  // Verwirrung — beide Seiten könnten am Ende doppelt vergeben sein.
+  const blocking =
+    (myDate && swapForCell(openSwaps, myId, myDate)) ||
+    (partnerId && partnerDate && swapForCell(openSwaps, partnerId, partnerDate));
+
+  const canSend = Boolean(myDate && partnerId && partnerDate && !blocking && !busy);
+
+  const send = async () => {
+    if (!canSend) return;
+    const ok = await request({
+      partnerId,
+      requesterDate: myDate,
+      partnerDate,
+      requesterShiftType: myShift?.shiftType,
+      partnerShiftType: partnerShift?.shiftType,
+      message,
+    });
+    if (ok) onClose();
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Schicht tauschen"
+      subtitle="Die Kolleg:in muss zustimmen, danach bestätigt der Chef den Tausch."
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>Abbrechen</button>
+          <button className="btn btn-primary" onClick={() => void send()} disabled={!canSend}>
+            Anfrage senden
+          </button>
+        </>
+      }
+    >
+      {colleagues.length === 0 ? (
+        <p className="muted">Es gibt keine Kolleg:innen, mit denen du tauschen könntest.</p>
+      ) : (
+        <div className="swap-dialog">
+          <div className="swap-dialog-sides">
+            <div className="swap-side">
+              <div className="swap-side-label">Du gibst ab</div>
+              <div className="swap-days">
+                {myShifts.map(({ dateKey, shift }) => (
+                  <button
+                    key={dateKey}
+                    type="button"
+                    className={`swap-day ${myDate === dateKey ? 'is-active' : ''} ${shift ? '' : 'is-empty'}`}
+                    onClick={() => setMyDate(dateKey)}
+                    aria-pressed={myDate === dateKey}
+                  >
+                    <span className="swap-day-date">{shortDay(dateKey)}</span>
+                    <span className="swap-day-shift">{shiftLabel(shift?.shiftType)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="swap-dialog-arrow" aria-hidden>
+              <ArrowLeftRight size={18} />
+            </div>
+
+            <div className="swap-side">
+              <div className="swap-side-label">
+                <select
+                  value={partnerId}
+                  onChange={(e) => setPick({ partnerId: e.target.value, date: '' })}
+                  aria-label="Kolleg:in"
+                >
+                  {colleagues.map((c) => (
+                    <option key={c.key} value={c.key}>{c.displayName}</option>
+                  ))}
+                </select>
+                <span> gibt ab</span>
+              </div>
+              <div className="swap-days">
+                {partnerShifts.map(({ dateKey, shift }) => (
+                  <button
+                    key={dateKey}
+                    type="button"
+                    className={`swap-day ${partnerDate === dateKey ? 'is-active' : ''} ${shift ? '' : 'is-empty'}`}
+                    onClick={() => setPick((p) => ({ ...p, date: dateKey }))}
+                    aria-pressed={partnerDate === dateKey}
+                  >
+                    <span className="swap-day-date">{shortDay(dateKey)}</span>
+                    <span className="swap-day-shift">{shiftLabel(shift?.shiftType)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Die Vorschau ist der eigentliche Kern des Dialogs: sie sagt in
+              einem Satz, was der Tausch bedeutet — vor dem Absenden, nicht
+              erst in der Meldung bei der Kolleg:in. */}
+          <div className={`swap-preview ${blocking ? 'is-blocked' : ''}`}>
+            {blocking ? (
+              <>Für einen der beiden Tage läuft bereits eine Tauschanfrage. Bitte erst deren Ausgang abwarten.</>
+            ) : partnerDate ? (
+              <>
+                <strong>Danach:</strong> Du hast am {shortDay(partnerDate)} {shiftLabel(partnerShift?.shiftType)}
+                {partnerName ? `, ${partnerName}` : ''} am {shortDay(myDate)} {shiftLabel(myShift?.shiftType)}.
+              </>
+            ) : (
+              <>Wähle rechts den Tag, den du übernehmen möchtest.</>
+            )}
+          </div>
+
+          <div className="field full">
+            <label htmlFor="swap-message">Nachricht (optional)</label>
+            <input
+              id="swap-message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="z. B. Arzttermin am Dienstag"
+              maxLength={200}
+            />
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 

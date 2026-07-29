@@ -18,9 +18,11 @@ import {
   CalendarDays,
   Megaphone,
   FileChartColumn,
+  Inbox,
 } from 'lucide-react';
 import { useRouter, type Route, type RouteName } from '../router';
 import { useAuth } from '../store/useAuth';
+import { useNotifications, unreadCount } from '../store/useNotifications';
 import { usePwaInstall } from '../lib/pwaInstall';
 import { TngMark } from './TngLogo';
 
@@ -41,6 +43,7 @@ function buildSections(showChef: boolean): { title: string; items: NavItemDef[] 
         { id: 'incentives', label: 'Incentives', icon: <Gift size={16} /> },
         { id: 'netto', label: 'Netto-Rechner', icon: <Calculator size={16} /> },
         { id: 'schedule', label: 'Schichtplan', icon: <CalendarDays size={16} /> },
+        { id: 'postfach', label: 'Postfach', icon: <Inbox size={16} /> },
       ],
     },
     {
@@ -96,6 +99,9 @@ export function Sidebar() {
         : route.name;
 
   const { canInstall, install } = usePwaInstall();
+  // Ungelesene stehen auch an der Seitenleiste, nicht nur an der Glocke: wer
+  // gerade in einer Kundenakte arbeitet, schaut nach links, nicht nach oben.
+  const unread = useNotifications((s) => unreadCount(s.items));
 
   const initials = currentUser
     ? currentUser.displayName
@@ -131,6 +137,9 @@ export function Sidebar() {
             >
               {item.icon}
               <span>{item.label}</span>
+              {item.id === 'postfach' && unread > 0 && (
+                <span className="sidebar-badge">{unread > 99 ? '99+' : unread}</span>
+              )}
             </button>
           ))}
         </div>

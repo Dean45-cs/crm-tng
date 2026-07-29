@@ -33,6 +33,11 @@ contextBridge.exposeInMainWorld("hud", {
   saveNotesDraft: (text) => ipcRenderer.send("hud:notes-draft", text),
   command: (name, args) => ipcRenderer.send("hud:command", { name, args }),
 
+  // Eine Mitteilung anzeigen: { title, body, tone, url }. Gezeichnet wird sie
+  // im eigenen Fenster der App (main/notifications.js), damit sie auf Mac und
+  // Windows gleich aussieht.
+  notify: (item) => ipcRenderer.send("hud:notify", item),
+
   onStorageSnapshot: subscribe("hud:storage-snapshot"),
   onStorageChanged: subscribe("hud:storage-changed"),
   onTicket: subscribe("hud:ticket"),

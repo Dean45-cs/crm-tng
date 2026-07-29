@@ -81,6 +81,66 @@ create index if not exists idx_shifts_date on public.shifts(shift_date);
 create index if not exists idx_shifts_user_date on public.shifts(user_id, shift_date);
 
 -- ------------------------------------------------------------
+-- SHIFT_SWAP_REQUESTS
+-- ------------------------------------------------------------
+-- Schichttausch zwischen zwei Agent:innen (Migration 023): A fragt B, B nimmt
+-- an, der Chef bestätigt. Der Plan bleibt damit Chef-Sache, der Anstoß kommt
+-- aber aus dem Team. Getauscht wird ausschließlich über die Funktion
+-- public.apply_shift_swap() weiter unten — sie ist die einzige Stelle, die
+-- `shifts` im Namen von Agent:innen anfasst.
+-- ------------------------------------------------------------
+create table if not exists public.shift_swap_requests (
+  id uuid primary key default gen_random_uuid(),
+  requester_id uuid not null references public.users(id) on delete cascade,
+  requester_date date not null,
+  partner_id uuid not null references public.users(id) on delete cascade,
+  partner_date date not null,
+  message text,
+  status text not null default 'pending'
+    check (status in ('pending', 'accepted', 'declined', 'cancelled', 'approved', 'rejected')),
+  -- Momentaufnahme beim Anlegen, damit die Anfrage lesbar bleibt, wenn sich
+  -- der Plan bis zur Bestätigung ändert. Nur Anzeige — getauscht wird der
+  -- tatsächliche Stand.
+  requester_shift_type text,
+  partner_shift_type text,
+  decided_at timestamptz,
+  approved_by uuid references public.users(id) on delete set null,
+  approved_at timestamptz,
+  created_at timestamptz not null default now(),
+  constraint shift_swap_distinct_users check (requester_id <> partner_id)
+);
+create index if not exists idx_swap_status on public.shift_swap_requests(status);
+create index if not exists idx_swap_partner on public.shift_swap_requests(partner_id, status);
+create index if not exists idx_swap_requester on public.shift_swap_requests(requester_id, status);
+create index if not exists idx_swap_dates on public.shift_swap_requests(requester_date, partner_date);
+
+-- ------------------------------------------------------------
+-- NOTIFICATIONS
+-- ------------------------------------------------------------
+-- Das persönliche Postfach (Migration 023). Eine Zeile = eine Meldung an genau
+-- eine Person, und anders als der geteilte Schichtplan strikt privat: hier
+-- steht, was mich betrifft. `link` trägt das Sprungziel in der App
+-- ({"route":"schedule"}), `entity_id` den Auslöser (z. B. eine Tauschanfrage).
+-- ------------------------------------------------------------
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  kind text not null,
+  title text not null,
+  body text,
+  link jsonb,
+  actor_id uuid references public.users(id) on delete set null,
+  actor_name text,
+  entity_id uuid,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_notifications_user_created
+  on public.notifications(user_id, created_at desc);
+create index if not exists idx_notifications_unread
+  on public.notifications(user_id) where read_at is null;
+
+-- ------------------------------------------------------------
 -- CALLS
 -- ------------------------------------------------------------
 -- Anruf-Historie (Migration 018): von der Stadtnetz-CRM-Copilot-Extension über
@@ -371,6 +431,13 @@ alter table public.status_log enable row level security;
 alter table public.lead_activities enable row level security;
 alter table public.audit_log enable row level security;
 alter table public.customer_access_requests enable row level security;
+-- campaigns/shifts standen bisher nur in ihren Migrationen (019/020) — ohne
+-- diese Zeilen liefe eine frisch aus schema.sql aufgesetzte Datenbank mit
+-- Policies, die mangels aktiviertem RLS nichts absichern.
+alter table public.campaigns enable row level security;
+alter table public.shifts enable row level security;
+alter table public.notifications enable row level security;
+alter table public.shift_swap_requests enable row level security;
 
 -- ----------------------------------------------------------------------------
 -- Helper-Funktionen (SECURITY DEFINER → umgehen RLS, verhindern Rekursion bei
@@ -546,6 +613,75 @@ create trigger trg_prevent_user_privilege_change
   before update on public.users
   for each row execute function public.prevent_user_privilege_change();
 
+-- ----------------------------------------------------------------------------
+-- Schichttausch ausführen (Migration 023)
+-- ----------------------------------------------------------------------------
+-- Vertauscht die beiden Schichten und setzt die Anfrage auf 'approved' — alles
+-- in einer Transaktion, damit der Plan nie halb getauscht dasteht.
+--
+-- SECURITY DEFINER, weil `shifts` für Agent:innen schreibgeschützt ist und
+-- bleiben soll. Die Rechteprüfung passiert deshalb hier von Hand, gleich als
+-- Erstes. Dies ist die einzige Ausnahme von „Schreiben ist Chef-Sache".
+create or replace function public.apply_shift_swap(p_request_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  req public.shift_swap_requests;
+  a public.shifts;  -- Schicht der anfragenden Person
+  b public.shifts;  -- Schicht der Partner:in
+begin
+  if not public.auth_is_manager() then
+    raise exception 'Nur Chefs können einen Schichttausch bestätigen.'
+      using errcode = '42501';
+  end if;
+
+  -- for update: zwei gleichzeitige Bestätigungen derselben Anfrage würden sonst
+  -- beide den Statuscheck passieren und zweimal tauschen (= Rücktausch).
+  select * into req from public.shift_swap_requests where id = p_request_id for update;
+  if not found then
+    raise exception 'Tauschanfrage nicht gefunden.' using errcode = 'P0002';
+  end if;
+  if req.status <> 'accepted' then
+    raise exception 'Nur angenommene Anfragen können bestätigt werden (Status: %).', req.status
+      using errcode = 'P0001';
+  end if;
+
+  select * into a from public.shifts
+    where user_id = req.requester_id and shift_date = req.requester_date;
+  select * into b from public.shifts
+    where user_id = req.partner_id and shift_date = req.partner_date;
+
+  -- Erst beide Zeilen weg, dann neu setzen: ein direktes Update liefe bei
+  -- gleichem Tag in den unique(user_id, shift_date)-Konflikt.
+  delete from public.shifts
+    where user_id = req.requester_id and shift_date = req.requester_date;
+  delete from public.shifts
+    where user_id = req.partner_id and shift_date = req.partner_date;
+
+  -- Eine Seite ohne Schicht ist erlaubt und heißt „übernimm meinen Tag, ich
+  -- habe an deinem frei": dann bleibt die Gegenseite eben leer.
+  if a.id is not null then
+    insert into public.shifts (user_id, shift_date, shift_type, campaign_id, updated_at)
+    values (req.partner_id, req.partner_date, a.shift_type, a.campaign_id, now());
+  end if;
+  if b.id is not null then
+    insert into public.shifts (user_id, shift_date, shift_type, campaign_id, updated_at)
+    values (req.requester_id, req.requester_date, b.shift_type, b.campaign_id, now());
+  end if;
+
+  update public.shift_swap_requests
+     set status = 'approved',
+         approved_by = auth.uid(),
+         approved_at = now()
+   where id = p_request_id;
+end;
+$$;
+
+grant execute on function public.apply_shift_swap(uuid) to authenticated;
+
 -- USERS: aktive Nutzer lesen alle Profile (Leaderboard, Sharing). Schreiben nur
 -- das eigene Profil; Manager:innen auch fremde. Schutz-Spalten siehe Trigger.
 create policy "users read all" on public.users
@@ -600,6 +736,37 @@ create policy "shifts update manager" on public.shifts
   for update using (public.auth_is_manager());
 create policy "shifts delete manager" on public.shifts
   for delete using (public.auth_is_manager());
+
+-- SHIFT_SWAP_REQUESTS: lesen wie den Plan selbst (alle aktiven Nutzer) — nur
+-- so kann der Schichtplan an der Zelle zeigen, dass für den Tag schon eine
+-- Anfrage läuft. Anlegen nur im eigenen Namen; ändern dürfen die beiden
+-- Beteiligten und Chefs. Welcher Statuswechsel erlaubt ist, entscheidet die
+-- App — ein gefälschter Status bewegt trotzdem keine Schicht, denn tauschen
+-- kann allein apply_shift_swap(), und die prüft erneut auf Chef-Rechte.
+create policy "swap read all" on public.shift_swap_requests
+  for select using (public.auth_is_active());
+create policy "swap insert own" on public.shift_swap_requests
+  for insert with check (public.auth_is_active() and auth.uid() = requester_id);
+create policy "swap update involved" on public.shift_swap_requests
+  for update using (
+    public.auth_is_active()
+    and (auth.uid() = requester_id or auth.uid() = partner_id or public.auth_is_manager())
+  );
+create policy "swap delete own or manager" on public.shift_swap_requests
+  for delete using (auth.uid() = requester_id or public.auth_is_manager());
+
+-- NOTIFICATIONS: das Postfach gehört dem Empfänger, und zwar allein — auch
+-- Chefs lesen es nicht. Schreiben darf jede:r Aktive, aber nur im eigenen
+-- Namen (actor_id = auth.uid()), damit A dem B eine Tauschanfrage zustellen
+-- kann, ohne dass sich jemand als jemand anderes ausgeben kann.
+create policy "notifications read own" on public.notifications
+  for select using (auth.uid() = user_id);
+create policy "notifications insert active" on public.notifications
+  for insert with check (public.auth_is_active() and auth.uid() = actor_id);
+create policy "notifications update own" on public.notifications
+  for update using (auth.uid() = user_id);
+create policy "notifications delete own" on public.notifications
+  for delete using (auth.uid() = user_id);
 
 -- CONTRACTS / TARIFF / NOTES: aktive Nutzer lesen alles.
 -- Bearbeiten/Löschen nur, wenn der User den Datensatz selbst erfasst hat,
@@ -858,3 +1025,7 @@ alter publication supabase_realtime add table public.status_log;
 alter publication supabase_realtime add table public.campaigns;
 alter publication supabase_realtime add table public.shifts;
 alter publication supabase_realtime add table public.user_settings;
+-- Ohne Realtime wäre das Postfach eines, das man selbst aufmachen muss — eine
+-- Push-Meldung soll aber ankommen, während man woanders arbeitet.
+alter publication supabase_realtime add table public.notifications;
+alter publication supabase_realtime add table public.shift_swap_requests;

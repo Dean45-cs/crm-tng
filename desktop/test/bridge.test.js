@@ -36,11 +36,17 @@ async function makeBridge() {
   const store = new Store(dir);
   const port = nextPort++;
   const shown = [];
-  const bridge = new Bridge({ store, port, onShow: () => shown.push(Date.now()) });
+  const notified = [];
+  const bridge = new Bridge({
+    store,
+    port,
+    onShow: () => shown.push(Date.now()),
+    onNotify: (item) => notified.push(item)
+  });
   const win = fakeWindow();
   bridge.attachWindow(win);
   await bridge.listen();
-  return { bridge, store, win, port, shown };
+  return { bridge, store, win, port, shown, notified };
 }
 
 async function run() {
@@ -197,6 +203,30 @@ async function run() {
     extension.send({ t: "show" });
     await new Promise((resolve) => setTimeout(resolve, 120));
     assert.strictEqual(shown.length, 2);
+
+    extension.close();
+    bridge.close();
+  }
+
+  // --- Mitteilungen aus Chrome --------------------------------------------
+  {
+    const { bridge, port, notified } = await makeBridge();
+
+    const extension = await connect(port);
+    await extension.waitFor("sync");
+
+    extension.send({ t: "notify", item: { title: "Schichtwechsel", body: "Morgen Spät", tone: "info" } });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.strictEqual(notified.length, 1, "die Meldung aus Chrome kommt an");
+    assert.strictEqual(notified[0].title, "Schichtwechsel");
+    assert.strictEqual(notified[0].body, "Morgen Spät");
+
+    // Ohne eigenes item-Feld gilt die Nachricht selbst als Meldung – so muss
+    // die Extension für einen Einzeiler kein Objekt verschachteln.
+    extension.send({ t: "notify", title: "Anruf", body: "Mustermann" });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.strictEqual(notified.length, 2);
+    assert.strictEqual(notified[1].title, "Anruf");
 
     extension.close();
     bridge.close();

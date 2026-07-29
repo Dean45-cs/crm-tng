@@ -34,6 +34,11 @@ import type {
   CampaignCallType,
   Shift,
   ShiftType,
+  ShiftSwapRequest,
+  SwapStatus,
+  AppNotification,
+  NotificationKind,
+  NotificationLink,
 } from '../types';
 import type { AuthUser } from '../store/useAuth';
 
@@ -845,6 +850,235 @@ export async function fetchShiftForUserDay(userId: string, dateKey: string): Pro
     .maybeSingle();
   if (error) throw error;
   return data ? mapShift(data as ShiftRow) : null;
+}
+
+// ============================================================================
+// Schichttausch (Migration 023) — A fragt B, B nimmt an, der Chef bestätigt.
+// Der eigentliche Tausch läuft über die Datenbankfunktion apply_shift_swap():
+// `shifts` bleibt für Agent:innen schreibgeschützt, und beide Zeilen müssen
+// gemeinsam umziehen oder gar nicht.
+// ============================================================================
+
+interface SwapRow {
+  id: string;
+  requester_id: string;
+  requester_date: string;
+  partner_id: string;
+  partner_date: string;
+  message: string | null;
+  status: SwapStatus;
+  requester_shift_type: ShiftType | null;
+  partner_shift_type: ShiftType | null;
+  decided_at: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_at: string;
+}
+
+const mapSwap = (r: SwapRow): ShiftSwapRequest => ({
+  id: r.id,
+  requesterId: r.requester_id,
+  requesterDate: r.requester_date,
+  partnerId: r.partner_id,
+  partnerDate: r.partner_date,
+  message: r.message ?? undefined,
+  status: r.status,
+  requesterShiftType: r.requester_shift_type ?? undefined,
+  partnerShiftType: r.partner_shift_type ?? undefined,
+  decidedAt: r.decided_at ?? undefined,
+  approvedBy: r.approved_by ?? undefined,
+  approvedAt: r.approved_at ?? undefined,
+  createdAt: r.created_at,
+});
+
+/**
+ * Alle Tauschanfragen, die noch zu etwas führen können (offen oder vom Partner
+ * angenommen). Erledigte bleiben in der Datenbank stehen, interessieren die
+ * Oberfläche aber nicht mehr — der Schichtplan markiert damit nur Zellen, für
+ * die gerade etwas läuft.
+ */
+export async function fetchOpenSwapRequests(): Promise<ShiftSwapRequest[]> {
+  const { data, error } = await getSupabase()
+    .from('shift_swap_requests')
+    .select('*')
+    .in('status', ['pending', 'accepted'])
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as SwapRow[]).map(mapSwap);
+}
+
+/** Eine einzelne Anfrage — für die Inline-Aktionen im Postfach. */
+export async function fetchSwapRequest(id: string): Promise<ShiftSwapRequest | null> {
+  const { data, error } = await getSupabase()
+    .from('shift_swap_requests')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapSwap(data as SwapRow) : null;
+}
+
+export async function insertSwapRequest(s: {
+  requesterId: string;
+  requesterDate: string;
+  partnerId: string;
+  partnerDate: string;
+  message?: string;
+  requesterShiftType?: ShiftType;
+  partnerShiftType?: ShiftType;
+}): Promise<ShiftSwapRequest> {
+  const payload = {
+    requester_id: s.requesterId,
+    requester_date: s.requesterDate,
+    partner_id: s.partnerId,
+    partner_date: s.partnerDate,
+    message: s.message?.trim() || null,
+    requester_shift_type: s.requesterShiftType ?? null,
+    partner_shift_type: s.partnerShiftType ?? null,
+  };
+  const { data, error } = await getSupabase()
+    .from('shift_swap_requests')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return mapSwap(data as SwapRow);
+}
+
+/**
+ * Statuswechsel ohne Wirkung auf den Plan: annehmen, ablehnen, zurückziehen,
+ * vom Chef ablehnen. Der Übergang nach 'approved' läuft NICHT hierüber, sondern
+ * über applyShiftSwap() — nur dort werden auch die Schichten getauscht.
+ */
+export async function setSwapStatus(
+  id: string,
+  status: Exclude<SwapStatus, 'approved'>,
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from('shift_swap_requests')
+    .update({ status, decided_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * Chef-Bestätigung: tauscht die beiden Schichten und setzt die Anfrage auf
+ * 'approved' — atomar in der Datenbank (siehe Migration 023). Wirft, wenn die
+ * Anfrage nicht mehr im Status 'accepted' ist oder die Rechte fehlen.
+ */
+export async function applyShiftSwap(requestId: string): Promise<void> {
+  const { error } = await getSupabase().rpc('apply_shift_swap', { p_request_id: requestId });
+  if (error) throw error;
+}
+
+// ============================================================================
+// Postfach (Migration 023) — persönliche Meldungen. Streng privat: die
+// RLS-Policy lässt nur den Empfänger lesen, deshalb braucht keine dieser
+// Funktionen einen user_id-Filter.
+// ============================================================================
+
+interface NotificationRow {
+  id: string;
+  user_id: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  link: NotificationLink | null;
+  actor_id: string | null;
+  actor_name: string | null;
+  entity_id: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+const mapNotification = (r: NotificationRow): AppNotification => ({
+  id: r.id,
+  userId: r.user_id,
+  kind: r.kind as NotificationKind,
+  title: r.title,
+  body: r.body ?? undefined,
+  link: r.link ?? undefined,
+  actorId: r.actor_id ?? undefined,
+  actorName: r.actor_name ?? undefined,
+  entityId: r.entity_id ?? undefined,
+  readAt: r.read_at ?? undefined,
+  createdAt: r.created_at,
+});
+
+/** Die letzten `limit` Meldungen des angemeldeten Users, neueste zuerst. */
+export async function fetchNotifications(limit = 200): Promise<AppNotification[]> {
+  const { data, error } = await getSupabase()
+    .from('notifications')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data as NotificationRow[]).map(mapNotification);
+}
+
+/**
+ * Meldungen zustellen. Mehrere auf einmal, weil eine Aktion oft mehrere
+ * Empfänger hat (der Chef ändert eine Spalte → alle Betroffenen).
+ * Empfänger, die dem Auslöser entsprechen, filtert der Aufrufer heraus —
+ * niemand soll sich selbst benachrichtigen.
+ */
+export async function insertNotifications(
+  items: {
+    userId: string;
+    kind: NotificationKind;
+    title: string;
+    body?: string;
+    link?: NotificationLink;
+    actorId: string;
+    actorName?: string;
+    entityId?: string;
+  }[],
+): Promise<void> {
+  if (items.length === 0) return;
+  const payload = items.map((n) => ({
+    user_id: n.userId,
+    kind: n.kind,
+    title: n.title,
+    body: n.body ?? null,
+    link: n.link ?? null,
+    actor_id: n.actorId,
+    actor_name: n.actorName ?? null,
+    entity_id: n.entityId ?? null,
+  }));
+  const { error } = await getSupabase().from('notifications').insert(payload);
+  if (error) throw error;
+}
+
+export async function markNotificationsRead(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const { error } = await getSupabase()
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .in('id', ids);
+  if (error) throw error;
+}
+
+/** Alles auf gelesen — nur die noch ungelesenen anfassen (kleineres Update). */
+export async function markAllNotificationsRead(): Promise<void> {
+  const { error } = await getSupabase()
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .is('read_at', null);
+  if (error) throw error;
+}
+
+export async function deleteNotificationRow(id: string): Promise<void> {
+  const { error } = await getSupabase().from('notifications').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/** „Postfach leeren" — löscht alle eigenen Meldungen (RLS begrenzt auf sich selbst). */
+export async function deleteAllNotifications(): Promise<void> {
+  const { error } = await getSupabase()
+    .from('notifications')
+    .delete()
+    .not('id', 'is', null);
+  if (error) throw error;
 }
 
 // ============================================================================

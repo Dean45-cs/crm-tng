@@ -37,8 +37,11 @@ const OVERLAY = {
   alwaysOnTop: true,
   opacity: 1,
   clickThrough: false,
-  toggleShortcut: "Command+Shift+Space",
-  clickThroughShortcut: "Command+Shift+D"
+  autoStart: true,
+  packaged: true,
+  // Systemweite Kürzel in der gemeinsamen Schreibweise (CONFIG.hotkeys).
+  hotkeys: { toggleOverlay: "Mod+Shift+Space", clickThrough: "Mod+Shift+D" },
+  hotkeyErrors: {}
 };
 
 async function mount(options) {
@@ -185,6 +188,37 @@ async function run() {
     // alle Wege nennen, nicht nur die Tastenkombination.
     assert.ok(/Menü-\/Infoleiste/.test(html), "das Symbol in der Menü-/Infoleiste steht dabei");
     assert.ok(/Erweiterung in Chrome/.test(html), "der Klick auf das Symbol der Erweiterung steht dabei");
+  }
+
+  // --- 9. Tastenkürzel: im Fenster stehen auch die systemweiten -----------
+  {
+    const { env, commands, host } = await mount();
+    env.click("toggle-settings");
+    const html = env.html();
+
+    assert.ok(html.includes("Tastenkürzel"), "der Abschnitt steht im Fenster");
+    // Genau das ist der Unterschied zum Chrome-Tab: die beiden systemweiten
+    // Kürzel registriert der Hauptprozess, also gehören sie hierhin.
+    assert.ok(html.includes('data-hotkey="toggleOverlay"'), "Ein-/ausblenden ist belegbar");
+    assert.ok(html.includes('data-hotkey="clickThrough"'), "Klicks durchreichen ist belegbar");
+    assert.ok(html.includes('data-hotkey="palette"'), "und die Panel-Kürzel ebenso");
+    assert.ok(html.includes("⌘⇧Leertaste"), "die geltende Belegung steht dabei");
+
+    // Aufnehmen: der Auftrag geht an den Hauptprozess, nicht in den Storage –
+    // systemweit registrieren kann nur er.
+    const root = env.root();
+    root._listeners.click({
+      target: { closest: () => ({ dataset: { action: "capture-hotkey", hotkey: "toggleOverlay" } }) }
+    });
+    env.fireKeydown({ key: "F8", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false,
+      preventDefault() {}, stopPropagation() {} });
+    assert.strictEqual(JSON.stringify(commands.pop()),
+      JSON.stringify({ name: "set-hotkey", args: { id: "toggleOverlay", binding: "F8" } }));
+
+    // Was der Hauptprozess zurückmeldet, steht in der Zeile – auch ein „geht
+    // nicht", sonst suchte man den Fehler bei sich.
+    host.setOverlay({ ...OVERLAY, hotkeyErrors: { toggleOverlay: "Diese Taste ist auf diesem Gerät schon belegt." } });
+    assert.ok(env.html().includes("schon belegt"), "eine abgelehnte Taste wird gemeldet");
   }
 
   console.log("hud-host.test.js: alle Szenarien bestanden.");

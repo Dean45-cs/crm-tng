@@ -21,7 +21,12 @@ const IN = {
   // Läuft die App, baut der Jira-Tab sein eigenes Panel ab (hud-agent.js) –
   // ohne diesen Weg gäbe es aus Chrome heraus keine Möglichkeit mehr, an die
   // Auskunft zu kommen, wenn sie gerade ausgeblendet ist.
-  SHOW: "show"
+  SHOW: "show",
+  // Eine Mitteilung anzeigen. Chrome weiß von Dingen, die die App nicht sieht
+  // (eingehender Anruf, Schichtwechsel aus dem CRM) – gezeichnet wird sie im
+  // eigenen Mitteilungsfenster der App, damit sie auf Mac und Windows gleich
+  // aussieht (siehe main/notifications.js).
+  NOTIFY: "notify"
 };
 
 // Nachrichten HUD → Extension
@@ -35,10 +40,11 @@ const OUT = {
 };
 
 class Bridge {
-  constructor({ store, port, onStatus, onShow, log }) {
+  constructor({ store, port, onStatus, onShow, onNotify, log }) {
     this.store = store;
     this.onStatus = onStatus || (() => {});
     this.onShow = onShow || (() => {});
+    this.onNotify = onNotify || (() => {});
     this.log = typeof log === "function" ? log : () => {};
     this.window = null;
 
@@ -165,6 +171,14 @@ class Bridge {
       // bedeutet, entscheidet main.js – hier wird nur weitergereicht.
       case IN.SHOW:
         this.onShow();
+        return;
+
+      // Inhalt kommt aus Chrome, das Aussehen aus der App. Was fehlt oder
+      // Unsinn ist, fängt notifications.show() ab – die Verbindung ist zwar
+      // auf localhost beschränkt und prüft die Herkunft, aber eine Nachricht
+      // von außen bleibt eine Nachricht von außen.
+      case IN.NOTIFY:
+        this.onNotify(message.item || message);
         return;
 
       default:

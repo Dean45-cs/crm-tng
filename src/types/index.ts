@@ -178,6 +178,82 @@ export interface Shift {
   updatedAt: string;
 }
 
+/**
+ * Stand einer Tauschanfrage (Migration 023). Der Weg ist immer derselbe:
+ * pending → accepted → approved. Alles andere sind Abbrüche.
+ *
+ *   pending    A hat gefragt, B hat noch nicht geantwortet
+ *   accepted   B ist einverstanden, der Chef muss noch bestätigen
+ *   approved   bestätigt und im Plan vollzogen
+ *   declined   B will nicht
+ *   cancelled  A hat zurückgezogen
+ *   rejected   der Chef hat abgelehnt
+ */
+export type SwapStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'approved' | 'rejected';
+
+/** Ein Schichttausch zwischen zwei Agent:innen (Migration 023). */
+export interface ShiftSwapRequest {
+  id: string;
+  /** Wer fragt — gibt seinen Tag ab. */
+  requesterId: string;
+  requesterDate: string;
+  /** Wer gefragt wird — gibt seinen Tag ab. */
+  partnerId: string;
+  partnerDate: string;
+  message?: string;
+  status: SwapStatus;
+  /** Schichtart beider Seiten beim Anlegen — nur Anzeige, siehe Migration 023. */
+  requesterShiftType?: ShiftType;
+  partnerShiftType?: ShiftType;
+  decidedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  createdAt: string;
+}
+
+/**
+ * Meldungsart im Postfach. Steuert Symbol und Farbe der Anzeige; eine
+ * unbekannte Art landet bewusst nicht im Fehlerfall, sondern als neutrale
+ * Meldung (siehe notificationLook() in src/lib/notifications.ts) — so kann die
+ * Datenbank neue Arten liefern, ohne dass ein alter Client daran scheitert.
+ */
+export type NotificationKind =
+  | 'shift-changed'
+  | 'swap-requested'
+  | 'swap-accepted'
+  | 'swap-declined'
+  | 'swap-cancelled'
+  | 'swap-approved'
+  | 'swap-rejected'
+  | 'campaign'
+  | 'incentive'
+  | 'system';
+
+/** Sprungziel einer Meldung — dieselbe Form wie eine Route im Router. */
+export interface NotificationLink {
+  route: string;
+  kdnr?: string;
+  agentKey?: string;
+}
+
+/** Eine Meldung im persönlichen Postfach (Migration 023). */
+export interface AppNotification {
+  id: string;
+  /** Empfänger:in — nicht der Auslöser. */
+  userId: string;
+  kind: NotificationKind;
+  title: string;
+  body?: string;
+  link?: NotificationLink;
+  actorId?: string;
+  /** Name des Auslösers zum Zeitpunkt der Meldung (bleibt lesbar). */
+  actorName?: string;
+  /** Auslösender Datensatz, z. B. eine Tauschanfrage. */
+  entityId?: string;
+  readAt?: string;
+  createdAt: string;
+}
+
 /** Wer einen Kunden besitzt und mit wem er geteilt wird */
 export interface CustomerOwnership {
   /** User-Key des Besitzers */

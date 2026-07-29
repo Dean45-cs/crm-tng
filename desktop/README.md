@@ -59,6 +59,13 @@ Weil es keine zweite Kopie gibt, sondern `renderer/index.html` direkt
 Browser abweichen. Die Ladereihenfolge entspricht exakt `manifest.json` – die
 Dateien bauen beim Laden aufeinander auf.
 
+> **Achtung beim Ausprobieren:** Das gilt für den Quellstand (`npm start`). Die
+> **installierte** App trägt `extension/` als eigene Ressource im Paket (siehe
+> `build.extraResources`) – eingefroren zum Zeitpunkt des Baus. Eine Änderung an
+> `extension/src/*` erscheint dort erst nach `npm run dist` (bzw.
+> `npm run pack:mac`) und dem Ersetzen der App. Wer das übersieht, ändert etwas
+> am Panel und sieht in der laufenden Auskunft nichts davon.
+
 Solange die App läuft, baut die Extension ihr eigenes Panel in der Jira-Seite
 **nicht** auf (`content.js`, `app.hudTakeover`). Sonst liefen beide Fassungen
 parallel und würden dieselben KI-Aufgaben doppelt starten. An seine Stelle tritt
@@ -66,6 +73,44 @@ unten rechts die Sprechblase „Auskunft": ein Klick holt das Overlay nach vorn.
 Denselben Weg nimmt der Klick auf das Symbol der Erweiterung. Beides läuft über
 `{ t: "show" }` durch die Bridge – der einzige Auftrag, den Chrome der App
 erteilt.
+
+## Mitteilungen
+
+Die App zeigt Mitteilungen in einem **eigenen Fenster** an, nicht über die
+System-Meldung des Betriebssystems (`main/notifications.js`,
+`renderer/notify.*`).
+
+Der Grund ist die Optik: Electrons `Notification` reicht an das System durch,
+und dort sieht dieselbe Meldung überall anders aus – auf dem Mac das bekannte
+Banner oben rechts, unter Windows eine eckige Kachel unten rechts im
+Info-Center. Gefordert war dieselbe Erscheinung auf beiden Systemen. Ein
+rahmenloses, durchsichtiges Fenster, das die Banner als HTML selbst zeichnet,
+liefert genau das.
+
+Das Fenster verhält sich wie die Mitteilungszentrale: oben rechts am Rand des
+Arbeitsbereichs (auf dem Bildschirm, auf dem der Mauszeiger steht), immer
+obenauf – auch über Vollbild-Fenstern –, **nie fokussierbar**, damit es
+niemandem beim Tippen die Tastatur wegnimmt. Es ist genau so groß wie sein
+Inhalt: `notify.js` misst den Stapel und meldet die Höhe zurück, `0` heißt
+„nichts mehr da" und versteckt das Fenster. Ohne das fienge eine unsichtbare
+Restfläche dauerhaft Klicks auf dem Schreibtisch ab.
+
+Ausgelöst wird eine Mitteilung auf zwei Wegen:
+
+| Von wo | Aufruf |
+| --- | --- |
+| Panel im Fenster | `window.hud.notify({ title, body, tone, url })` |
+| Chrome-Extension | `{ t: "notify", item: { title, body, tone, url } }` durch die Bridge |
+
+`tone` ist `info` (Vorgabe), `success`, `warn` oder `danger` und färbt nur das
+Symbol, nicht die Fläche – sonst würde aus einer Mitteilung ein Warnschild. Ein
+Klick holt die Auskunft nach vorn; trägt die Meldung eine `url`, geht diese
+stattdessen in den echten Browser.
+
+`app.setAppUserModelId(...)` steht bewusst dabei: unter Windows ordnet das
+System Fenster und Meldungen über diese Kennung einer Anwendung zu. Ohne sie
+stünde dort „Electron" statt des Produktnamens. Sie muss zur `build.appId` in
+`package.json` passen.
 
 ## Wie man die Auskunft hervorholt
 

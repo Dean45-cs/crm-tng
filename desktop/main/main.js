@@ -19,6 +19,7 @@ const fs = require("fs");
 
 const { Store } = require("./store");
 const { Bridge } = require("./bridge");
+const { Notifications } = require("./notifications");
 
 const DEFAULT_PORT = 8777;
 const MIN_WIDTH = 360;
@@ -47,6 +48,7 @@ if (!app.requestSingleInstanceLock()) {
 
 let store = null;
 let bridge = null;
+let notifications = null;
 let win = null;
 let tray = null;
 let quitting = false;
@@ -549,6 +551,13 @@ function registerIpc() {
   ipcMain.on("hud:notes", (event, notes) => store.hudSet("notes", Array.isArray(notes) ? notes : []));
   ipcMain.on("hud:notes-draft", (event, text) => store.hudSet("notesDraft", typeof text === "string" ? text : ""));
 
+  // Mitteilungen: aus dem Panel heraus ("hud:notify") und aus dem
+  // Mitteilungsfenster zurück (Höhe, Klick).
+  ipcMain.on("hud:notify", (event, item) => notifications.show(item));
+  ipcMain.on("notify:ready", () => notifications.markReady());
+  ipcMain.on("notify:height", (event, height) => notifications.setHeight(height));
+  ipcMain.on("notify:activate", (event, url) => notifications.activate(url));
+
   ipcMain.on("hud:command", (event, message) => {
     const name = message && message.name;
     const args = (message && message.args) || {};
@@ -636,6 +645,12 @@ app.whenReady().then(async () => {
   // Weißwerte, die nur der Dunkel-Block einfängt).
   nativeTheme.themeSource = "dark";
 
+  // Windows ordnet Fenster und Meldungen über diese Kennung einer Anwendung
+  // zu. Ohne sie stünde an einer System-Meldung „Electron" statt des
+  // Produktnamens, und ein angehefteter Eintrag in der Taskleiste zeigte auf
+  // das falsche Programm. Muss zur appId in package.json (build.appId) passen.
+  if (process.platform === "win32") app.setAppUserModelId("de.stadtnetz.crm.hud");
+
   store = new Store(app.getPath("userData"));
 
   // Beides gehört vor alles Übrige: das Verschieben startet die App neu, und
@@ -655,10 +670,21 @@ app.whenReady().then(async () => {
     } catch (error) { /* nicht schreibbar – Diagnose ist verzichtbar */ }
   };
 
+  // Mitteilungen als eigenes Fenster statt System-Meldung — gleiche Optik auf
+  // Mac und Windows (siehe main/notifications.js). Ein Klick holt die Auskunft
+  // nach vorn; trägt die Meldung eine Adresse, geht die in den echten Browser.
+  notifications = new Notifications({
+    onActivate: () => showWindow(),
+    onOpenUrl: (url) => shell.openExternal(url)
+  });
+
   bridge = new Bridge({
     store,
     port: Number(process.env.HUD_PORT) || DEFAULT_PORT,
     onStatus: rebuildTrayMenu,
+    // Meldungen aus Chrome: die Extension weiß von Anrufen, Schichtwechseln
+    // und Kampagnen, das Fenster zeichnet sie.
+    onNotify: (item) => notifications.show(item),
     // Der Rückweg aus Chrome: dort ist das Panel abgebaut, solange die App
     // läuft – ohne diesen Haken bliebe eine ausgeblendete Auskunft nur über
     // Tastenkombination und Tray erreichbar, und wer beides nicht kennt, hält
@@ -699,4 +725,5 @@ app.on("before-quit", () => {
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
   if (bridge) bridge.close();
+  if (notifications) notifications.close();
 });
