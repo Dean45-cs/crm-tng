@@ -1920,7 +1920,40 @@
       <div class="sc-calltype">
         <div class="sc-calltype-switch">${btn("churn", "Churn")}${btn("welcome", "Welcome")}</div>
         <span class="sc-calltype-source">${source}</span>
+        ${renderShiftClock()}
       </div>`;
+  }
+
+  /**
+   * Restzeit der laufenden Schicht im Cockpit.
+   *
+   * Dieselbe Rechnung wie im CRM-Dashboard — beide lesen SHIFT_TIMES aus
+   * shift-time.js, damit Cockpit und CRM nicht unterschiedliche Feierabende
+   * behaupten. Ohne geladene Schicht oder außerhalb einer Arbeitsschicht
+   * bleibt die Anzeige leer statt „0 Min." zu behaupten.
+   */
+  function renderShiftClock() {
+    const st = globalThis.StadtnetzCRM && globalThis.StadtnetzCRM.shiftTime;
+    const shift = state.shift || {};
+    if (!st || !shift.loaded || !shift.shiftType) return "";
+    const progress = st.shiftProgress(shift.shiftType, st.minutesOfDay());
+    if (!progress) return "";
+
+    const meta = st.shiftMeta(shift.shiftType);
+    let text;
+    if (progress.phase === "before") {
+      text = `${meta.label} beginnt in ${st.formatDuration(progress.minutesLeft)}`;
+    } else if (progress.phase === "running") {
+      text = `${meta.label} · noch ${st.formatDuration(progress.minutesLeft)}`;
+    } else {
+      text = `${meta.label} beendet`;
+    }
+    const pct = Math.round(progress.progress * 100);
+    return `
+      <span class="sc-shift-clock" title="${escapeHtml(st.shiftTimeLabel(shift.shiftType) || "")}">
+        <span class="sc-shift-clock-track"><span class="sc-shift-clock-fill" style="width:${pct}%"></span></span>
+        <span class="sc-shift-clock-text">${escapeHtml(text)}</span>
+      </span>`;
   }
 
   function renderCallGuide() {

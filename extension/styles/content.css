@@ -1029,6 +1029,34 @@
   color: #44546f;
   font-size: 11px;
 }
+/* Restzeit der laufenden Schicht — dieselbe Quelle wie das CRM-Dashboard
+   (shift-time.js), damit beide denselben Feierabend anzeigen. */
+#stadtnetzcrm-root .sc-shift-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+}
+#stadtnetzcrm-root .sc-shift-clock-track {
+  position: relative;
+  width: 54px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--sc-line);
+  overflow: hidden;
+}
+#stadtnetzcrm-root .sc-shift-clock-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--sc-blue);
+}
+#stadtnetzcrm-root .sc-shift-clock-text {
+  color: #44546f;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 #stadtnetzcrm-root .sc-checklist-progress {
   margin: 0 0 8px;
   font-size: 11px;

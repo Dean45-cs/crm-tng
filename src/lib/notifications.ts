@@ -1,5 +1,6 @@
 import type { NotificationKind, NotificationLink, ShiftType, SwapStatus } from '../types';
 import type { Route } from '../router';
+import { shiftMeta } from './shifts';
 
 /**
  * Reine Ableitungen rund ums Postfach — Aussehen einer Meldungsart, relative
@@ -78,10 +79,14 @@ export function dayHeading(iso: string, now = new Date()): string {
   return d.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long' });
 }
 
-const SHIFT_LABEL: Record<ShiftType, string> = { frueh: 'Früh', spaet: 'Spät', frei: 'Frei' };
-
-/** „Früh"/„Spät"/„Frei", und ohne Schicht schlicht „frei" (kleingeschrieben im Satz). */
-export const shiftLabel = (t?: ShiftType | null): string => (t ? SHIFT_LABEL[t] : 'keine Schicht');
+/**
+ * Beschriftung einer Schichtart, ohne Schicht schlicht „keine Schicht".
+ * Die Bezeichnungen stehen zentral in SHIFT_META (src/lib/shifts.ts) — hier lag
+ * bis Migration 024 eine zweite, eigene Liste, die bei jeder neuen Schichtart
+ * stillschweigend veraltet wäre.
+ */
+export const shiftLabel = (t?: ShiftType | null): string =>
+  t ? shiftMeta(t).label : 'keine Schicht';
 
 /** Tag als „Mo, 03.08." — kurz genug für eine Meldungszeile. */
 export function shortDay(dateKey: string): string {

@@ -252,11 +252,11 @@ export const useSwaps = create<SwapsState>()((set, get) => ({
       void get().load();
     } finally {
       set({ busy: false });
-      // Der Plan hat sich geändert: die angezeigte Woche neu holen. Realtime
+      // Der Plan hat sich geändert: das angezeigte Fenster neu holen. Realtime
       // auf `shifts` erledigt das zwar auch, aber nur für offene Ansichten —
       // hier ist es die Quittung auf den eigenen Klick.
-      const { weekStart, weekEnd, loadWeek } = useShifts.getState();
-      if (weekStart && weekEnd) void loadWeek(weekStart, weekEnd);
+      const { rangeStart, rangeEnd, loadRange } = useShifts.getState();
+      if (rangeStart && rangeEnd) void loadRange(rangeStart, rangeEnd);
     }
   },
 

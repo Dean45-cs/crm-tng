@@ -45,6 +45,7 @@ import { IncentiveWidget } from '../components/IncentiveWidget';
 import { ExpiryRadarWidget } from '../components/ExpiryRadarWidget';
 import { AccessRequestInbox } from '../components/AccessRequests';
 import { CustomizableGrid } from '../components/CustomizableGrid';
+import { MyShiftWidget } from '../components/MyShiftWidget';
 import type { WidgetDef } from '../lib/gridLayout';
 import { useRouter } from '../router';
 import type { CampaignCallType } from '../types';
@@ -417,6 +418,13 @@ export function Dashboard() {
                 </div>
               </div>
             ),
+          },
+          {
+            id: 'myshift',
+            title: 'Meine Schicht',
+            defaultW: 6,
+            minW: 4,
+            render: () => <MyShiftWidget />,
           },
           {
             id: 'followups',

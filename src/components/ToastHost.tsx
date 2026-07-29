@@ -24,6 +24,20 @@ export function ToastHost() {
         >
           <span className="toast-icon">{ICON[t.kind]}</span>
           <span className="toast-msg">{t.msg}</span>
+          {t.action && (
+            <button
+              type="button"
+              className="toast-action"
+              onClick={() => {
+                // Erst schließen, dann ausführen: die Meldung soll nicht noch
+                // einmal anklickbar sein, während die Aktion läuft.
+                dismiss(t.id);
+                t.action!.run();
+              }}
+            >
+              {t.action.label}
+            </button>
+          )}
           <button
             type="button"
             className="toast-close"

@@ -34,6 +34,7 @@ import type {
   CampaignCallType,
   Shift,
   ShiftType,
+  StaffingTarget,
   ShiftSwapRequest,
   SwapStatus,
   AppNotification,
@@ -850,6 +851,79 @@ export async function fetchShiftForUserDay(userId: string, dateKey: string): Pro
     .maybeSingle();
   if (error) throw error;
   return data ? mapShift(data as ShiftRow) : null;
+}
+
+/**
+ * Schichten eines beliebigen Datumsbereichs — dieselbe Abfrage wie
+ * fetchShiftsForWeek, nur ohne die Wochen-Erwartung im Namen. Die
+ * Monatsansicht des Schichtplans lädt damit fünf bis sechs Wochen am Stück.
+ */
+export async function fetchShiftsBetween(fromKey: string, toKey: string): Promise<Shift[]> {
+  return fetchShiftsForWeek(fromKey, toKey);
+}
+
+/**
+ * Die eigenen Schichten eines Zeitfensters, nach Datum sortiert. Grundlage für
+ * „meine laufende und meine nächste Schicht" — dafür reicht die heutige Zeile
+ * nicht: an einem freien Tag ist die interessante Antwort, wann es weitergeht.
+ */
+export async function fetchShiftsForUser(
+  userId: string,
+  fromKey: string,
+  toKey: string,
+): Promise<Shift[]> {
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('shift_date', fromKey)
+    .lte('shift_date', toKey)
+    .order('shift_date', { ascending: true });
+  if (error) throw error;
+  return (data as ShiftRow[]).map(mapShift);
+}
+
+// ============================================================================
+// Soll-Besetzung (Migration 024)
+// ============================================================================
+
+interface StaffingRow {
+  weekday: number;
+  min_frueh: number;
+  min_spaet: number;
+}
+
+const mapStaffing = (r: StaffingRow): StaffingTarget => ({
+  weekday: r.weekday,
+  minFrueh: r.min_frueh,
+  minSpaet: r.min_spaet,
+});
+
+/**
+ * Soll-Besetzung je Wochentag. Fehlt die Tabelle noch (Migration 024 nicht
+ * eingespielt), kommt eine leere Liste zurück statt eines Fehlers — dann zeigt
+ * die Besetzung wie bisher nur Ist-Zahlen ohne Ampel. Gleiches Toleranzmuster
+ * wie bei fetchShiftsForWeek/fetchIncentives.
+ */
+export async function fetchStaffingTargets(): Promise<StaffingTarget[]> {
+  const { data, error } = await getSupabase().from('staffing_targets').select('*');
+  if (error) return [];
+  return (data as StaffingRow[]).map(mapStaffing);
+}
+
+export async function upsertStaffingTarget(t: StaffingTarget): Promise<void> {
+  const { error } = await getSupabase()
+    .from('staffing_targets')
+    .upsert(
+      {
+        weekday: t.weekday,
+        min_frueh: t.minFrueh,
+        min_spaet: t.minSpaet,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'weekday' },
+    );
+  if (error) throw error;
 }
 
 // ============================================================================

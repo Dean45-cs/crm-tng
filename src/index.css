@@ -687,7 +687,59 @@ table.crm-table td[style*="text-align: right"] {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Schichtplan ---------- */
+/* ---------- Schichtplan ----------
+   Der Plan sah lange aus wie jede andere Tabelle der App (.crm-table) — bei
+   einem Dienstplan ist das die falsche Sprache: man liest ihn wie einen
+   Kalender, nicht wie eine Datensatzliste. Deshalb eigene Tabellenoptik mit
+   Rasterlinien, festen Spaltenbreiten und Zellen als Kacheln.
+
+   Farben je Schichtart hängen an `tone` aus SHIFT_META (src/lib/shifts.ts):
+   eine neue Schichtart braucht dort einen Eintrag und hier ein Farbpaar. */
+
+/* Kopfbereich */
+.schedule-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.schedule-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.schedule-range-label {
+  min-width: 104px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.schedule-viewswitch {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--surface-2);
+  border-radius: 9px;
+}
+.schedule-viewbtn {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.schedule-viewbtn:hover { color: var(--text); }
+.schedule-viewbtn.is-active {
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.07);
+}
 
 /* Werkzeugleiste */
 .schedule-toolbar {
@@ -730,9 +782,12 @@ table.crm-table td[style*="text-align: right"] {
   color: var(--text);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
-.schedule-tool.tool-frueh.is-active { color: #0088b8; }
-.schedule-tool.tool-spaet.is-active { color: #7c5cf0; }
+.schedule-tool.tool-frueh.is-active { color: var(--shift-frueh); }
+.schedule-tool.tool-spaet.is-active { color: var(--shift-spaet); }
 .schedule-tool.tool-frei.is-active { color: var(--text-secondary); }
+.schedule-tool.tool-urlaub.is-active { color: var(--shift-urlaub); }
+.schedule-tool.tool-krank.is-active { color: var(--shift-krank); }
+.schedule-tool.tool-schulung.is-active { color: var(--shift-schulung); }
 .schedule-tool.tool-clear.is-active { color: var(--red); }
 .schedule-campaign-pick {
   display: inline-flex;
@@ -743,89 +798,208 @@ table.crm-table td[style*="text-align: right"] {
 }
 .schedule-campaign-pick select { min-width: 150px; }
 
-/* Tabelle */
-/* Der Wochenplan hat acht feste Spalten (Person + 7 Tage + Summe). Weil
-   .table-wrap den Überlauf abschneidet und die Tabelle ein festes Layout hat,
-   wurden die Spalten in einem schmalen Fenster so weit zusammengedrückt, dass
-   Datumszeilen und Kampagnennamen sichtbar übereinanderlagen. Unterhalb der
-   Mindestbreite wird deshalb gescrollt statt gequetscht. */
-.table-wrap.schedule-wrap { overflow-x: auto; overflow-y: hidden; }
-table.schedule-table { table-layout: fixed; min-width: 880px; }
-table.schedule-table th.schedule-corner { width: 150px; }
-table.schedule-table tr.row-self > th.schedule-agent {
-  font-weight: 700;
-  color: var(--tng-blue);
+/* Farben je Schichtart — einmal hier, überall referenziert. */
+:root {
+  --shift-frueh: #0088b8;
+  --shift-spaet: #7c5cf0;
+  --shift-urlaub: #2f9e6e;
+  --shift-krank: #d9534f;
+  --shift-schulung: #d98324;
 }
-.schedule-day {
+
+/* Raster */
+.schedule-board { padding: 0; overflow: hidden; }
+/* Der Plan hat viele feste Spalten (Person + Tage + Summe). Statt sie in einem
+   schmalen Fenster zu quetschen, wird gescrollt — die Personenspalte bleibt
+   dabei stehen, sonst weiß man beim Scrollen nicht mehr, wessen Zeile man
+   liest. Genau das macht den Plan auch auf dem Handy benutzbar. */
+.table-wrap.schedule-wrap { overflow-x: auto; overflow-y: visible; }
+table.schedule-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 880px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+table.schedule-table.is-compact { min-width: 1240px; }
+table.schedule-table th,
+table.schedule-table td {
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+table.schedule-table th:last-child,
+table.schedule-table td:last-child { border-right: none; }
+table.schedule-table tbody tr:last-child td,
+table.schedule-table tbody tr:last-child th { border-bottom: none; }
+
+/* Kopfzeile */
+table.schedule-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 9px 6px;
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
   text-align: center;
   cursor: default;
   transition: background 0.12s ease;
 }
-.schedule-day-date { font-weight: 400; font-size: 11px; color: var(--text-tertiary); }
-.schedule-day.is-weekend { background: var(--surface-2); }
-.schedule-day.is-today { box-shadow: inset 0 -2px 0 var(--tng-blue); }
+.schedule-day-name { display: block; }
+.schedule-day-date {
+  display: block;
+  font-weight: 400;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.schedule-day.is-weekend { background: var(--surface-3); }
+.schedule-day.is-weekend .schedule-day-name { color: var(--text-tertiary); }
+.schedule-day.is-today {
+  color: var(--tng-blue);
+  box-shadow: inset 0 -2.5px 0 var(--tng-blue);
+}
+.schedule-day.is-today .schedule-day-date { color: var(--tng-blue); }
 .schedule-day.is-fillable { cursor: pointer; }
 .schedule-day.is-fillable:hover { background: var(--bg-card-hover); }
-.schedule-sum-head { width: 42px; text-align: center; color: var(--text-tertiary); }
+.schedule-sum-head { width: 46px; color: var(--text-tertiary); }
 
+/* Personenspalte — bleibt beim seitlichen Scrollen stehen */
+table.schedule-table th.schedule-corner,
 th.schedule-agent {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 176px;
+  background: var(--bg-card);
   text-align: left;
+}
+table.schedule-table th.schedule-corner {
+  z-index: 4;
+  background: var(--surface-2);
+}
+/* Die Zelle selbst bleibt eine echte Tabellenzelle (sonst löst sie sich aus
+   dem Zeilenraster und sitzt als eigener Kasten in der Zeile); ausgerichtet
+   wird im inneren Container. */
+th.schedule-agent {
+  padding: 8px 10px;
   font-weight: 600;
+  font-size: 13px;
   cursor: default;
-  white-space: nowrap;
+  vertical-align: middle;
+}
+.schedule-agent-inner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.schedule-agent-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--tng-blue), var(--tng-blue-light));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.schedule-agent-name {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+table.schedule-table tr.row-self th.schedule-agent {
+  background: var(--tng-blue-50);
+  box-shadow: inset 3px 0 0 var(--tng-blue);
+}
+table.schedule-table tr.row-self .schedule-agent-name {
+  font-weight: 700;
+  color: var(--tng-blue);
 }
 th.schedule-agent.is-fillable { cursor: pointer; }
 th.schedule-agent.is-fillable:hover { background: var(--bg-card-hover); }
 
-.schedule-cell { text-align: center; padding: 3px !important; }
-.schedule-cell.is-weekend { background: rgba(148, 163, 184, 0.05); }
+.schedule-cell {
+  padding: 3px;
+  vertical-align: middle;
+  background: var(--bg-card);
+}
+.schedule-cell.is-weekend { background: rgba(148, 163, 184, 0.06); }
+.schedule-cell.is-today { background: rgba(0, 163, 224, 0.045); }
 
 .widget.is-busy { opacity: 0.6; pointer-events: none; }
+/* Während eines Zuges nicht versehentlich Text markieren. */
+.schedule-board.is-dragging { user-select: none; }
 
+/* Zelle */
 .shift-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  width: 100%;
-  min-height: 44px;
   justify-content: center;
+  gap: 2px;
+  width: 100%;
+  min-height: 62px;
   padding: 6px 4px;
-  border: none;
+  border: 1.5px solid transparent;
   background: none;
   cursor: default;
-  border-radius: 8px;
+  border-radius: 9px;
+  transition: border-color 0.1s ease, background 0.1s ease;
 }
+.shift-cell.has-shift { background: var(--surface-2); }
+.shift-cell.tone-frueh { background: rgba(0, 163, 224, 0.09); }
+.shift-cell.tone-spaet { background: rgba(167, 139, 250, 0.1); }
+.shift-cell.tone-urlaub { background: rgba(47, 158, 110, 0.1); }
+.shift-cell.tone-krank { background: rgba(217, 83, 79, 0.1); }
+.shift-cell.tone-schulung { background: rgba(217, 131, 36, 0.11); }
 .shift-cell.editable { cursor: pointer; }
-.shift-cell.editable:hover { background: var(--bg-card-hover); }
-.shift-cell.paintable:hover { box-shadow: inset 0 0 0 2px var(--tng-blue); }
+.shift-cell.editable:hover { border-color: var(--border-strong); }
+.shift-cell.paintable { cursor: crosshair; }
+.shift-cell.paintable:hover { border-color: var(--tng-blue); }
 .shift-cell .shift-empty {
   color: var(--text-tertiary);
   opacity: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   transition: opacity 0.12s ease;
 }
-.shift-cell.editable:hover .shift-empty { opacity: 0.55; }
+.shift-cell.editable:hover .shift-empty { opacity: 0.5; }
+
 .shift-badge {
   display: inline-block;
   padding: 2px 9px;
   border-radius: 20px;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
 }
-.shift-badge-frueh { background: rgba(0, 163, 224, 0.14); color: #0088b8; }
-.shift-badge-spaet { background: rgba(167, 139, 250, 0.16); color: #7c5cf0; }
+.shift-badge-frueh { background: rgba(0, 163, 224, 0.16); color: var(--shift-frueh); }
+.shift-badge-spaet { background: rgba(167, 139, 250, 0.18); color: var(--shift-spaet); }
 .shift-badge-frei { background: rgba(148, 163, 184, 0.16); color: var(--text-tertiary); }
+.shift-badge-urlaub { background: rgba(47, 158, 110, 0.16); color: var(--shift-urlaub); }
+.shift-badge-krank { background: rgba(217, 83, 79, 0.16); color: var(--shift-krank); }
+.shift-badge-schulung { background: rgba(217, 131, 36, 0.18); color: var(--shift-schulung); }
+
+.shift-time {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
 .shift-campaign {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 10.5px;
   color: var(--text-secondary);
-  max-width: 96px;
+  max-width: 104px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -837,19 +1011,91 @@ th.schedule-agent.is-fillable:hover { background: var(--bg-card-hover); }
   border-radius: 50%;
 }
 
-/* Besetzungs-Fußzeile */
+/* Ergebnis der Schicht (Anrufe / Abschlüsse) — die Verbindung zwischen Plan
+   und dem, was dabei herauskam. */
+.shift-outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+.shift-outcome-part { display: inline-flex; align-items: center; gap: 2px; }
+.shift-outcome-part.is-win { color: var(--green); font-weight: 700; }
+
+/* Besetzungs-Fußzeile mit Zeitstrahl */
 tr.schedule-coverage th,
 tr.schedule-coverage td {
+  padding: 5px 4px;
   text-align: center;
   font-variant-numeric: tabular-nums;
   border-top: 2px solid var(--border);
   background: var(--surface-2);
 }
-tr.schedule-coverage th { text-align: left; font-size: 12px; color: var(--text-secondary); }
-tr.schedule-coverage .cov-frueh { color: #0088b8; font-weight: 700; }
-tr.schedule-coverage .cov-spaet { color: #7c5cf0; font-weight: 700; }
-tr.schedule-coverage .cov-sep { color: var(--text-tertiary); margin: 0 3px; }
-.schedule-sum { text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+tr.schedule-coverage th.schedule-agent,
+tr.schedule-coverage > th:first-child {
+  display: table-cell;
+  text-align: left;
+  padding-left: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+}
+.coverage-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.coverage-bar {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 62px;
+  height: 18px;
+  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.14);
+  overflow: hidden;
+}
+.coverage-band {
+  position: absolute;
+  bottom: 0;
+  min-height: 3px;
+  background: var(--tng-blue);
+  opacity: 0.75;
+  border-radius: 1px;
+}
+.coverage-cell.is-under .coverage-band { background: var(--orange); }
+.coverage-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.coverage-cell.is-under .coverage-count { color: var(--orange); }
+.coverage-warn { flex: 0 0 auto; }
+.coverage-missing { font-size: 10px; font-weight: 600; opacity: 0.85; }
+.schedule-sum {
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* Monatsansicht: schmalere Spalten, nur Kurzform in der Zelle */
+table.schedule-table.is-compact .schedule-cell { padding: 2px; }
+table.schedule-table.is-compact .shift-cell { min-height: 34px; gap: 0; padding: 3px 2px; }
+table.schedule-table.is-compact .shift-badge {
+  padding: 1px 6px;
+  font-size: 10px;
+  min-width: 22px;
+}
+table.schedule-table.is-compact thead th { padding: 6px 2px; font-size: 11px; }
+table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
 
 /* Legende */
 .schedule-legend {
@@ -863,13 +1109,39 @@ tr.schedule-coverage .cov-sep { color: var(--text-tertiary); margin: 0 3px; }
   color: var(--text-secondary);
 }
 .schedule-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.schedule-legend-time {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
 .schedule-legend-divider { width: 1px; height: 16px; background: var(--border); }
 .schedule-legend-hint { margin-left: auto; color: var(--text-tertiary); font-size: 11.5px; }
 
+/* Soll-Besetzung */
+.staffing-grid { display: flex; flex-direction: column; gap: 6px; }
+.staffing-head,
+.staffing-row {
+  display: grid;
+  grid-template-columns: 1fr 84px 84px;
+  align-items: center;
+  gap: 10px;
+}
+.staffing-head {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.staffing-head span:not(:first-child) { text-align: center; }
+.staffing-day { font-size: 13px; font-weight: 600; }
+.staffing-row input { text-align: center; }
+.staffing-hint { margin-top: 12px; font-size: 12px; }
+
 /* Schicht-Auswahl im Detail-Formular */
-.shift-type-choice { display: flex; gap: 8px; }
+.shift-type-choice { display: flex; gap: 6px; flex-wrap: wrap; }
 .shift-type-btn {
-  flex: 1;
+  flex: 1 1 88px;
   padding: 9px 6px;
   border: 1.5px solid var(--border);
   border-radius: 9px;
@@ -880,6 +1152,25 @@ tr.schedule-coverage .cov-sep { color: var(--text-tertiary); margin: 0 3px; }
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 .shift-type-btn.is-active { border-color: currentColor; box-shadow: inset 0 0 0 1px currentColor; }
+.shift-time-hint { margin-top: 8px; font-size: 12px; }
+
+/* Handy: Werkzeugleiste und Kopfzeile umbrechen lassen, Spalten schmaler.
+   Der Plan bleibt ein Raster (mit klebender Personenspalte) — das ist beim
+   Dienstplan die brauchbarere Form als gestapelte Karten, weil der Vergleich
+   zwischen Personen und Tagen der ganze Zweck ist. Wer nur die eigene Woche
+   sehen will, schaltet oben auf „Nur meine". */
+@media (max-width: 720px) {
+  .schedule-header-actions { width: 100%; justify-content: space-between; }
+  .schedule-nav { margin-left: auto; }
+  table.schedule-table { min-width: 700px; }
+  table.schedule-table th.schedule-corner,
+  th.schedule-agent { width: 124px; }
+  .schedule-agent-avatar { width: 24px; height: 24px; font-size: 10px; }
+  .schedule-agent-name { font-size: 12px; }
+  .shift-cell { min-height: 54px; }
+  .shift-campaign { max-width: 74px; }
+  .schedule-legend-hint { margin-left: 0; flex-basis: 100%; }
+}
 
 /* ---------- Badges & chips ---------- */
 .badge {
@@ -2637,6 +2928,26 @@ tr.schedule-coverage .cov-sep { color: var(--text-tertiary); margin: 0 3px; }
   margin-top: 0.5px;
 }
 .toast-msg { flex: 1; min-width: 0; }
+/* Handlung in der Meldung (z. B. „Rückgängig" nach einer Massenänderung im
+   Schichtplan). Deutlich als Knopf erkennbar, aber ruhiger als ein
+   Primärbutton — die Meldung soll nicht um Aufmerksamkeit betteln. */
+.toast-action {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.toast-action:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--tng-blue);
+  color: var(--tng-blue);
+}
 .toast-close {
   flex-shrink: 0;
   display: flex;
@@ -4355,6 +4666,85 @@ tr.schedule-coverage .cov-sep { color: var(--text-tertiary); margin: 0 3px; }
   border-radius: 50%;
   background: currentColor;
 }
+
+/* ---- Dashboard-Widget „Meine Schicht" ----
+   Zeigt die laufende Schicht mit Restzeit bzw. — an einem freien Tag — wann es
+   weitergeht. Speist sich aus useShifts.myShifts, derselben Quelle, aus der
+   auch die Extension ihren Call-Typ zieht. */
+.my-shift-widget { display: flex; flex-direction: column; }
+.my-shift-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.my-shift-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 62px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.my-shift-badge.tone-frueh { background: rgba(0, 163, 224, 0.14); color: var(--shift-frueh); }
+.my-shift-badge.tone-spaet { background: rgba(167, 139, 250, 0.16); color: var(--shift-spaet); }
+.my-shift-badge.tone-frei { background: rgba(148, 163, 184, 0.16); color: var(--text-tertiary); }
+.my-shift-badge.tone-urlaub { background: rgba(47, 158, 110, 0.15); color: var(--shift-urlaub); }
+.my-shift-badge.tone-krank { background: rgba(217, 83, 79, 0.15); color: var(--shift-krank); }
+.my-shift-badge.tone-schulung { background: rgba(217, 131, 36, 0.16); color: var(--shift-schulung); }
+.my-shift-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.my-shift-text strong { font-size: 15px; font-weight: 700; }
+.my-shift-text .muted { font-size: 12.5px; }
+
+.my-shift-progress { margin-top: 14px; }
+.my-shift-track {
+  position: relative;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.my-shift-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--tng-blue), var(--tng-blue-light));
+  transition: width 0.4s ease;
+}
+/* Die Jetzt-Marke sitzt genau auf der Kante des gefüllten Teils. */
+.my-shift-now {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 13px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--tng-blue);
+  box-shadow: 0 0 0 2px var(--bg-card);
+}
+.my-shift-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.my-shift-empty {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-top: 6px;
+  color: var(--text-tertiary);
+}
+.my-shift-empty p { margin: 0; font-size: 13px; }
 .dash-report-pill {
   display: inline-flex;
   align-items: center;

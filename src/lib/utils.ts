@@ -73,6 +73,26 @@ export const formatDate = (iso?: string): string => {
   return formatDateObj(parseLocalDate(iso));
 };
 
+/**
+ * Initialen für Avatare: „Anna Becker" → „AB", einteilige Namen → erster
+ * Buchstabe. Lag bislang mehrfach parallel in einzelnen Komponenten.
+ */
+export const initialsOf = (name: string): string =>
+  name
+    .trim()
+    .split(/\s+/)
+    .map((p) => p[0] ?? '')
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
+/** YYYY-MM-DD in lokaler Zeit für ein beliebiges Date (nicht nur heute). */
+export const dateKey = (d: Date): string => {
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+};
+
 /** Heutiges Datum als YYYY-MM-DD in lokaler Zeit (nicht UTC). */
 export const today = (): string => {
   const d = new Date();

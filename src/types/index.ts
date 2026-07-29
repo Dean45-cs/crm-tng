@@ -165,7 +165,14 @@ export interface Campaign {
   createdAt: string;
 }
 
-export type ShiftType = 'frueh' | 'spaet' | 'frei';
+/**
+ * Schichtart eines Tages. 'frueh'/'spaet' sind Arbeit, alles andere nicht —
+ * aber der Grund macht für die Planung den Unterschied (Migration 024):
+ * 'frei' ist eingeplant, 'krank' ist Ausfall, 'urlaub' ist lange bekannt und
+ * 'schulung' ist Anwesenheit ohne Telefonie. Welche Art wie zählt, steht
+ * ausschließlich in SHIFT_META (src/lib/shifts.ts).
+ */
+export type ShiftType = 'frueh' | 'spaet' | 'frei' | 'urlaub' | 'krank' | 'schulung';
 
 /** Ein Tag im geteilten Wochen-Schichtplan (Migration 020). */
 export interface Shift {
@@ -176,6 +183,18 @@ export interface Shift {
   campaignId?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Soll-Besetzung eines Wochentags (Migration 024). Je Wochentag statt je Datum,
+ * weil der Bedarf dem Wochenrhythmus folgt — Ausnahmen an einzelnen Tagen
+ * regelt der Chef über den Plan selbst.
+ */
+export interface StaffingTarget {
+  /** ISO-Wochentag: 1 = Montag … 7 = Sonntag. */
+  weekday: number;
+  minFrueh: number;
+  minSpaet: number;
 }
 
 /**
