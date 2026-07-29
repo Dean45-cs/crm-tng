@@ -2,29 +2,46 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 
 /**
- * Steuert das manuelle (Wieder-)Öffnen der Einführungstour.
+ * Steuert das manuelle (Wieder-)Öffnen der geführten Tour.
+ *
  * Beim allerersten Login öffnet App.tsx die Tour automatisch über das
  * onboardingCompleted-Flag des Nutzers — dieser Store ergänzt das um
  * „jederzeit erneut ansehen": per Tastenkürzel oder Button in den
  * Einstellungen.
+ *
+ * Der Modus entscheidet, welches Drehbuch läuft (siehe OnboardingTour.tsx):
+ * die Einarbeitung für neue Kolleg:innen oder die moderierte Präsentation vor
+ * Entscheider:innen. Er liegt hier und nicht in der Komponente, damit der
+ * Einstiegspunkt (Knopf, Kürzel, erster Login) ihn mitgeben kann.
  */
+export type TourMode = 'onboarding' | 'presentation';
+
 interface OnboardingState {
   open: boolean;
-  start: () => void;
+  mode: TourMode;
+  start: (mode?: TourMode) => void;
   close: () => void;
 }
 
 export const useOnboarding = create<OnboardingState>()((set) => ({
   open: false,
-  start: () => set({ open: true }),
-  close: () => set({ open: false }),
+  mode: 'onboarding',
+  start: (mode = 'onboarding') => set({ open: true, mode }),
+  // Modus beim Schließen zurücksetzen: sonst liefe eine später automatisch
+  // geöffnete Tour (erster Login, onboardingCompleted noch nicht gesetzt) im
+  // zuletzt gewählten Präsentationsmodus — mit dem falschen Drehbuch für
+  // jemanden, der die Anwendung zum ersten Mal sieht.
+  close: () => set({ open: false, mode: 'onboarding' }),
 }));
 
 /**
- * Globales Tastenkürzel: „." und „o" gleichzeitig gedrückt öffnet die Tour.
- * Gedrückte Tasten werden in einem Set verfolgt; sobald beide gleichzeitig
- * unten sind, startet die Tour. In Eingabefeldern bleibt das Kürzel stumm,
- * damit normales Tippen (z. B. „o." in einer Notiz) nichts auslöst.
+ * Globale Tastenkürzel: „." und „o" gleichzeitig öffnet die Einarbeitung,
+ * „." und „p" die Präsentation.
+ *
+ * Gedrückte Tasten werden in einem Set verfolgt; sobald die Kombination
+ * gleichzeitig unten ist, startet die Tour. In Eingabefeldern bleiben die
+ * Kürzel stumm, damit normales Tippen (z. B. „o." in einer Notiz) nichts
+ * auslöst.
  */
 export function useOnboardingHotkey(enabled: boolean) {
   useEffect(() => {
@@ -41,9 +58,13 @@ export function useOnboardingHotkey(enabled: boolean) {
 
     const onKeyDown = (e: KeyboardEvent) => {
       down.add(e.key.toLowerCase());
-      if (down.has('.') && down.has('o') && !isTyping(e.target)) {
+      if (!down.has('.') || isTyping(e.target)) return;
+      if (down.has('o')) {
         e.preventDefault();
-        useOnboarding.getState().start();
+        useOnboarding.getState().start('onboarding');
+      } else if (down.has('p')) {
+        e.preventDefault();
+        useOnboarding.getState().start('presentation');
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {

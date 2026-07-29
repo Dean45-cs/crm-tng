@@ -1,410 +1,45 @@
 import { useEffect, useState } from 'react';
-import {
-  Sparkles,
-  LayoutDashboard,
-  Plus,
-  Users,
-  Trophy,
-  ArrowRight,
-  ArrowLeft,
-  Check,
-  X,
-  FileSignature,
-  ArrowLeftRight,
-  StickyNote,
-  Target,
-  BarChart3,
-  Settings as SettingsIcon,
-  FileText,
-  Share2,
-  Zap,
-  CalendarClock,
-  Search,
-  Gift,
-  UsersRound,
-  Award,
-  ShieldCheck,
-  Boxes,
-  Smartphone,
-  Rocket,
-  Gauge,
-} from 'lucide-react';
+import { ArrowRight, ArrowLeft, Check, X, Clock } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
-import { hotkeyLabel, resolveHotkey } from '../lib/hotkeys';
 import { useOnboarding } from '../store/useOnboarding';
-import { useRouter, type Route } from '../router';
+import { useRouter } from '../router';
 import { TngTile } from './TngLogo';
+import { onboardingSteps } from './tour/onboardingSteps';
+import { presentationSteps, PRESENTATION_CHAPTERS } from './tour/presentationSteps';
+import type { StepDef } from './tour/parts';
 
-// ── Bausteine für den Schritt-Inhalt ────────────────────────────────────────
-
-function FeatureChip({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <div className="onboarding-feature-chip">
-      <span className="onboarding-chip-icon">{icon}</span>
-      <span>{label}</span>
-    </div>
-  );
-}
-
-function Tip({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="onboarding-tip">
-      <Zap size={12} className="onboarding-tip-icon-sm" />
-      <span>{children}</span>
-    </div>
-  );
-}
-
-function ShortcutRow({ label, keys }: { label: string; keys: string[] }) {
-  return (
-    <div className="onboarding-shortcut-row">
-      <span>{label}</span>
-      <div className="onboarding-kbd-group">
-        {keys.map((k) => (
-          <kbd key={k}>{k}</kbd>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function BenefitRow({
-  icon,
-  title,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="onboarding-benefit-row">
-      <span className="onboarding-benefit-icon">{icon}</span>
-      <div className="onboarding-benefit-text">
-        <strong>{title}</strong>
-        <span>{children}</span>
-      </div>
-    </div>
-  );
-}
-
-// ── Schritt-Definition ──────────────────────────────────────────────────────
-
-interface StepDef {
-  title: string;
-  icon: React.ReactNode;
-  target?: string; // CSS-Selektor für das Spotlight
-  goTo?: Route;
-  hint?: string; // kleiner Hinweis am Spotlight ("Klicke hier …")
-  content: React.ReactNode;
-}
-
+/**
+ * Geführte Tour durch die Anwendung — eine Mechanik, zwei Drehbücher:
+ *
+ *   „Einarbeitung"  (onboardingSteps.tsx)   für neue Kolleg:innen
+ *   „Präsentation"  (presentationSteps.tsx) für die Vorstellung vor
+ *                                           Entscheider:innen
+ *
+ * Gemeinsam ist beiden das Spotlight auf ein Element, der Sprung auf die
+ * passende Seite und die Tastatursteuerung. Der Präsentationsmodus ergänzt das
+ * um Dinge, die nur beim Moderieren zählen: eine Kapitelleiste, Sprungmarken
+ * auf den Zifferntasten (wenn die Zeit knapp wird, überspringt man ein Kapitel
+ * statt zu hetzen) und eine mitlaufende Uhr gegen die geplante Redezeit.
+ *
+ * Die Anwendung darunter bleibt in beiden Modi bedienbar — das Overlay liegt
+ * darüber, blockiert aber nichts. Genau deshalb kann man live vorführen und
+ * die Tour gleichzeitig als Spickzettel benutzen.
+ */
 export function OnboardingTour() {
   const { getCurrentUser, completeOnboarding, isManager } = useAuth();
   const closeTour = useOnboarding((s) => s.close);
+  const mode = useOnboarding((s) => s.mode);
   const { navigate } = useRouter();
   const user = getCurrentUser();
   const firstName = user?.displayName?.trim().split(/\s+/)[0] ?? '';
 
+  const presenting = mode === 'presentation';
   const [index, setIndex] = useState(0);
   const [spot, setSpot] = useState<DOMRect | null>(null);
 
-  const steps: StepDef[] = [
-    {
-      title: `Willkommen, ${firstName}!`,
-      icon: <Sparkles size={18} />,
-      content: (
-        <>
-          <p className="onboarding-body">
-            Das Stadtnetz CRM bündelt Verträge, Tarifwechsel, Leads und Notizen an einem Ort und
-            hält deine Provision immer im Blick. Diese kurze Tour zeigt dir alle Funktionen.
-          </p>
-          <div className="onboarding-feature-grid">
-            <FeatureChip icon={<LayoutDashboard size={13} />} label="Dashboard & Ziel" />
-            <FeatureChip icon={<Target size={13} />} label="Leads" />
-            <FeatureChip icon={<FileSignature size={13} />} label="Verträge" />
-            <FeatureChip icon={<Users size={13} />} label="Kunden 360°" />
-            <FeatureChip icon={<Trophy size={13} />} label="Leaderboard" />
-            <FeatureChip icon={<Gift size={13} />} label="Incentives" />
-          </div>
-          <Tip>
-            Du kannst diese Tour jederzeit wieder öffnen: Drücke einfach{' '}
-            <kbd className="onboarding-inline-kbd">.</kbd> und{' '}
-            <kbd className="onboarding-inline-kbd">o</kbd> gleichzeitig.
-          </Tip>
-        </>
-      ),
-    },
-    {
-      title: 'Warum dieses CRM?',
-      icon: <Rocket size={18} />,
-      content: (
-        <>
-          <div className="onboarding-benefit-list">
-            <BenefitRow icon={<Boxes size={14} />} title="Alles an einem Ort">
-              Verträge, Tarifwechsel, Leads, Kunden & Notizen — kein Excel-Chaos, keine
-              Doppelerfassung.
-            </BenefitRow>
-            <BenefitRow icon={<Gauge size={14} />} title="Echtzeit im ganzen Team">
-              Jede Änderung ist sofort für alle sichtbar. Berichte und Team-Zahlen entstehen
-              automatisch — ohne manuelles Zusammenkopieren.
-            </BenefitRow>
-            <BenefitRow icon={<Trophy size={14} />} title="Motivation eingebaut">
-              Monatsziele, Leaderboard und Incentive-Aktionen machen Erfolge sichtbar und spornen
-              an.
-            </BenefitRow>
-            <BenefitRow icon={<ShieldCheck size={14} />} title="DSGVO & Nachvollziehbarkeit">
-              Rollen & Zugriffskontrolle, dokumentierte Einwilligung und ein lückenloses
-              Audit-Log.
-            </BenefitRow>
-            <BenefitRow icon={<Smartphone size={14} />} title="Überall einsatzbereit">
-              Läuft am PC, Tablet und Handy, ist als App installierbar und übersteht auch
-              Funklöcher — inklusive Jira- und SharePoint-Anbindung.
-            </BenefitRow>
-          </div>
-        </>
-      ),
-    },
-    {
-      title: 'Dein persönliches Dashboard',
-      icon: <LayoutDashboard size={18} />,
-      target: '.scope-toggle',
-      goTo: { name: 'dashboard' },
-      hint: 'Probier den Schalter aus',
-      content: (
-        <>
-          <p className="onboarding-body">
-            Der große Ring zeigt deinen Fortschritt zum Monatsziel — er füllt sich mit jeder
-            Provision. Die KPI-Kacheln darunter zeigen Abschlüsse, Provision und Trend.
-          </p>
-          <p className="onboarding-body onboarding-body-tight">
-            Mit dem hervorgehobenen <strong>Meine / Alle</strong>-Schalter wechselst du zwischen
-            deinen eigenen Zahlen und der Teamansicht. Standard ist <strong>Meine</strong>.
-          </p>
-          <Tip>Dein Monatsziel in € legst du selbst in den Einstellungen fest.</Tip>
-        </>
-      ),
-    },
-    {
-      title: 'Die Wiedervorlage-Inbox',
-      icon: <CalendarClock size={18} />,
-      target: '.followup-inbox',
-      goTo: { name: 'dashboard' },
-      content: (
-        <>
-          <p className="onboarding-body">
-            Setzt du bei einem Vertrag ein <strong>Wiedervorlage-Datum</strong>, taucht er hier
-            automatisch auf. Überfällige Einträge leuchten rot, heute fällige orange.
-          </p>
-          <p className="onboarding-body onboarding-body-tight">
-            Ein Klick auf das <strong>Häkchen</strong> markiert den Vorgang als erledigt und
-            entfernt ihn aus der Inbox.
-          </p>
-          <Tip>Perfekt für Rückrufe, offene Abschlüsse und das Nachfassen nach Angeboten.</Tip>
-        </>
-      ),
-    },
-    {
-      title: 'Schnell erfassen',
-      icon: <Plus size={18} />,
-      target: '.fab',
-      goTo: { name: 'dashboard' },
-      hint: 'Hier neue Einträge anlegen',
-      content: (
-        <>
-          <p className="onboarding-body">
-            Der blaue <strong>+ Button</strong> unten rechts ist immer erreichbar. Ein Klick öffnet
-            das Menü für Vertrag, Tarifwechsel oder Notiz — oder du nutzt diese Tastenkürzel:
-          </p>
-          <div className="onboarding-shortcut-list">
-            <ShortcutRow label="Neuer Vertrag" keys={['⌘', 'N']} />
-            <ShortcutRow label="Neuer Tarifwechsel" keys={['⌘', 'T']} />
-            <ShortcutRow label="Neue Notiz" keys={['⌘', '⇧', 'N']} />
-          </div>
-          <Tip>Legst du einen Vorgang im Kundenprofil an, ist der Kunde schon vorausgefüllt.</Tip>
-        </>
-      ),
-    },
-    {
-      title: 'Blitzsuche & Springen',
-      icon: <Search size={18} />,
-      target: '.header-search-wrap',
-      goTo: { name: 'dashboard' },
-      content: (
-        <>
-          <p className="onboarding-body">
-            Oben in der Leiste findest du die <strong>Kundensuche</strong> — tippe Name oder
-            Kundennummer und spring direkt ins Profil.
-          </p>
-          <p className="onboarding-body onboarding-body-tight">
-            Noch schneller ist die <strong>Befehlspalette</strong>: Mit{' '}
-            <kbd className="onboarding-inline-kbd">⌘</kbd>
-            <kbd className="onboarding-inline-kbd">K</kbd> durchsuchst du Kunden, Verträge,
-            Tarifwechsel und Notizen gleichzeitig — und legst von dort auch Neues an.
-          </p>
-          <Tip>Einmal ausprobiert, willst du nie wieder klicken: {hotkeyLabel(resolveHotkey('palette'))} ist der schnellste Weg.</Tip>
-        </>
-      ),
-    },
-    {
-      title: 'Leads: vom Interessenten zum Vertrag',
-      icon: <Target size={18} />,
-      target: '.sidebar-item-leads',
-      goTo: { name: 'leads' },
-      content: (
-        <>
-          <p className="onboarding-body">
-            In <strong>Leads</strong> sammelst du Interessenten, bevor ein Vertrag zustande kommt —
-            mit Status, Notizen und Wiedervorlage. So geht kein potenzieller Abschluss verloren.
-          </p>
-          <p className="onboarding-body onboarding-body-tight">
-            Gewonnene Leads legst du mit <strong>einem Klick</strong> als Kunde an — das
-            Vertragsformular ist dann schon vorausgefüllt.
-          </p>
-          <Tip>
-            Das Dashboard-Widget „Auslaufende Verträge" zeigt dir zusätzlich, welche Kunden bald
-            eine Verlängerung brauchen — die nächste Verkaufschance.
-          </Tip>
-        </>
-      ),
-    },
-    {
-      title: 'Verträge & Provision',
-      icon: <FileSignature size={18} />,
-      target: '.sidebar-item-contracts',
-      goTo: { name: 'contracts' },
-      content: (
-        <>
-          <p className="onboarding-body">
-            In <strong>Verträge</strong> findest du alle Abschlüsse als Tabelle — sortierbar nach
-            Datum, Kunde oder Provision. Die Summenzeile unten zeigt die Gesamt-Provision des
-            gewählten Zeitraums.
-          </p>
-          <div className="onboarding-feature-grid onboarding-feature-grid-2">
-            <FeatureChip icon={<BarChart3 size={13} />} label="Spalten sortieren" />
-            <FeatureChip icon={<Target size={13} />} label="Provisions-Total" />
-            <FeatureChip icon={<ArrowLeftRight size={13} />} label="Tarifwechsel" />
-            <FeatureChip icon={<StickyNote size={13} />} label="Notizen" />
-          </div>
-          <Tip>Stornierte Verträge werden durchgestrichen und zählen nicht zur Summe.</Tip>
-        </>
-      ),
-    },
-    {
-      title: 'Kunden 360°',
-      icon: <Users size={18} />,
-      target: '.sidebar-item-customers',
-      goTo: { name: 'customers' },
-      content: (
-        <>
-          <p className="onboarding-body">
-            Jeder Vorgang gehört zu einer Kundennummer. Im <strong>Kundenprofil</strong> siehst du
-            die komplette Historie eines Kunden — Verträge, Tarifwechsel und Notizen auf einer
-            Seite.
-          </p>
-          <p className="onboarding-body onboarding-body-tight">
-            Kunden kannst du mit Kolleg:innen <strong>teilen</strong>: Geteilte Kunden erscheinen
-            dann in beiden Ansichten.
-          </p>
-          <Tip>Im Kundenprofil erfasste Vorgänge werden automatisch dem Kunden zugeordnet.</Tip>
-        </>
-      ),
-    },
-    {
-      title: 'Leaderboard & Incentives',
-      icon: <Trophy size={18} />,
-      target: '.sidebar-item-leaderboard',
-      goTo: { name: 'leaderboard' },
-      content: (
-        <>
-          <p className="onboarding-body">
-            Das <strong>Leaderboard</strong> zeigt die monatliche Provisions-Rangliste deines Teams
-            — mit Podium für die Top 3. Ein freundlicher Ansporn, kein Druckmittel.
-          </p>
-          <p className="onboarding-body onboarding-body-tight">
-            Unter <strong>Incentives</strong> laufen zusätzlich ausgelobte Aktionen (z. B. „Meiste
-            Glasfaser-Abschlüsse im März") — dein Fortschritt wird automatisch mitgezählt.
-          </p>
-          <Tip>
-            Ob du im Ranking sichtbar bist, entscheidest du selbst — der Schalter dafür ist oben
-            auf der Leaderboard-Seite und in den Einstellungen.
-          </Tip>
-        </>
-      ),
-    },
-    ...(isManager()
-      ? [
-          {
-            title: 'Dein Chef-Bereich',
-            icon: <BarChart3 size={18} />,
-            target: '.sidebar-item-teamdashboard',
-            goTo: { name: 'teamdashboard' } as Route,
-            content: (
-              <>
-                <p className="onboarding-body">
-                  Als Führungskraft hast du einen eigenen Bereich: Das{' '}
-                  <strong>Team-Dashboard</strong> zeigt Umsatz, Abschlüsse und Zielerreichung pro
-                  Mitarbeiter:in — in Echtzeit, ohne dass jemand Zahlen zuliefern muss.
-                </p>
-                <div className="onboarding-feature-grid onboarding-feature-grid-2">
-                  <FeatureChip icon={<BarChart3 size={13} />} label="Team-Dashboard" />
-                  <FeatureChip icon={<UsersRound size={13} />} label="Konten & Rollen" />
-                  <FeatureChip icon={<Award size={13} />} label="Incentives ausloben" />
-                  <FeatureChip icon={<ShieldCheck size={13} />} label="Audit-Log" />
-                </div>
-                <Tip>
-                  In der Team-Verwaltung legst du Konten an, vergibst Ziele und sperrst Zugänge —
-                  jede Änderung landet nachvollziehbar im Audit-Log.
-                </Tip>
-              </>
-            ),
-          } satisfies StepDef,
-        ]
-      : []),
-    {
-      title: 'Einstellungen & Berichte',
-      icon: <SettingsIcon size={18} />,
-      target: '.sidebar-item-settings',
-      goTo: { name: 'settings' },
-      content: (
-        <>
-          <p className="onboarding-body">
-            In den <strong>Einstellungen</strong> passt du Provisionssätze pro Produkt, dein
-            Monatsziel und das Erscheinungsbild (hell/dunkel) an. Diese Werte gelten nur für dich.
-          </p>
-          <div className="onboarding-feature-grid onboarding-feature-grid-2">
-            <FeatureChip icon={<Target size={13} />} label="Monatsziel" />
-            <FeatureChip icon={<SettingsIcon size={13} />} label="Provisionssätze" />
-            <FeatureChip icon={<FileText size={13} />} label="PDF-Bericht" />
-            <FeatureChip icon={<Share2 size={13} />} label="SharePoint-Export" />
-          </div>
-          <Tip>Den PDF-Monatsbericht öffnest du über den Button oben rechts im Dashboard.</Tip>
-        </>
-      ),
-    },
-    {
-      title: 'Startklar! 🎉',
-      icon: <Check size={18} />,
-      content: (
-        <>
-          <p className="onboarding-body">
-            Das war's — du kennst jetzt alle Bereiche. Die wichtigsten Kürzel für den Alltag noch
-            einmal auf einen Blick:
-          </p>
-          <div className="onboarding-shortcut-list">
-            <ShortcutRow label="Blitzsuche öffnen" keys={['⌘', 'K']} />
-            <ShortcutRow label="Neuer Vertrag" keys={['⌘', 'N']} />
-            <ShortcutRow label="Neuer Tarifwechsel" keys={['⌘', 'T']} />
-            <ShortcutRow label="Diese Tour erneut öffnen" keys={['.', 'o']} />
-          </div>
-          <Tip>
-            Für die Tour drückst du <strong>Punkt und o gleichzeitig</strong> — oder startest sie
-            in den Einstellungen. Viel Erfolg!
-          </Tip>
-        </>
-      ),
-    },
-  ];
+  const steps: StepDef[] = presenting
+    ? presentationSteps()
+    : onboardingSteps(firstName, isManager());
 
   const step = steps[index];
   const isLast = index === steps.length - 1;
@@ -460,17 +95,22 @@ export function OnboardingTour() {
   }, [step.target, index]);
 
   const finish = () => {
-    // Nur beim allerersten Durchlauf das Flag schreiben — bei einer manuell
-    // erneut geöffneten Tour reicht das Schließen.
-    if (user && !user.onboardingCompleted) completeOnboarding();
+    // Nur beim allerersten Durchlauf der Einarbeitung das Flag schreiben — eine
+    // manuell geöffnete Tour und der Präsentationsmodus sollen den
+    // Willkommens-Status nicht verändern.
+    if (!presenting && user && !user.onboardingCompleted) completeOnboarding();
     closeTour();
   };
   const next = () => (isLast ? finish() : setIndex((i) => i + 1));
   const prev = () => setIndex((i) => Math.max(0, i - 1));
 
-  // Tastatursteuerung: Pfeile blättern, Escape beendet die Tour. Während man
-  // in einem Eingabefeld tippt (die App bleibt unter dem Overlay bedienbar),
-  // bleiben die Tasten dem Feld überlassen.
+  // Erster Schritt eines Kapitels — Ziel der Sprungmarken.
+  const chapterStart = (chapter: number) => steps.findIndex((s) => s.chapter === chapter);
+
+  // Tastatursteuerung: Pfeile blättern, Escape beendet die Tour, im
+  // Präsentationsmodus springen die Zifferntasten an den Kapitelanfang.
+  // Während man in einem Eingabefeld tippt (die App bleibt unter dem Overlay
+  // bedienbar), bleiben die Tasten dem Feld überlassen.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
@@ -481,6 +121,10 @@ export function OnboardingTour() {
       if (e.key === 'Escape') finish();
       else if (e.key === 'ArrowRight') next();
       else if (e.key === 'ArrowLeft') prev();
+      else if (presenting && /^[1-9]$/.test(e.key)) {
+        const target = chapterStart(Number(e.key) - 1);
+        if (target >= 0) setIndex(target);
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -522,6 +166,18 @@ export function OnboardingTour() {
     <div className="onboarding-overlay" role="dialog" aria-modal="true">
       <SpotlightSvg rect={spot} />
 
+      {presenting && (
+        <PresenterBar
+          steps={steps}
+          index={index}
+          onJump={(chapter) => {
+            const target = chapterStart(chapter);
+            if (target >= 0) setIndex(target);
+          }}
+          onClose={finish}
+        />
+      )}
+
       {spot && step.hint && (
         <div
           className="onboarding-hint"
@@ -531,9 +187,13 @@ export function OnboardingTour() {
         </div>
       )}
 
-      <button className="onboarding-skip" onClick={finish} aria-label="Tour überspringen">
-        <X size={14} /> Überspringen
-      </button>
+      {/* Im Präsentationsmodus sitzt der Beenden-Knopf in der Kapitelleiste —
+          sonst würden sich beide oben am Rand überlagern. */}
+      {!presenting && (
+        <button className="onboarding-skip" onClick={finish} aria-label="Tour überspringen">
+          <X size={14} /> Überspringen
+        </button>
+      )}
 
       <div className={`onboarding-tooltip ${spot ? '' : 'centered'}`} style={tooltipStyle}>
         <div className="onboarding-tip-head">
@@ -555,7 +215,7 @@ export function OnboardingTour() {
           </div>
         </div>
 
-        {index === 0 && (
+        {index === 0 && !presenting && (
           <div className="onboarding-hero-logo">
             <TngTile size={64} radius={16} />
           </div>
@@ -572,13 +232,13 @@ export function OnboardingTour() {
             </button>
           ) : (
             <button className="btn btn-ghost" onClick={finish}>
-              Tour überspringen
+              {presenting ? 'Abbrechen' : 'Tour überspringen'}
             </button>
           )}
           <button className="btn btn-primary" onClick={next}>
             {isLast ? (
               <>
-                Loslegen <Check size={14} />
+                {presenting ? 'Fertig' : 'Loslegen'} <Check size={14} />
               </>
             ) : (
               <>
@@ -588,6 +248,77 @@ export function OnboardingTour() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Kapitelleiste für den Präsentationsmodus.
+ *
+ * Zeigt, wo man im Ablauf steht, erlaubt den Sprung an jeden Kapitelanfang
+ * (Klick oder Zifferntaste) und lässt die Zeit mitlaufen. Die Uhr vergleicht
+ * gegen die geplante Redezeit bis zum aktuellen Kapitel — sie sagt also nicht
+ * nur „12 Minuten", sondern ob das für diese Stelle zu viel ist.
+ */
+function PresenterBar({
+  steps,
+  index,
+  onJump,
+  onClose,
+}: {
+  steps: StepDef[];
+  index: number;
+  onJump: (chapter: number) => void;
+  onClose: () => void;
+}) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const current = steps[index]?.chapter ?? 0;
+  const total = PRESENTATION_CHAPTERS.reduce((sum, c) => sum + c.minutes, 0);
+
+  // Sollzeit bis zum Ende des laufenden Kapitels — der Vergleichswert.
+  const plannedSoFar = PRESENTATION_CHAPTERS.slice(0, current + 1).reduce(
+    (sum, c) => sum + c.minutes,
+    0,
+  );
+  const behind = elapsed > plannedSoFar * 60;
+
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+
+  return (
+    <div className="presenter-bar">
+      <div className="presenter-chapters">
+        {PRESENTATION_CHAPTERS.map((c, i) => (
+          <button
+            key={c.title}
+            type="button"
+            className={`presenter-chapter ${i === current ? 'is-active' : ''} ${
+              i < current ? 'is-done' : ''
+            }`}
+            onClick={() => onJump(i)}
+            title={`Kapitel ${i + 1} · ${c.minutes} Min. — Taste ${i + 1}`}
+          >
+            <span className="presenter-chapter-num">{i + 1}</span>
+            <span className="presenter-chapter-title">{c.title}</span>
+          </button>
+        ))}
+      </div>
+      <div className={`presenter-clock ${behind ? 'is-behind' : ''}`} title={`Geplant: ${total} Min.`}>
+        <Clock size={13} />
+        <span>
+          {mm}:{ss}
+        </span>
+        <span className="presenter-clock-plan">/ {total} Min.</span>
+      </div>
+      <button type="button" className="presenter-close" onClick={onClose} aria-label="Präsentation beenden">
+        <X size={14} />
+      </button>
     </div>
   );
 }
@@ -603,9 +334,7 @@ function SpotlightSvg({ rect }: { rect: DOMRect | null }) {
       <defs>
         <mask id="spot-mask">
           <rect width="100%" height="100%" fill="white" />
-          {r && (
-            <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={14} ry={14} fill="black" />
-          )}
+          {r && <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={14} ry={14} fill="black" />}
         </mask>
       </defs>
       <rect width="100%" height="100%" fill="rgba(10, 28, 50, 0.55)" mask="url(#spot-mask)" />

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Download, Trophy, Sheet, Loader2, CheckCircle, XCircle, Sun, Moon, Monitor, Sparkles } from 'lucide-react';
+import { Save, Download, Trophy, Sheet, Loader2, CheckCircle, XCircle, Sun, Moon, Monitor, Sparkles, Presentation } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { useOnboarding } from '../store/useOnboarding';
@@ -313,20 +313,42 @@ export function Settings() {
       <div className="widget" style={{ marginBottom: 10 }}>
         <h3 className="widget-title">
           <Sparkles size={14} style={{ marginRight: 6, verticalAlign: '-2px' }} />
-          Einführungstour
+          Geführte Touren
         </h3>
-        <div className="row between" style={{ gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
-              Die geführte Tour erklärt alle Funktionen Schritt für Schritt — ideal auch, um das
-              CRM Kolleg:innen zu zeigen. Du startest sie hier oder jederzeit mit{' '}
-              <kbd className="settings-kbd">.</kbd> + <kbd className="settings-kbd">o</kbd>{' '}
-              (gleichzeitig gedrückt).
+        <div className="tour-launch">
+          <div className="tour-launch-row">
+            <div className="tour-launch-text">
+              <strong>Einarbeitung</strong>
+              <span className="muted">
+                Erklärt alle Funktionen Schritt für Schritt — für neue Kolleg:innen. Jederzeit mit{' '}
+                <kbd className="settings-kbd">.</kbd> + <kbd className="settings-kbd">o</kbd>{' '}
+                (gleichzeitig gedrückt).
+              </span>
             </div>
+            <button
+              className="btn btn-primary"
+              onClick={() => useOnboarding.getState().start('onboarding')}
+            >
+              <Sparkles size={14} /> Starten
+            </button>
           </div>
-          <button className="btn btn-primary" onClick={() => useOnboarding.getState().start()}>
-            <Sparkles size={14} /> Tour starten
-          </button>
+
+          <div className="tour-launch-row">
+            <div className="tour-launch-text">
+              <strong>Präsentation</strong>
+              <span className="muted">
+                20 Stationen in 6 Kapiteln für die Vorstellung vor Entscheider:innen — mit
+                Kapitelleiste, Sprungmarken auf den Zifferntasten und mitlaufender Zeit. Kürzel:{' '}
+                <kbd className="settings-kbd">.</kbd> + <kbd className="settings-kbd">p</kbd>.
+              </span>
+            </div>
+            <button
+              className="btn"
+              onClick={() => useOnboarding.getState().start('presentation')}
+            >
+              <Presentation size={14} /> Starten
+            </button>
+          </div>
         </div>
       </div>
 

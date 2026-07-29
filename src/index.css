@@ -2596,9 +2596,14 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
   place-items: center;
   box-shadow: var(--shadow-tng);
 }
+/* Umbrechen statt quetschen: die Präsentation hat 20 Schritte, und in einer
+   Reihe würden die Punkte den Schrittzähler daneben zerdrücken. */
 .onboarding-progress {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
+  min-width: 0;
 }
 .onboarding-dot {
   width: 12px;
@@ -2651,6 +2656,8 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
   gap: 10px;
 }
 .onboarding-step-count {
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-tertiary);
@@ -2830,6 +2837,231 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
   font-size: 11.5px;
   line-height: 1.45;
   color: var(--text-secondary);
+}
+
+/* ---- Bausteine des Präsentations-Drehbuchs ---- */
+
+/* Kennzahlen im Schlusskapitel: Zahlen sind überprüfbar, Adjektive nicht. */
+.onboarding-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  margin: 4px 0 8px;
+}
+.onboarding-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 9px 4px;
+  border-radius: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  text-align: center;
+}
+.onboarding-stat strong {
+  font-size: 16px;
+  font-weight: 750;
+  color: var(--tng-blue);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.onboarding-stat span {
+  font-size: 10px;
+  line-height: 1.25;
+  color: var(--text-tertiary);
+}
+
+/* Gegenüberstellung „Bisher / Mit dem CRM". */
+.onboarding-ba {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+.onboarding-ba-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.onboarding-ba-side.is-before {
+  background: rgba(148, 163, 184, 0.09);
+}
+.onboarding-ba-side.is-after {
+  background: rgba(0, 102, 179, 0.08);
+  border-color: rgba(0, 102, 179, 0.22);
+}
+.onboarding-ba-label {
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.onboarding-ba-side.is-after .onboarding-ba-label { color: var(--tng-blue); }
+
+/* Offener Punkt im Ausblick — bewusst schlichter als eine Vorteils-Zeile. */
+.onboarding-todo-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 11px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border-strong);
+}
+.onboarding-todo-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--orange);
+}
+
+/* ---- Präsentator-Leiste ----
+   Nur im Präsentationsmodus. Zeigt den Ablauf, erlaubt Kapitelsprünge (Klick
+   oder Zifferntaste) und vergleicht die verstrichene mit der geplanten Zeit —
+   damit man beim Moderieren merkt, ob man zu lange bei etwas hängt. */
+.presenter-bar {
+  position: fixed;
+  top: 14px;
+  /* Zentriert über inset + auto-Ränder, NICHT über left:50% + translate:
+     bei left:50% berechnet sich die Shrink-to-fit-Breite nur aus dem Platz
+     rechts der Mitte — die Leiste wäre auf die halbe Fensterbreite gedeckelt
+     und der Beenden-Knopf abgeschnitten. */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: max-content;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 8px 6px 6px;
+  border-radius: 14px;
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.92));
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 28px rgba(10, 28, 50, 0.18);
+  backdrop-filter: blur(12px);
+  /* Notausgang für schmale Fenster — die Kapitel selbst werden nicht
+     beschnitten (siehe flex-shrink unten), stattdessen scrollt die Leiste. */
+  overflow-x: auto;
+}
+.presenter-chapters {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.presenter-chapter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* Nicht schrumpfen: ein halb abgeschnittener Kapitelname hilft beim
+     Moderieren nicht — dann lieber die Leiste scrollen lassen. */
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.presenter-chapter:hover { background: var(--surface-2); color: var(--text); }
+.presenter-chapter.is-active {
+  background: var(--tng-blue);
+  color: #fff;
+}
+.presenter-chapter.is-done { color: var(--text-tertiary); }
+.presenter-chapter-num {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 750;
+}
+.presenter-chapter.is-active .presenter-chapter-num {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
+.presenter-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+/* Über der geplanten Zeit für dieses Kapitel — ruhiger Hinweis, kein Alarm. */
+.presenter-clock.is-behind {
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+.presenter-clock-plan {
+  font-weight: 500;
+  font-size: 10.5px;
+  opacity: 0.75;
+}
+.presenter-close {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.presenter-close:hover { background: var(--red-bg); color: var(--red); }
+
+/* Zwei Touren zur Auswahl in den Einstellungen */
+.tour-launch { display: flex; flex-direction: column; gap: 10px; }
+.tour-launch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tour-launch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 240px;
+}
+.tour-launch-text strong { font-size: 13px; font-weight: 650; }
+.tour-launch-text .muted { font-size: 12.5px; line-height: 1.5; }
+
+@media (max-width: 720px) {
+  .onboarding-stats { grid-template-columns: repeat(2, 1fr); }
+  .onboarding-ba { grid-template-columns: 1fr; }
+  /* Die Kapitelleiste würde auf dem Handy den halben Schirm belegen — dort
+     moderiert ohnehin niemand. */
+  .presenter-bar { display: none; }
 }
 
 /* Inline-Taste im Fließtext (z. B. „drücke . und o") */
