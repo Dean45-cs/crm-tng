@@ -3038,6 +3038,20 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
 }
 .presenter-close:hover { background: var(--red-bg); color: var(--red); }
 
+/* Hinweiszeile über der Mannschaftsliste, wenn gesperrte Konten ausgeblendet
+   sind — ohne sie wäre unklar, warum die Liste kürzer ist als „x im Team". */
+.team-locked-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+
 /* Zwei Touren zur Auswahl in den Einstellungen */
 .tour-launch { display: flex; flex-direction: column; gap: 10px; }
 .tour-launch-row {

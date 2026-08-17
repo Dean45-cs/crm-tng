@@ -483,100 +483,365 @@
 
     // Gesprächsleitfäden je Call-Typ (Outbound-Umbau). Welchen der Bearbeiter
     // sieht, bestimmt die Kampagne seiner aktuellen Schicht (call_type,
-    // Migration 019/020) — mit manuellem Umschalter im Cockpit als Override.
-    //   churn   — Kündiger-Rückgewinnung: Anlass klären, Grund verstehen,
-    //             Halteangebot, Abschluss.
-    //   welcome — Willkommensanruf: Schritt-für-Schritt-Checkliste, damit kein
-    //             Onboarding-Punkt vergessen wird (checklist: true rendert je
-    //             Schritt eine abhakbare Checkbox).
+    // Migration 019/020/025) — mit manuellem Umschalter im Cockpit als
+    // Override. Inhaltlich kondensiert aus den Gesprächsleitfäden v2.0
+    // (Stand August 2026):
+    //   churn    — Churn: Widerrufe & Kündigungen (Winback vor Churn)
+    //   welcome  — Welcome Calls: Checkliste (checklist: true rendert je
+    //              Schritt eine abhakbare Checkbox)
+    //   prl      — Postrückläufer: Adressabgleich, Ursache, erneuter Versand
+    //   dupe     — Dubletten-Check: Gebäudetyp, Gebäudedetails, Bereinigung
+    //   bvw      — Bauverweigerer: Ursache, § 156 TKG, Lösungsbaukasten
+    //   courtesy — Courtesy Calls: Aktivierung begleiten, HomeID erheben
+    // Kampagnen mit call_type 'other' haben keinen eigenen Leitfaden und
+    // fallen in der UI auf churn zurück (siehe ui.js activeCallType()).
+    // Kurzlabels für den Call-Typ-Umschalter im Cockpit (ui.js).
+    callTypeLabels: {
+      churn: "Churn",
+      welcome: "Welcome",
+      prl: "PRL",
+      dupe: "Dupe",
+      bvw: "BVW",
+      courtesy: "Courtesy"
+    },
     callGuides: {
       churn: [
         {
-          title: "1. Eigenvorstellung & Anlass",
-          prompt: "Guten Tag, mein Name ist [Name] von [Unternehmen]. Spreche ich mit [Kundenname]? Ich rufe an, weil bei uns Ihre Kündigung zu [Vertrag/Tarif] eingegangen ist."
+          title: "1. Einstieg & Legitimation",
+          prompt: "„Schönen guten Tag, mein Name ist [Vorname Nachname] von der TNG Stadtnetz GmbH. Spreche ich direkt mit Herrn/Frau [Kundenname]?“ Bevor Vertragsdaten genannt werden: Identität per Geburtsdatum oder Kunden-/Auftragsnummer bestätigen. Dritte am Apparat erhalten keine Auskunft — nur eine Rückrufbitte an den Vertragsnehmer."
         },
         {
-          title: "2. Kündigungsgrund verstehen",
-          prompt: "Damit ich Sie richtig verstehe: Was hat den Ausschlag gegeben, dass Sie kündigen möchten? [zuhören, nicht sofort argumentieren]"
+          title: "2. Weichenstellung: Widerruf oder Kündigung?",
+          prompt: "Widerruf: 14 Tage ab Zugang der Widerrufsbelehrung (§ 356 Abs. 3 BGB — bei Postrückläufern läuft die Frist ggf. noch nicht). Kündigung: § 56 TKG, Textform genügt. Wir nehmen beides nicht telefonisch entgegen — aber vor jedem Verweis auf das Formular steht der Winbackversuch."
         },
         {
-          title: "3. Auf den Grund eingehen",
-          prompt: "Das kann ich nachvollziehen. Zu [genannter Grund] kann ich Ihnen Folgendes anbieten: [passendes Argument / Halteangebot]."
+          title: "3. Grund verstehen",
+          prompt: "„Ich habe die Mitteilung erhalten, dass Sie uns verlassen möchten — darf ich fragen, was Sie zu diesem Schritt bewegt hat?“ Ausreden lassen, mit eigenen Worten zusammenfassen. Vor jedem Behandeln prüfen: Vorwand (umgehen) oder Einwand (behandeln)?"
         },
         {
-          title: "4. Halteangebot machen",
-          prompt: "Konkret könnte ich Ihnen [Angebot: Tarifwechsel / Konditionen / Zusatzleistung] anbieten, damit sich das für Sie wieder lohnt. Wäre das für Sie interessant?"
+          title: "4. Winback durchführen",
+          prompt: "Angebot aus dem Baukasten: Preis → Tarifwechsel/Rabatt/Dealcloser · Bauzeit → konkreten Stand nennen, Rückmeldung terminieren · Technik → Ticket an KB, ggf. Gutschrift · Umzug → Vertragsmitnahme prüfen · Wettbewerb → Wechselgarantie, Tarifvergleich · Beratung → nachholen, VZF versenden. Kaufmotiv reaktivieren: „Was hat Sie damals bewegt, einen Glasfaseranschluss zu bestellen?“"
         },
         {
-          title: "5. Ergebnis & nächsten Schritt bestätigen",
-          prompt: "Ich halte fest: [Ergebnis]. Als Nächstes [Aktion] bis [Datum/Uhrzeit]. Vielen Dank für Ihre Zeit."
+          title: "5. Fraud-Merkmale prüfen",
+          prompt: "Kunde kennt Vertrag oder Vertriebler nicht, ist überrascht von Inhalten, Daten passen nicht? → Beobachtung wertfrei dokumentieren und als Fraud-Verdacht kennzeichnen (Partnerprüfung in der Nachbearbeitung). Den Verdacht nie im Gespräch benennen."
+        },
+        {
+          title: "6. Ergebnis festhalten & Abschluss",
+          prompt: "Churnliste: Ergebnis mit Grund und Kommentar, Winback-Status ändern (nur so vergütungsrelevant). Erfolg: Maßnahme umsetzen, HomeID aufnehmen. Misserfolg: Ablehnungsgrund strukturiert erfassen, aufs Formular verweisen und Link zusenden. Jede Vertragsänderung per E-Mail bestätigen lassen. Zum Abschluss immer die Double-Opt-In Permission ankündigen und auslösen."
         }
       ],
-      // Willkommensanruf: als Checkliste — jeder Punkt wird beim Durchgehen
+      // Welcome Call: als Checkliste — jeder Punkt wird beim Durchgehen
       // abgehakt, damit gerade neue Bearbeiter:innen nichts vergessen.
       welcome: [
         {
-          title: "1. Begrüßung & Willkommen",
-          prompt: "Guten Tag, mein Name ist [Name] von [Unternehmen]. Herzlich willkommen bei uns! Ich rufe kurz an, um alles Wichtige zu Ihrem neuen Anschluss mit Ihnen durchzugehen.",
+          title: "1. Einstieg & Legitimation",
+          prompt: "„Ich melde mich kurz zu Ihrem Vertragsabschluss — freut mich, dass Sie sich für uns entschieden haben. Haben Sie fünf Minuten?“ Vor Vertragsdaten legitimieren (Geburtsdatum oder Kunden-/Auftragsnummer). Bei „passt gerade nicht“: konkreten Rückruftermin vereinbaren, nicht „irgendwann nochmal“.",
           checklist: true
         },
         {
-          title: "2. Vertrag bestätigen",
-          prompt: "Zur Sicherheit gehen wir Ihren Vertrag kurz durch: [Tarif], Laufzeit [Laufzeit], Startdatum [Datum]. Passt das alles so für Sie?",
+          title: "2. Auftragsverifikation",
+          prompt: "„Sie haben den Auftrag für einen Glasfaseranschluss an der [Adresse] mit dem Tarif [Tarif] abgeschlossen, korrekt?“ Bei Verneinung: verstehen — zusammenfassen — einordnen, erst danach in den Winback.",
           checklist: true
         },
         {
-          title: "3. Geräteeinrichtung / Technik",
-          prompt: "Zur Technik: Haben Sie Ihre Zugangsdaten und das Gerät erhalten? Brauchen Sie Unterstützung bei der Einrichtung oder beim Anschalttermin?",
+          title: "3. Kaufreue & Winback",
+          prompt: "Frühwarnsignale ernst nehmen („Der Kollege an der Tür hat gesagt …“, Zögern bei Preis oder Laufzeit). Baukasten in Stufen: 1 Klarheit (Unterlagen zusenden) → 2 Passung (Tarif prüfen, Wechselgarantie) → 3 Kompensation (Dealcloser, nur nach Rücksprache) → 4 Zeit (Rückruftermin). Widerruf nie telefonisch entgegennehmen — aufs Formular verweisen, Link zusenden, Widerrufsabsicht in der Churnliste erfassen.",
           checklist: true
         },
         {
-          title: "4. Zusatzservices anbieten",
-          prompt: "Ergänzend hätten wir noch [Zusatzservice, z.B. TV / Mobilfunk] — möchten Sie dazu Informationen, oder passt Ihr Paket erstmal so?",
+          title: "4. Beratungsqualität",
+          prompt: "„Wurde Ihnen beim Abschluss ein Beratungsprotokoll ausgehändigt?“ Beratungsnote abfragen („Welche Schulnote würde die Beratung erhalten?“, 1–6) und in Caseris erfassen — bei 5/6 Begründung im Freitext. Keine negative Bewertung der D2D-Kollegen im Gespräch.",
           checklist: true
         },
         {
-          title: "5. Feedback & Abschluss",
-          prompt: "Gibt es zum Start noch offene Fragen von Ihrer Seite? Vielen Dank und viel Freude mit Ihrem Anschluss — bei Bedarf sind wir jederzeit für Sie da.",
+          title: "5. Datenabgleich",
+          prompt: "Postanschrift und Anschlussadresse, Name, Rufnummer(n), E-Mail buchstabieren lassen und wiederholen (häufigste Fehlerquelle). Abweichungen in OIKO und Caseris dokumentieren.",
           checklist: true
+        },
+        {
+          title: "6. HomeID (nur wenn ausgebaut)",
+          prompt: "„Auf der kleinen weißen Dose ist eine Nummer vermerkt — Aufkleber auf der Ober- oder Vorderseite.“ Reihenfolge: ausgewiesene HomeID vor ONT-Seriennummer vor AD-Nummer. Nummer wiederholen und bestätigen lassen — zwingend und vergütungsrelevant.",
+          checklist: true
+        },
+        {
+          title: "7. Offene Fragen & Abschluss",
+          prompt: "Offene Fragen klären oder an Bau/AM weiterreichen. Double-Opt-In Permission ankündigen und auslösen. Dokumentation nach dem 4-W-Standard (Wer/Was/Welche Maßnahme/Wann): OIKO (Stammdaten), JIRA (andere Einheiten), Caseris (Gespräch), Churnliste (Winback).",
+          checklist: true
+        }
+      ],
+      prl: [
+        {
+          title: "1. Einstieg & Legitimation",
+          prompt: "„Schönen guten Tag, mein Name ist [Vorname Nachname] von der TNG Stadtnetz GmbH. Spreche ich direkt mit Herrn/Frau [Kundenname]?“ Vor Vertragsdaten legitimieren (Geburtsdatum oder Kunden-/Auftragsnummer) — Dritte erhalten keine Auskunft, nur eine Rückrufbitte."
+        },
+        {
+          title: "2. Anlass als Service formulieren",
+          prompt: "„Wir wollten Ihnen Unterlagen zusenden und haben diese wieder zurückbekommen. Ich würde gern gemeinsam mit Ihnen die Adressdaten durchgehen — sobald etwas nicht korrekt ist, passen wir das direkt an.“ Kein „Ihre Adresse war falsch“ — danach bewusst schweigen. Bei Irrläufer: keine Vertragsdaten nennen, Vorgang kennzeichnen, Abschluss."
+        },
+        {
+          title: "3. Adressdaten abgleichen",
+          prompt: "Anschlussadresse (ASA) und Postanschrift (HVN) getrennt prüfen · Name inkl. Zusatz/c/o (Namensschild am Briefkasten!) · Etage/Wohnungslage im Mehrfamilienhaus · aktuelle Rufnummer(n) · E-Mail buchstabieren lassen und wiederholen · E-Mail-Zustellung zusätzlich anbieten."
+        },
+        {
+          title: "4. Ursache festhalten",
+          prompt: "Die Ursache bestimmt die Korrektur: Namensschild fehlt · Wohnungsnummer fehlt (MFH) · Erfassungsfehler im Auftrag · abweichende Postanschrift · Umzug · Nachsendeauftrag abgelaufen · Zustellfehler. Immer die Ursache dokumentieren — wer nur „Adresse geändert“ einträgt, produziert den nächsten Rückläufer."
+        },
+        {
+          title: "5. Offene Fragen & Kaufreue",
+          prompt: "„Gibt es aktuell noch offene Fragen zum Auftrag oder zum weiteren Ablauf?“ Zweifel am Vertrag → Winback vor Churn: Kaufmotiv reaktivieren („Was hat Sie damals bewegt, einen Glasfaseranschluss zu bestellen?“), dann Merkmal → Vorteil → Nutzen."
+        },
+        {
+          title: "6. Abschluss & Double-Opt-In",
+          prompt: "Erneuten Versand konkret zusagen, E-Mail-Adresse bestätigt, HomeID aufnehmen (falls ausgebaut), DOI-Permission ankündigen und über das CRM auslösen. Doku: Churnliste (Ergebnis, Ursache, Maßnahme), Ticket an den AM, korrigierte Stammdaten im OIKO."
+        }
+      ],
+      dupe: [
+        {
+          title: "1. Einstieg & Legitimation",
+          prompt: "„Schönen guten Tag, mein Name ist [Vorname Nachname] von der TNG Stadtnetz GmbH. Spreche ich direkt mit Herrn/Frau [Kundenname]?“ Vor Vertragsdaten legitimieren. Besonderheit dieser Kampagne: Nie offenlegen, dass eine andere Person einen Vertrag hat — neutral formulieren: „uns liegen mehrere Bestellungen zu dieser Adresse vor“."
+        },
+        {
+          title: "2. Anrufgrund",
+          prompt: "Gelistetes EFH: „Ihr Objekt wird als Einfamilienhaus geführt, uns liegen jedoch mehrere Bestellungen für diese Adresse vor — ich würde das gern kurz mit Ihnen prüfen.“ Zwei Verträge: „Wir haben zwei Verträge festgestellt und wollen sichergehen, dass das so gewollt ist — oder ob es ein Versehen war.“"
+        },
+        {
+          title: "3. Gebäudetyp bestimmen",
+          prompt: "Die entscheidende Frage: „Wie viele Haushalte gibt es bei Ihnen im Haus?“ SDU 1 (eine Wohneinheit) → direkter Duplikat-Check · SDU 2 (zwei) → Gebäudedetails abfragen · MDU (ab drei) → Gebäudedetails abfragen und Umstellung SDU→MDU per Ticket an die Wohnungswirtschaft melden (PKV-Immo-Eingang)."
+        },
+        {
+          title: "4. Gebäudedetails (nur SDU 2 / MDU)",
+          prompt: "„Dann habe ich noch ein paar kurze Fragen zum Gebäude.“ Anzahl Haushalte · Stockwerk · Keller für Technik vorhanden? · Gemeinschaftsraum zugänglich? · Hausverwaltung (Name aufnehmen) · Innenhausverkabelung: Eigenleistung oder erforderlich? · Vermieter-Zustimmung?"
+        },
+        {
+          title: "5. Innenhausverkabelung (SDU 2)",
+          prompt: "Umsetzung im Haus liegt beim Eigentümer — einfache Verkabelung mit gewöhnlichem Netzwerk-/LAN-Kabel; „erforderlich“ ist bei SDU 2 nicht zulässig. Bei Ablehnung: Gutschein bis 3 × 50 € — nur reaktiv und nach Rücksprache. Keine Einigung möglich → Übergang in den Bauverweigerer-Leitfaden."
+        },
+        {
+          title: "6. Duplikat-Check",
+          prompt: "SDU 1 ist immer eine Dublette (gleicher Name: doppelte Bestellung — älterer Vertrag bleibt, neuerer wird bereinigt; andere Namen: Tarif und Situation klären). Mehrere Wohneinheiten: „Beziehen sich die Bestellungen auf dieselbe oder auf unterschiedliche Wohnungen?“ Grundsatz: Ein Vertrag bleibt immer bestehen — wir stornieren nie beide. Begründung setzen: Inhaberwechsel/Umzug oder doppelter Vertragsabschluss."
+        },
+        {
+          title: "7. Zweite Person & Abschluss",
+          prompt: "Zweiten Vertragsnehmer einbeziehen (nicht erreichbar → Aufklärung per Mail) — keine Auskunft über den jeweils anderen Vertrag. Status nur MIT Begründung im System setzen, HomeID aufnehmen (falls ausgebaut), Double-Opt-In Permission ankündigen und auslösen."
+        }
+      ],
+      bvw: [
+        {
+          title: "1. Einstieg & Legitimation",
+          prompt: "„Schönen guten Tag, mein Name ist [Vorname Nachname] von der TNG Stadtnetz GmbH. Spreche ich direkt mit Herrn/Frau [Kundenname]?“ Vor Vertragsdaten legitimieren (Geburtsdatum oder Kunden-/Auftragsnummer) — Dritte erhalten keine Auskunft, nur eine Rückrufbitte."
+        },
+        {
+          title: "2. Anlass & Ursache ermitteln",
+          prompt: "„Unser Tiefbaupartner meldet, dass der Ausbau bei Ihnen nicht wie geplant durchgeführt werden kann. Wie ist der Stand bei Ihnen vor Ort — gibt es etwas, das wir gemeinsam klären können?“ Pausieren, ausreden lassen. Typologie: Eigentümer (Sorge um Garten/Fassade) · Mieter ohne Eigentümerzustimmung · Hausverwaltung · WEG · Kosten (Mehrmeter) · Innenhausverkabelung · grundsätzliche Ablehnung."
+        },
+        {
+          title: "3. Bedeutung klar positionieren",
+          prompt: "„Bis hierhin sind erhebliche Investitionen geflossen. Der Ausbau ist noch möglich — aber es ist die letzte Gelegenheit, ihn kurzfristig umzusetzen. Andernfalls müssen wir uns vorbehalten, den Schaden (mindestens 24 Monatsentgelte) geltend zu machen — was sicher nicht in Ihrem oder unserem Interesse liegt.“ Sachlich, im Konjunktiv, einmalig — nie als Druckmittel wiederholen. Kernfrage: „Was können wir tun, damit der Ausbau wie geplant stattfinden kann?“"
+        },
+        {
+          title: "4. § 156 TKG erklären",
+          prompt: "Keine Zustimmung von Eigentümer oder Hausverwaltung erforderlich — der Eigentümer muss die notwendigen Maßnahmen dulden, der Mieter darf den Anschluss beauftragen. Wir übernehmen Abstimmung und Kosten bis 20 m ab Grundstücksgrenze. Bei VZF- (§ 54 TKG) oder OLG-Einwand: sofort an die Rechtsabteilung übergeben — keine eigene rechtliche Bewertung, keine Diskussion."
+        },
+        {
+          title: "5. Lösungsbaukasten",
+          prompt: "Technisch: alternative Trassenführung, Erdrakete statt offener Grabung, vorhandene Leerrohre, Einführung an anderer Gebäudeseite. Kaufmännisch: Erlass der Mehrmeter über 20 m (Rücksprache), Gutschein Innenhausverkabelung bis 3 × 50 € (nur reaktiv). Organisatorisch: Abstimmung mit HV/Eigentümer übernehmen, Terminfenster nach Kundenwunsch, Unterlagen für die WEG-Versammlung, Wiederherstellung schriftlich zusichern lassen."
+        },
+        {
+          title: "6. Abschluss & Dokumentation",
+          prompt: "Zustimmung: „Ich hinterlege für unseren Tiefbaupartner, dass Sie den Bau vertragsgemäß zulassen.“ Ablehnung: Übergabe an die Rechtsabteilung ankündigen. Churnliste: Kontaktdaten (auch Eigentümer/HV), Ausbaubedingung wörtlich, Winbackstatus nur MIT Ursache. Sonderfälle (Renovierung, technisch unmöglich): Status „Irrelevant“ + Ticket (GFIZ-BVW-Klärung). Double-Opt-In Permission ankündigen und auslösen."
+        }
+      ],
+      courtesy: [
+        {
+          title: "1. Einstieg & Legitimation",
+          prompt: "„Uns ist wichtig, dass Sie alle relevanten Informationen zu Ihrem neuen Anschluss erhalten haben — es dauert nicht länger als zwei bis drei Minuten. Passt es gerade?“ Vor Vertragsdaten legitimieren. Sprachbarriere: „What language do you speak? We will try to call you back in your language.“ → Muttersprache dokumentieren, Rückruf terminieren oder Ticket — nie einfach auflegen."
+        },
+        {
+          title: "2. Anschluss-ID abgleichen",
+          prompt: "„Zur Zuordnung nenne ich Ihnen kurz Ihre Anschluss-ID — bitte bestätigen Sie mir, dass diese so bei Ihnen hinterlegt ist.“ Erst danach inhaltlich über den Anschluss sprechen."
+        },
+        {
+          title: "3. Inbetriebnahme prüfen",
+          prompt: "„Konnten Sie die Geräte mithilfe der beiliegenden Anleitung installieren und Ihren Anschluss aktivieren?“ · Hat bei der Zusendung etwas gefehlt? · Waren es die richtigen Geräte? · Schwierigkeiten bei der Installation? · Funktioniert es mittlerweile? Alles dokumentieren — fehlende/falsche Hardware als Ticket an KB (Neuversand), Technikprobleme an KB mit Rückrufnummer."
+        },
+        {
+          title: "4. Installation telefonisch begleiten",
+          prompt: "Nur nachfragen, ob Begleitung gewünscht ist — nicht ungefragt anleiten. Ein Schritt pro Ansage, Bestätigung abwarten, Kundensprache: „kleine weiße Dose“ (TAD), „schwarzer Kasten“ (ONT). Typische Fehler: Glasfaser nicht eingerastet · Router an LAN- statt WAN-Port · Zugangsdaten aus älterer Sendung · Leitung noch nicht freigeschaltet."
+        },
+        {
+          title: "5. Leitungsprüfung & Eskalation",
+          prompt: "Zum Abschluss Leitungsprüfung im OIKO. Störung → Ticket an KB bzw. Planung & Bau (Anschluss-ID und Adresse, Beobachtung des Kunden wörtlich, bereits durchgeführte Schritte, Erreichbarkeit). Realistischen Zeitrahmen nennen — keine Zusagen ins Blaue."
+        },
+        {
+          title: "6. HomeID aufnehmen",
+          prompt: "„Auf dieser Dose ist eine Nummer vermerkt — Aufkleber auf der Ober- oder Vorderseite.“ Reihenfolge: ausgewiesene HomeID vor ONT-Seriennummer vor AD-/Genexis-Nummer. Nummer immer wiederholen und bestätigen lassen — 0/O und 1/I sind die häufigsten Verwechslungen."
+        },
+        {
+          title: "7. Abschluss & Double-Opt-In",
+          prompt: "Aktivierung begleitet oder geprüft, fehlende Hardware veranlasst, weitere Anliegen als Ticket dokumentiert (OIKO/JIRA/Caseris). Double-Opt-In Permission ankündigen und über das CRM auslösen — erst mit Bestätigung des Kunden wirksam."
         }
       ]
     },
     objectionCards: {
       churn: [
         {
-          title: "„Ist mir einfach zu teuer geworden.“",
-          text: "Das verstehe ich. Lassen Sie uns gemeinsam schauen: Für Ihre Nutzung gibt es womöglich einen passenderen Tarif oder bessere Konditionen — dann bleiben Sie zu einem Preis, der für Sie stimmt."
+          title: "„Zu teuer.“",
+          text: "Geschlossene Gegenfrage: „Mit welchem Tarif vergleichen Sie unser Angebot?“ — Anschlussbau inklusive, keine Nachrüstkosten, dauerhaft stabile Leitung."
         },
         {
-          title: "„Ich habe ein besseres Angebot woanders.“",
-          text: "Darf ich fragen, was der Wettbewerber Ihnen konkret bietet? Oft können wir das mit einem Treueangebot ausgleichen — und Sie behalten Ihren gewohnten Anschluss ohne Wechselaufwand."
+          title: "„Ich bin mit meinem Anbieter zufrieden.“",
+          text: "Bumerang: „Gerade deshalb ist ein Wechsel ohne Druck möglich“ — umsteigen, bevor ein Problem entsteht."
         },
         {
-          title: "„Ich ziehe um / brauche das nicht mehr.“",
-          text: "Kein Problem — in vielen Fällen können wir Ihren Vertrag an die neue Adresse mitnehmen. Sagen Sie mir Ihre neue Anschrift, dann prüfe ich die Verfügbarkeit direkt."
+          title: "„Ich spreche noch mit meiner Frau / meinem Mann.“",
+          text: "Worst Case: „Im schlimmsten Fall findet sie/er heraus, dass Sie einen guten Deal gemacht haben.“"
         },
         {
-          title: "„Ich habe gerade keine Zeit.“",
-          text: "Verstehe ich. Es geht nur um Ihre Kündigung und dauert zwei Minuten. Wann passt es Ihnen besser — heute Nachmittag oder morgen früh? Ich melde mich genau dann."
+          title: "„Ich habe viel Schlechtes gehört.“",
+          text: "Referenz: Objektiv geprüfte Qualität statt anonymer Einzelmeinungen — Festnetztest von Chip."
+        },
+        {
+          title: "„Keine Lust auf den Aufwand.“",
+          text: "Privilegtechnik: „Genau damit Sie sich um nichts kümmern müssen, übernehmen wir den gesamten technischen und organisatorischen Aufwand.“"
+        },
+        {
+          title: "„Ich schließe nicht am Telefon ab.“",
+          text: "Hypothetische Frage: „Mal angenommen, Sie hätten alle Informationen vorab schriftlich zur Prüfung — gäbe es dann noch etwas, das Sie vom Abschluss abhält?“"
+        },
+        {
+          title: "„Das dauert mir alles zu lange.“",
+          text: "Kontextveränderung: Fokus vom kurzfristigen Aufwand auf den langfristigen Nutzen — Wertsteigerung der Immobilie um bis zu 8 %."
+        },
+        {
+          title: "„Die Hausinnenverkabelung ist nicht inklusive.“",
+          text: "Zustimmen, dann: Der Anschluss bis ins Haus ist kostenlos — die Innenverkabelung bleibt flexibel, Sie entscheiden, wie und wo verlegt wird."
+        },
+        {
+          title: "„Erst soll der Techniker kommen.“",
+          text: "Sorge nehmen: Ergibt die Begehung, dass der Bau nicht umsetzbar ist, entstehen für Sie keine vertraglichen Verpflichtungen."
         }
       ],
       welcome: [
         {
+          title: "„Zu teuer.“",
+          text: "Geschlossene Gegenfrage: „Mit welchem Tarif vergleichen Sie unser Angebot?“ — Anschlussbau inklusive, keine Nachrüstkosten, dauerhaft stabile Leitung."
+        },
+        {
+          title: "„Ich muss noch mit meiner Frau / meinem Mann sprechen.“",
+          text: "Worst Case: „Im schlimmsten Fall findet sie/er heraus, dass Sie einen guten Deal gemacht haben.“ Unterlagen zur gemeinsamen Prüfung zusenden, konkreten Rückruftermin vereinbaren."
+        },
+        {
+          title: "„Der Direktvertriebler hat gesagt …“",
+          text: "Den Kollegen nicht bewerten: „Das kann ich nicht ganz nachvollziehen — ich verstehe aber, dass solche Aussagen Verwirrung stiften.“ Es zählt, was schriftlich bestätigt ist — Unterlagen zusenden."
+        },
+        {
+          title: "„Keine Lust auf den Aufwand.“",
+          text: "Privilegtechnik: „Genau damit Sie sich um nichts kümmern müssen, übernehmen wir den gesamten technischen und organisatorischen Aufwand.“"
+        },
+        {
+          title: "„Ich habe viel Schlechtes gehört.“",
+          text: "Referenz: Objektiv geprüfte Qualität statt anonymer Einzelmeinungen — Festnetztest von Chip."
+        },
+        {
+          title: "„Das dauert mir alles zu lange.“",
+          text: "Kontextveränderung: Fokus vom kurzfristigen Aufwand auf den langfristigen Nutzen — Wertsteigerung der Immobilie um bis zu 8 %."
+        },
+        {
+          title: "„Ich bin mit meinem Anbieter zufrieden.“",
+          text: "Bumerang: „Gerade deshalb ist ein Wechsel ohne Druck möglich“ — umsteigen, bevor ein Problem entsteht."
+        },
+        {
+          title: "„Ich schließe nichts am Telefon ab.“",
+          text: "Hypothetische Frage: „Mal angenommen, Sie hätten alles vorab schriftlich zur Prüfung — gäbe es dann noch etwas, das Sie abhält?“"
+        }
+      ],
+      prl: [
+        {
+          title: "„Ich habe nichts abgeschlossen.“",
+          text: "Auftragsdaten neutral schildern, Fraud-Merkmale prüfen (wertfrei dokumentieren, nie im Gespräch benennen) — ggf. Widerrufsabsicht aufnehmen und Formular-Link zusenden."
+        },
+        {
+          title: "„Die Adresse stimmt doch.“",
+          text: "Zustellfehler oder Erfassungsfehler? Gemeinsam Feld für Feld abgleichen, erneuten Versand zusagen — zusätzlich E-Mail-Zustellung anbieten."
+        },
+        {
+          title: "„Das dauert mir alles zu lange.“",
+          text: "Kontextveränderung: Beim Glasfaserausbau sind Kommunen, Tiefbau und Genehmigungen beteiligt — der kurzfristige Aufwand zahlt auf einen Anschluss mit jahrzehntelangem Nutzen ein."
+        },
+        {
+          title: "„Ich will das nicht mehr.“",
+          text: "Kaufreue? In den Winback wechseln: Kaufmotiv reaktivieren („Was hat Sie damals bewegt, Glasfaser zu bestellen?“), passendes Angebot prüfen — erst danach den Widerruf wertfrei aufnehmen."
+        },
+        {
+          title: "„Der Preis ist zu hoch.“",
+          text: "„Mit welchem Tarif vergleichen Sie unser Angebot?“ — Tiefbaukosten und Hausanschluss sind bereits inklusive."
+        }
+      ],
+      dupe: [
+        {
+          title: "„Das sind zwei verschiedene Wohnungen.“",
+          text: "„Alles klar, dann betrifft das unterschiedliche Wohnungen — das ist so in Ordnung und kein doppelter Auftrag.“ Beide Verträge bleiben bestehen, Gebäudedaten sauber erfassen."
+        },
+        {
+          title: "„Die zweite Bestellung war ein Versehen.“",
+          text: "„Dann schauen wir uns das kurz genauer an und bereinigen das für Sie.“ Der ältere Vertrag bleibt bestehen, der neuere wird als bestätigte Dublette bereinigt — immer mit Begründung."
+        },
+        {
+          title: "„Um die Verkabelung im Haus will ich mich nicht kümmern.“",
+          text: "Zuständigkeit erklären: einfache LAN-Verkabelung durch den Eigentümer. Nur reaktiv und nach Rücksprache: Gutschein bis 3 × 50 € als Unterstützung anbieten."
+        },
+        {
+          title: "„Warum rufen Sie mich deswegen an?“",
+          text: "Reiner Serviceanruf zur Vertragsabwicklung: Mehrere Bestellungen zu einer Adresse verfälschen Vermarktungsquote und Bauplanung — wir wollen sichergehen, dass alles korrekt hinterlegt ist. Keine Namen oder Tarife Dritter nennen."
+        }
+      ],
+      bvw: [
+        {
+          title: "„Der Direktvertriebler hat gesagt, die Hausverwaltung sei informiert.“",
+          text: "Privilegtechnik: „Genau damit Sie sich um nichts kümmern müssen, übernehmen wir die gesamte Abstimmung.“ Nach § 156 TKG ist keine Zustimmung erforderlich — der Eigentümer muss dulden. Bei kleineren privaten Eigentümern ggf. noch nicht informiert — dann Abstimmung zusagen statt behaupten."
+        },
+        {
+          title: "„Der Vertrag kommt erst mit der Begehung zustande.“",
+          text: "Offene Frage: „Gibt es denn von baulicher Seite Bedenken?“ Der Vertrag gilt mit Erhalt der Auftragsbestätigung — die Begehung dient der technischen Umsetzung, nicht der rechtlichen Bindung."
+        },
+        {
+          title: "„Die Hausinnenverkabelung ist nicht inklusive.“",
+          text: "Zustimmen, dann: Der Anschluss bis ins Haus ist kostenlos — die Innenverkabelung bleibt flexibel, Sie entscheiden, wie und wo verlegt wird."
+        },
+        {
+          title: "„Das dauert mir alles zu lange.“",
+          text: "Kontextveränderung: Der Anschluss schafft über Jahrzehnte Leistung und Wert — der Immobilienwert steigt um bis zu 8 %."
+        },
+        {
+          title: "„Ich habe viel Schlechtes gehört.“",
+          text: "Referenz: Objektiver Vergleich statt anonymer Einzelmeinungen — Festnetztest von Chip."
+        },
+        {
+          title: "„Meine Vertragszusammenfassung fehlt / es gibt ein OLG-Urteil.“",
+          text: "Keine eigene Bewertung, keine Diskussion: „Vielen Dank für den Hinweis — ich übergebe diesen Fall zur Prüfung an unsere Rechtsabteilung.“ Sofort eskalieren (§ 54 TKG)."
+        }
+      ],
+      courtesy: [
+        {
           title: "„Ich habe gerade keine Zeit.“",
-          text: "Kein Problem, das dauert nur zwei Minuten. Sonst melde ich mich gern später — wann passt es Ihnen? Es geht nur darum, dass Ihr Start reibungslos läuft."
+          text: "„Es dauert nur zwei bis drei Minuten — es geht nur darum, dass Ihr Anschluss nutzbar ist.“ Passt es gar nicht: konkrete Wiedervorlage mit Termin, nicht „irgendwann nochmal“."
         },
         {
-          title: "„Ich komme mit der Technik nicht klar.“",
-          text: "Dafür bin ich da — wir gehen das jetzt Schritt für Schritt zusammen durch. Sagen Sie mir einfach, was gerade angezeigt wird, dann finden wir das gemeinsam."
+          title: "Sprachbarriere — „Ich verstehe Sie kaum.“",
+          text: "„What language do you speak? We will try to call you back in your language.“ Muttersprache dokumentieren, Rückruf terminieren oder Ticket — ein abgebrochener Call bedeutet einen nicht aktivierten Anschluss."
         },
         {
-          title: "„Brauche ich die Zusatzangebote wirklich?“",
-          text: "Überhaupt kein Muss — Ihr Paket funktioniert komplett ohne. Ich nenne es nur der Vollständigkeit halber, falls es für Sie interessant ist. Sonst lassen wir das gern so."
+          title: "„Es hat etwas gefehlt.“",
+          text: "„Dafür möchte ich um Entschuldigung bitten. Nennen Sie mir bitte konkret, was gefehlt hat.“ Dokumentieren und Ticket an KB für den erneuten Versand."
         },
         {
-          title: "„Warum rufen Sie überhaupt an?“",
-          text: "Reiner Willkommensanruf — wir wollen sichergehen, dass bei Ihrem Start alles passt und Sie wissen, an wen Sie sich wenden können. Kein Verkaufsgespräch."
+          title: "„Ich habe das falsche Gerät erhalten.“",
+          text: "„Gut, dass wir das jetzt gemeinsam klären können. Haben Sie gar kein Gerät oder ein falsches erhalten?“ Dokumentieren, Ticket an KB für Neuversand."
+        },
+        {
+          title: "„Es funktioniert immer noch nicht.“",
+          text: "„Ich kümmere mich persönlich darum — ein Kollege wird sich noch einmal melden. Soll er Sie unter derselben Nummer erreichen?“ Nummer dokumentieren, Ticket an KB, realistischen Zeitrahmen nennen."
         }
       ]
     }

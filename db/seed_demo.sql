@@ -52,7 +52,7 @@ delete from public.customer_ownerships where owner in ('d0000000-0000-4000-8000-
 -- Demo-Konten. Deshalb hier fensterweise weg, nicht personenweise.
 delete from public.shifts where shift_date between date_trunc('week', current_date)::date - 7 and date_trunc('week', current_date)::date + 20;
 delete from public.calls  where started_at >= (date_trunc('week', current_date)::date - 7)::timestamptz and started_at < (date_trunc('week', current_date)::date + 7)::timestamptz;
-delete from public.campaigns where id in ('c0000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000002','c0000000-0000-4000-8000-000000000003','c0000000-0000-4000-8000-000000000004');
+delete from public.campaigns where id in ('c0000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000002','c0000000-0000-4000-8000-000000000003','c0000000-0000-4000-8000-000000000004','c0000000-0000-4000-8000-000000000005','c0000000-0000-4000-8000-000000000006');
 delete from auth.users            where id in ('d0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000002','d0000000-0000-4000-8000-000000000003','d0000000-0000-4000-8000-000000000004'); -- cascadet public.users + user_settings
 
 -- ----------------------------------------------------------------------------
@@ -235,12 +235,15 @@ on conflict (customer_number) do nothing;
 -- ----------------------------------------------------------------------------
 -- Feste UUIDs, damit die Schichten unten darauf verweisen können und ein
 -- erneuter Lauf dieselben Kampagnen trifft statt Dubletten anzulegen.
+-- Die sechs produktiven Kampagnen (Gesprächsleitfäden v2.0, Migration 025).
 insert into public.campaigns (id, name, call_type, active, created_by)
 values
-  ('c0000000-0000-4000-8000-000000000001','Rückgewinnung Kündiger','churn',  true, 'd0000000-0000-4000-8000-000000000001'),
-  ('c0000000-0000-4000-8000-000000000002','Willkommensanrufe',     'welcome',true, 'd0000000-0000-4000-8000-000000000001'),
-  ('c0000000-0000-4000-8000-000000000003','Glasfaser-Ausbau Nord', 'other',  true, 'd0000000-0000-4000-8000-000000000001'),
-  ('c0000000-0000-4000-8000-000000000004','VVL-Aktion Bestand',    'other',  true, 'd0000000-0000-4000-8000-000000000001')
+  ('c0000000-0000-4000-8000-000000000001','Churn — Widerrufe & Kündigungen','churn',   true, 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000002','Welcome Calls',                 'welcome', true, 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000003','Postrückläufer',                'prl',     true, 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000004','Dubletten-Check',               'dupe',    true, 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000005','Bauverweigerer',                'bvw',     true, 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000006','Courtesy Calls',                'courtesy',true, 'd0000000-0000-4000-8000-000000000001')
 on conflict (id) do update
   set name = excluded.name, call_type = excluded.call_type, active = excluded.active;
 
@@ -269,7 +272,9 @@ declare
     'c0000000-0000-4000-8000-000000000001'::uuid,
     'c0000000-0000-4000-8000-000000000002'::uuid,
     'c0000000-0000-4000-8000-000000000003'::uuid,
-    'c0000000-0000-4000-8000-000000000004'::uuid
+    'c0000000-0000-4000-8000-000000000004'::uuid,
+    'c0000000-0000-4000-8000-000000000005'::uuid,
+    'c0000000-0000-4000-8000-000000000006'::uuid
   ];
 begin
   delete from public.shifts
@@ -288,7 +293,7 @@ begin
       when 2 then array['frueh','spaet','frei','frueh','spaet','frei','frei']
       else        array['frei','spaet','frueh','spaet','frueh','frei','frei']
     end;
-    camp := camps[(idx % 4) + 1];
+    camp := camps[(idx % 6) + 1];
 
     for offs in -7..20 loop
       d := monday + offs;

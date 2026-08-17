@@ -9,6 +9,10 @@ import type { Campaign, CampaignCallType } from '../types';
 const CALL_TYPE_SHORT: Record<CampaignCallType, string> = {
   churn: 'Churn',
   welcome: 'Welcome',
+  prl: 'PRL',
+  dupe: 'Dupe',
+  bvw: 'BVW',
+  courtesy: 'Courtesy',
   other: 'Sonstige',
 };
 

@@ -541,7 +541,8 @@
   }
 
   // Aktuelle Schicht + Kampagne des eingeloggten Agenten (Outbound-Umbau,
-  // Migration 019/020). Bestimmt den Call-Typ (churn/welcome/other) für das
+  // Migration 019/020/025). Bestimmt den Call-Typ (churn/welcome/prl/dupe/
+  // bvw/courtesy/other) für das automatische Skript-Routing im Cockpit.
   // automatische Skript-Routing im Cockpit. Liest die shifts-Zeile für heute
   // und joint über den PostgREST-Embed die zugehörige campaign. Strukturierte
   // Rückgabe statt Throw, damit das Cockpit ohne Schicht (kein Eintrag,

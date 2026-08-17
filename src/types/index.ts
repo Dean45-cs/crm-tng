@@ -152,8 +152,8 @@ export interface Call {
 // KAMPAGNEN & SCHICHTPLAN — Outbound-Umbau
 // ============================================================================
 
-/** Bestimmt in der Extension automatisch Skript & Einwandkarten. */
-export type CampaignCallType = 'churn' | 'welcome' | 'other';
+/** Bestimmt in der Extension automatisch Skript & Einwandkarten (Migration 025). */
+export type CampaignCallType = 'churn' | 'welcome' | 'prl' | 'dupe' | 'bvw' | 'courtesy' | 'other';
 
 /** Fester, vom Chef gepflegter Kampagnen-Katalog (Migration 019). */
 export interface Campaign {

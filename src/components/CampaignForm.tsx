@@ -10,8 +10,12 @@ interface Props {
 }
 
 const CALL_TYPE_LABEL: Record<CampaignCallType, string> = {
-  churn: 'Churn — Kündiger-Rückgewinnung',
+  churn: 'Churn — Widerrufe & Kündigungen',
   welcome: 'Welcome — Willkommensanruf',
+  prl: 'PRL — Postrückläufer',
+  dupe: 'Dupe — Dubletten-Check',
+  bvw: 'BVW — Bauverweigerer',
+  courtesy: 'Courtesy — Aktivierungsunterstützung',
   other: 'Sonstige',
 };
 

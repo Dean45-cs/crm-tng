@@ -54,7 +54,8 @@ create index if not exists idx_customers_last_contact on public.customers(last_c
 create table if not exists public.campaigns (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  call_type text not null check (call_type in ('churn', 'welcome', 'other')),
+  -- Typen siehe Migration 025: churn, welcome, prl, dupe, bvw, courtesy, other
+  call_type text not null check (call_type in ('churn', 'welcome', 'prl', 'dupe', 'bvw', 'courtesy', 'other')),
   active boolean not null default true,
   created_at timestamptz default now(),
   created_by uuid references public.users(id) on delete set null

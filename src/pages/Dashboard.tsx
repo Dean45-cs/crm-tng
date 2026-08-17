@@ -56,6 +56,10 @@ type Scope = 'mine' | 'all';
 const CALL_TYPE_LABEL: Record<CampaignCallType, string> = {
   churn: 'Rückgewinnung',
   welcome: 'Willkommen',
+  prl: 'Postrückläufer',
+  dupe: 'Dubletten-Check',
+  bvw: 'Bauverweigerer',
+  courtesy: 'Courtesy',
   other: 'Sonstige',
 };
 const SHIFT_LABEL: Record<'frueh' | 'spaet', string> = {

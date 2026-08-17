@@ -1368,17 +1368,18 @@
   }
 
   // Effektiver Call-Typ: manueller Override zuerst, sonst die Kampagne der
-  // heutigen Schicht, sonst "churn" als sicherer Standard (Kündiger-
-  // Rückgewinnung ist der häufigere und heiklere Fall). "other"-Kampagnen
-  // haben keinen eigenen Leitfaden und fallen ebenfalls auf churn zurück.
+  // heutigen Schicht, sonst "churn" als sicherer Standard. Jeder Typ mit
+  // eigenem Leitfaden in CONFIG.callGuides wird direkt genommen (churn,
+  // welcome, prl, dupe, bvw, courtesy); Kampagnen ohne eigenen Leitfaden
+  // ("other") fallen auf churn zurück.
   function activeCallType() {
     const raw = state.callTypeOverride || (state.shift && state.shift.callType) || "churn";
-    return raw === "welcome" ? "welcome" : "churn";
+    return (CONFIG.callGuides && CONFIG.callGuides[raw]) ? raw : "churn";
   }
 
-  // Aktiver Leitfaden bzw. aktive Einwandkarten — nach Call-Typ (churn/welcome)
-  // statt nach Richtung. Die Kopier-Buttons indizieren bewusst in genau diese
-  // Funktionen und nicht in eine feste Config-Liste.
+  // Aktiver Leitfaden bzw. aktive Einwandkarten — nach Call-Typ (siehe
+  // CONFIG.callGuides/objectionCards). Die Kopier-Buttons indizieren bewusst
+  // in genau diese Funktionen und nicht in eine feste Config-Liste.
   function activeCallPhases() {
     const guides = CONFIG.callGuides || {};
     return guides[activeCallType()] || [];
@@ -1916,9 +1917,15 @@
     }
     const btn = (id, label) =>
       `<button class="sc-calltype-toggle ${type === id ? "is-active" : ""}" type="button" data-action="set-call-type" data-call-type="${id}" aria-pressed="${type === id}">${label}</button>`;
+    // Ein Umschalter je vorhandenem Leitfaden — neue Kampagnen tauchen
+    // automatisch auf, sobald sie in CONFIG.callGuides stehen.
+    const labels = CONFIG.callTypeLabels || {};
+    const switchHtml = Object.keys(CONFIG.callGuides || {})
+      .map((id) => btn(id, labels[id] || id))
+      .join("");
     return `
       <div class="sc-calltype">
-        <div class="sc-calltype-switch">${btn("churn", "Churn")}${btn("welcome", "Welcome")}</div>
+        <div class="sc-calltype-switch">${switchHtml}</div>
         <span class="sc-calltype-source">${source}</span>
         ${renderShiftClock()}
       </div>`;
@@ -1960,7 +1967,7 @@
     const phases = activeCallPhases();
     const cards = activeObjectionCards();
     const type = activeCallType();
-    const isChecklist = type === "welcome";
+    const isChecklist = phases.some((p) => p.checklist);
     const noteTemplate =
       "Angerufen: [Kundenname]\nAnlass: [Warum habe ich angerufen?]\nBesprochen: [Wichtigste Punkte]\nErgebnis: [Was wurde geklärt / zugesagt?]\nNächster Schritt: [Wer macht was bis wann?]";
     // Bei Welcome-Calls Fortschrittsanzeige der Checkliste.
@@ -3511,7 +3518,8 @@
       case "copy-call-phase": { const phase = activeCallPhases()[Number(control.dataset.phaseIndex)]; if (phase) copyText(phase.prompt, "Gesprächsbaustein kopiert."); return; }
       case "copy-objection": { const card = activeObjectionCards()[Number(control.dataset.objectionIndex)]; if (card) copyText(card.text, "Antwort kopiert."); return; }
       case "set-call-type": {
-        const next = control.dataset.callType === "welcome" ? "welcome" : "churn";
+        const requested = control.dataset.callType;
+        const next = (CONFIG.callGuides && CONFIG.callGuides[requested]) ? requested : "churn";
         // Override nur setzen, wenn er von der Schicht abweicht — deckt sich der
         // Klick mit der Kampagne, wird der Override gelöscht (zurück zu „auto").
         const fromShift = (state.shift && state.shift.callType) || "churn";

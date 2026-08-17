@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Printer,
   ChevronRight,
@@ -178,6 +178,20 @@ export function TeamDashboard() {
       })
       .sort((a, b) => b.monthCommission - a.monthCommission);
   }, [users, contracts, tariffChanges, settings, monthCalls]);
+
+  /**
+   * Gesperrte Konten gehören nicht in die Mannschaftsliste — ein gesperrter
+   * Zugang ist niemand, den man einteilt oder dessen Zielerreichung man
+   * bespricht. Ihre Vorgänge zählen aber weiterhin in den Kennzahlen oben:
+   * ein im Mai erfasster Vertrag bleibt Umsatz, auch wenn das Konto im Juli
+   * gesperrt wurde. Deshalb wird nur die Tabelle gefiltert, nicht `rows`.
+   */
+  const [showLocked, setShowLocked] = useState(false);
+  const lockedCount = useMemo(() => rows.filter((r) => !r.isActive).length, [rows]);
+  const visibleRows = useMemo(
+    () => (showLocked ? rows : rows.filter((r) => r.isActive)),
+    [rows, showLocked],
+  );
 
   const team = useMemo(() => {
     const monthCommission = rows.reduce((s, r) => s + r.monthCommission, 0);
@@ -610,6 +624,19 @@ export function TeamDashboard() {
         </div>
       ) : (
         <div className="widget" style={{ padding: 0, overflow: 'hidden' }}>
+          {lockedCount > 0 && (
+            <div className="team-locked-bar">
+              <span className="muted">
+                {lockedCount === 1
+                  ? '1 gesperrtes Konto ausgeblendet'
+                  : `${lockedCount} gesperrte Konten ausgeblendet`}{' '}
+                — die Vorgänge zählen weiterhin in den Kennzahlen oben.
+              </span>
+              <button className="btn btn-sm" onClick={() => setShowLocked((v) => !v)}>
+                {showLocked ? 'Ausblenden' : 'Einblenden'}
+              </button>
+            </div>
+          )}
           <div className="table-wrap">
             <table className="crm-table">
               <thead>
@@ -628,7 +655,7 @@ export function TeamDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, idx) => (
+                {visibleRows.map((r, idx) => (
                   <tr
                     key={r.key}
                     className="row-clickable"
