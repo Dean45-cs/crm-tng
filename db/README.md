@@ -88,6 +88,20 @@ bereits — Migrationen sind dann nicht nötig.
   bleiben vorerst leer. Die Aufbewahrungsfrist/automatische Anonymisierung
   der Rufnummer ist bewusst noch nicht Teil dieser Migration — offener
   Punkt, siehe `KONZEPT-INTEGRATION.md`.
+- `026_outbound_contacts.sql` — Anruflisten je Kampagne. Bisher sagt eine
+  Kampagne nur, *welche* Art Gespräch geführt wird (`call_type`, Migration
+  019/025) und *wer* sie fährt (Schichtplan, Migration 020) — es fehlte, *wen*
+  man anruft. Die Migration ergänzt `campaigns` um die Felder einer
+  abzuarbeitenden Liste (Prämie je Termin und je Abschluss, Zeitraum,
+  Zielprodukt, Versuchsgrenze), legt `outbound_contacts` für die aus
+  Excel/CSV importierte Liste an und erweitert `calls.disposition` um die
+  Outbound-Ausgänge (`termin`, `abschluss`, `nicht-erreicht`, `falsche-daten`,
+  `sperren`). Outbound-Gespräche landen dadurch in derselben `calls`-Tabelle
+  wie die der Extension und zählen in `callStats`, Team-Dashboard und Reports
+  automatisch mit. Alles ist additiv — bestehende Kampagnen, Anrufe und
+  Auswertungen bleiben unverändert gültig. Ein Unique-Index auf
+  `(campaign_id, dedupe_key)` macht den erneuten Import derselben Liste zum
+  No-Op.
 
 > **Erster Zugang (frische Installation):** Beim allerersten Start bietet der
 > Login-Screen automatisch „Erstes Konto einrichten" an — dieses Konto wird der

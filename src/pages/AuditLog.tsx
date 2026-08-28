@@ -22,6 +22,8 @@ import {
   Crown,
   CheckCircle2,
   Activity,
+  Megaphone,
+  PhoneCall,
 } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
 import { SkeletonTable } from '../components/Skeleton';
@@ -55,6 +57,8 @@ const ENTITY_LABEL: Record<AuditEntity, string> = {
   auth: 'Anmeldung',
   settings: 'Einstellungen',
   status: 'Status-Board',
+  campaign: 'Kampagne',
+  outbound_contact: 'Outbound-Kontakt',
 };
 
 const ACTION_ICON: Record<AuditAction, React.ReactNode> = {
@@ -83,6 +87,8 @@ const ENTITY_ICON: Record<AuditEntity, React.ReactNode> = {
   auth: <LogIn size={13} />,
   settings: <Shield size={13} />,
   status: <Activity size={13} />,
+  campaign: <Megaphone size={13} />,
+  outbound_contact: <PhoneCall size={13} />,
 };
 
 function formatRelative(iso: string): string {

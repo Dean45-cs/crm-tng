@@ -18,6 +18,7 @@ export type Route =
   | { name: 'incentives' }
   | { name: 'incentivemanager' }
   | { name: 'leads' }
+  | { name: 'outbound' }
   | { name: 'auditlog' }
   | { name: 'netto' }
   | { name: 'schedule' }

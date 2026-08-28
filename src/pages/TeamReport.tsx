@@ -8,14 +8,17 @@ import { agentStats, attainmentPct } from '../lib/teamStats';
 import { TngMark } from '../components/TngLogo';
 
 export function TeamReport() {
-  const { contracts, tariffChanges, settings } = useStore();
+  const { contracts, tariffChanges, settings, campaigns, outboundContacts } = useStore();
   const { users, isManager } = useAuth();
   const { navigate } = useRouter();
 
   const rows = useMemo(() => {
     return Object.values(users)
       .map((u) => {
-        const stats = agentStats(u.key, contracts, tariffChanges, settings);
+        const stats = agentStats(u.key, contracts, tariffChanges, settings, new Date(), {
+          contacts: outboundContacts,
+          campaigns,
+        });
         return {
           key: u.key,
           displayName: u.displayName,
@@ -25,7 +28,7 @@ export function TeamReport() {
         };
       })
       .sort((a, b) => b.stats.monthCommission - a.stats.monthCommission);
-  }, [users, contracts, tariffChanges, settings]);
+  }, [users, contracts, tariffChanges, settings, outboundContacts, campaigns]);
 
   const totals = useMemo(() => {
     const commission = rows.reduce((s, r) => s + r.stats.monthCommission, 0);

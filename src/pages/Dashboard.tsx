@@ -14,6 +14,7 @@ import {
   Percent,
   LayoutGrid,
   Check,
+  Coins,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -34,6 +35,7 @@ import {
   isSameMonth,
 } from '../lib/utils';
 import { monthlySeries, trendPct } from '../lib/teamStats';
+import { bonusSum } from '../lib/outbound';
 import { callVolumeStats, linkCallsToOutcomes, conversionStats } from '../lib/callStats';
 import { useMonthCalls } from '../store/useMonthCalls';
 import { useCurrentShiftContext } from '../hooks/useCurrentShiftContext';
@@ -75,6 +77,8 @@ export function Dashboard() {
   const allTariffChanges = useStore((s) => s.tariffChanges);
   const settings = useStore((s) => s.settings);
   const loaded = useStore((s) => s.loaded);
+  const campaigns = useStore((s) => s.campaigns);
+  const outboundContacts = useStore((s) => s.outboundContacts);
   const currentUser = useAuth((s) => s.getCurrentUser());
   const greetName = currentUser?.displayName ?? 'Kolleg:in';
   // Live aus useShifts.todayShift + Kampagnen-Katalog abgeleitet (Tier 2).
@@ -142,9 +146,19 @@ export function Dashboard() {
       ? allTariffChanges.filter((t) => t.createdBy === userKey)
       : allTariffChanges;
 
+  // Kampagnen-Prämien zählen als Provision mit — im gleichen Umfang wie die
+  // Verträge, also je nach Ansicht nur die eigenen oder die des ganzen Teams.
+  const bonusScope = scope === 'mine' && userKey ? { agentKey: userKey } : {};
+  const totalOutboundBonus = bonusSum(outboundContacts, campaigns, bonusScope);
+  const monthOutboundBonus = bonusSum(outboundContacts, campaigns, {
+    ...bonusScope,
+    ref: new Date(),
+  });
+
   const totalCommission =
     contracts.reduce((sum, c) => sum + calcContractCommission(c, settings), 0) +
-    tariffChanges.reduce((sum, t) => sum + calcTariffCommission(t, settings), 0);
+    tariffChanges.reduce((sum, t) => sum + calcTariffCommission(t, settings), 0) +
+    totalOutboundBonus;
 
   const monthTariff = tariffChanges.filter((t) => isSameMonth(t.changeDate));
 
@@ -154,8 +168,18 @@ export function Dashboard() {
   const series = monthlySeries(contracts, tariffChanges, settings, 6);
   const currentPoint = series[series.length - 1];
   const prevPoint = series[series.length - 2];
-  const monthCommission = currentPoint.contractCommission + currentPoint.tariffCommission;
-  const prevMonthCommission = prevPoint.contractCommission + prevPoint.tariffCommission;
+  const prevMonthRef = (() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
+    return d;
+  })();
+  const monthCommission =
+    currentPoint.contractCommission + currentPoint.tariffCommission + monthOutboundBonus;
+  const prevMonthCommission =
+    prevPoint.contractCommission +
+    prevPoint.tariffCommission +
+    bonusSum(outboundContacts, campaigns, { ...bonusScope, ref: prevMonthRef });
   const trend = trendPct(monthCommission, prevMonthCommission);
 
   const target = currentUser?.monthlyTarget || 0;
@@ -360,6 +384,15 @@ export function Dashboard() {
                   delta={formatCurrency(prevMonthCommission) + ' im Vormonat'}
                   trend={trend > 0 ? 'positive' : trend < 0 ? 'negative' : undefined}
                 />
+                {monthOutboundBonus + totalOutboundBonus > 0 && (
+                  <KpiWidget
+                    icon={<Coins size={14} />}
+                    accent="green"
+                    label="Kampagnen-Prämien"
+                    value={formatCurrency(monthOutboundBonus)}
+                    delta={`${formatCurrency(totalOutboundBonus)} gesamt`}
+                  />
+                )}
                 <KpiWidget
                   icon={<Phone size={14} />}
                   accent="blue"

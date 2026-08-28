@@ -3,7 +3,7 @@ import { Plus, FileSignature, ArrowLeftRight, StickyNote, X } from 'lucide-react
 import { ContractForm } from './ContractForm';
 import { TariffChangeForm } from './TariffChangeForm';
 import { NoteForm } from './NoteForm';
-import type { Contract, Note, TariffChange } from '../types';
+import type { Contract, Note, ProductType, TariffChange } from '../types';
 import {
   getStoredHotkeys,
   hotkeyLabel,
@@ -18,6 +18,10 @@ type FormKind = 'contract' | 'tariff' | 'note' | null;
 export interface QuickAddPrefill {
   customerNumber: string;
   customerName: string;
+  /** Vorbelegte Produkte, z.B. das Zielprodukt einer Outbound-Kampagne */
+  products?: ProductType[];
+  /** Vorbelegte Notiz, z.B. Herkunft des Abschlusses */
+  notes?: string;
 }
 
 interface QuickAddCtx {

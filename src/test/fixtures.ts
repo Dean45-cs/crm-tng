@@ -1,4 +1,14 @@
-import type { Contract, TariffChange, Settings, Lead, Customer, Note, Call } from '../types';
+import type {
+  Contract,
+  TariffChange,
+  Settings,
+  Lead,
+  Customer,
+  Note,
+  Call,
+  Campaign,
+  OutboundContact,
+} from '../types';
 
 /** Minimale, deterministische Settings für Tests. */
 export const testSettings: Settings = {
@@ -103,6 +113,37 @@ export function makeCustomer(over: Partial<Customer> = {}): Customer {
     firstSeenAt: '2024-06-15T10:00:00.000Z',
     lastContactAt: '2024-06-15T10:00:00.000Z',
     createdBy: 'agent-1',
+    ...over,
+  };
+}
+
+export function makeCampaign(over: Partial<Campaign> = {}): Campaign {
+  seq += 1;
+  return {
+    id: `k${seq}`,
+    name: 'Testkampagne',
+    callType: 'other',
+    active: true,
+    bonusTermin: 5,
+    bonusAbschluss: 20,
+    maxAttempts: 3,
+    createdAt: '2024-06-01T10:00:00.000Z',
+    ...over,
+  };
+}
+
+export function makeContact(over: Partial<OutboundContact> = {}): OutboundContact {
+  seq += 1;
+  return {
+    id: `o${seq}`,
+    campaignId: 'k1',
+    customerName: 'Anrufliste Kunde',
+    phone: '040123456',
+    status: 'offen',
+    attempts: 0,
+    dedupeKey: `tel:040123456-${seq}`,
+    createdAt: '2024-06-01T10:00:00.000Z',
+    updatedAt: '2024-06-01T10:00:00.000Z',
     ...over,
   };
 }

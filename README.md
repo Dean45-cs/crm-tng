@@ -13,6 +13,10 @@ installierbare PWA, mit gemeinsamem Supabase-Backend und Live-Sync.
 - **Tarifwechsel** (Upgrade / Sidegrade / VVL) mit Kontext und Jira-Referenz.
 - **Auslauf-Radar** für Verträge, deren Laufzeit endet.
 - **Leads** mit 4-Stufen-Pipeline, Dringlichkeit und Aktivitäts-Log.
+- **Outbound** — Anruflisten aus Excel/CSV importieren und abtelefonieren:
+  Fokusmodus für einen Kontakt nach dem anderen oder filterbare Liste,
+  Ergebnis je Gespräch, Wiedervorlagen und Termine. Kampagnen tragen eigene
+  **Prämien** je Termin und je Abschluss.
 - **Notizen** als freie Karten, optional verknüpft mit Kunde + Jira-Ticket.
 - **Provisionsberechnung** automatisch pro Produkt — konfigurierbare Sätze.
 - **Chef-Modus:** Team-Dashboard, Mitarbeiter-Detail, Monats-/Team-Berichte,
@@ -88,6 +92,52 @@ Die App braucht die Zugangsdaten des Supabase-Projekts. Zwei Wege:
   Selbst-Registrierung gibt es nicht — Ausnahme: das allererste Konto einer
   frischen Installation richtet sich beim ersten Start selbst ein und wird
   automatisch zum ersten Chef. Details in `db/README.md`.
+
+## Outbound-Modus
+
+Eine Kampagne sagt bisher, *welche* Art Gespräch geführt wird (`call_type`
+steuert Skript und Einwandkarten in der Extension) und *wer* sie fährt
+(Schichtplan). Der Outbound-Modus ergänzt, *wen* man anruft.
+
+**Chef:** *Kampagnen-Verwaltung* → Kampagne anlegen oder bearbeiten (Abschnitt
+„Anrufliste": Prämie je Termin und je Abschluss, Versuche je Kontakt,
+Zielprodukt, Zeitraum) → „Liste importieren".
+
+Der Import liest **.xlsx** und **.csv**; alternativ lassen sich Zeilen direkt
+aus Excel kopieren und einfügen. Die Spalten werden anhand der Kopfzeile
+automatisch zugeordnet (Name bzw. Vorname+Nachname, Telefon, KdNr., Straße,
+PLZ, Ort, E-Mail, Info) und lassen sich vor dem Import korrigieren. Dubletten
+werden über eine normalisierte Telefonnummer erkannt — dieselbe Liste ein
+zweites Mal zu importieren legt nichts doppelt an.
+
+> Der .xlsx-Leser ist Teil des Projekts (`src/lib/xlsx.ts`) und kommt ohne
+> Fremd-Bibliothek aus; er nutzt die native `DecompressionStream`-API. Das alte
+> `.xls`-Format wird nicht gelesen — in Excel als .xlsx oder CSV speichern.
+
+**Vertrieb:** *Outbound* → Kampagne wählen. Angeboten werden nur aktive
+Kampagnen, zu denen eine Liste importiert wurde. **Fokus** arbeitet sie
+priorisiert ab (fällige Termine, dann Wiedervorlagen, dann unangefasste
+Kontakte, dann erneute Versuche), **Liste** erlaubt Suche, Filter und das
+Übernehmen einzelner Kontakte aus dem freien Pool.
+
+Je Gespräch wird ein Ergebnis erfasst: Termin, Abschluss, Wiedervorlage, nicht
+erreicht, kein Interesse, falsche Daten oder Werbewiderspruch. Termine und
+Wiedervorlagen verschwinden bis zum Stichtag aus der Arbeitsliste und tauchen
+dann automatisch wieder auf. Nach der in der Kampagne eingestellten Zahl
+erfolgloser Versuche fällt ein Kontakt heraus. Ein Abschluss öffnet direkt das
+Vertragsformular, vorbelegt mit Kunde und Zielprodukt.
+
+Jedes Gespräch wird zusätzlich als Anruf in derselben `calls`-Tabelle
+protokolliert, die auch die Extension befüllt (`direction: outbound`) — damit
+zählt Outbound in Anrufvolumen, Dispositions-Auswertung und Reports mit,
+statt in einem zweiten Silo zu liegen.
+
+**Prämien:** Je Kontakt zählt immer nur das *aktuelle* Ergebnis — aus einem
+Termin, der später zum Abschluss wird, entsteht keine doppelte Prämie. Die
+Prämie geht an die Person, die das Ergebnis gesetzt hat, und fließt zusätzlich
+zur normalen Vertragsprovision über `agentStats()` in Dashboard, Leaderboard,
+Team-Dashboard und Team-Bericht ein. Die separat konfigurierten **Incentives**
+bleiben bewusst unberührt und zählen weiterhin nur Verträge und Tarifwechsel.
 
 ## Tests
 

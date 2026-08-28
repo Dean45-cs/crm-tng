@@ -96,7 +96,16 @@ interface AgentRow {
 }
 
 export function TeamDashboard() {
-  const { contracts, tariffChanges, leads, notes, settings, campaigns, loaded } = useStore();
+  const {
+    contracts,
+    tariffChanges,
+    leads,
+    notes,
+    settings,
+    campaigns,
+    outboundContacts,
+    loaded,
+  } = useStore();
   const { users, isManager } = useAuth();
   const { navigate } = useRouter();
 
@@ -153,8 +162,16 @@ export function TeamDashboard() {
 
     return Object.values(users)
       .map((u) => {
-        const stats = agentStats(u.key, contracts, tariffChanges, settings, now);
-        const prevCommission = agentStats(u.key, contracts, tariffChanges, settings, prevRef).monthCommission;
+        const outbound = { contacts: outboundContacts, campaigns };
+        const stats = agentStats(u.key, contracts, tariffChanges, settings, now, outbound);
+        const prevCommission = agentStats(
+          u.key,
+          contracts,
+          tariffChanges,
+          settings,
+          prevRef,
+          outbound,
+        ).monthCommission;
         return {
           key: u.key,
           displayName: u.displayName,
@@ -177,7 +194,7 @@ export function TeamDashboard() {
         };
       })
       .sort((a, b) => b.monthCommission - a.monthCommission);
-  }, [users, contracts, tariffChanges, settings, monthCalls]);
+  }, [users, contracts, tariffChanges, settings, monthCalls, outboundContacts, campaigns]);
 
   /**
    * Gesperrte Konten gehören nicht in die Mannschaftsliste — ein gesperrter
