@@ -9510,3 +9510,296 @@ table.crm-table tbody tr:hover td:first-child {
   background: var(--orange-bg);
   color: var(--text);
 }
+
+/* =================================================================
+   OUTBOUND — Kampagnen, Fokusmodus, Anrufliste
+   ================================================================= */
+
+/* --- Kampagnen-Auswahl ------------------------------------------- */
+.campaign-picker {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.campaign-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 550;
+  box-shadow: var(--shadow-xs);
+  transition: all 0.18s var(--ease-spring-soft);
+}
+.campaign-chip:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.campaign-chip.active {
+  background: var(--tng-gradient);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--shadow-tng);
+}
+.campaign-chip.active .badge { background: rgba(255, 255, 255, 0.22); color: #fff; }
+
+/* --- Kennzahlenleiste -------------------------------------------- */
+.outbound-statbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  background: var(--widget-bg);
+  border: 1px solid var(--widget-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+}
+.outbound-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 84px;
+}
+.outbound-stat-value {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+}
+.outbound-stat-label {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+.outbound-statbar .btn { margin-left: auto; }
+
+.outbound-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+  margin: 12px 0 6px;
+}
+.outbound-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--tng-gradient);
+  transition: width 0.5s var(--ease-spring-soft);
+}
+.outbound-progress-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+/* --- Fokusmodus --------------------------------------------------- */
+.outbound-focus {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .outbound-focus { grid-template-columns: 1fr; }
+}
+.outbound-focus > .empty { grid-column: 1 / -1; }
+/* Ohne Leitfaden-Spalte (die Skripte liegen in der Extension) einspaltig,
+   aber lesbar begrenzt statt über die volle Breite. */
+.outbound-focus.single { grid-template-columns: minmax(0, 1fr); max-width: 780px; }
+
+.outbound-card {
+  background: var(--widget-bg);
+  border: 1px solid var(--widget-border);
+  border-radius: var(--widget-radius);
+  box-shadow: var(--widget-shadow);
+  padding: 22px;
+  animation: slide-up-fade 0.32s var(--ease-spring-soft);
+}
+.outbound-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.outbound-card-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.outbound-name {
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.5px;
+  margin-bottom: 8px;
+}
+
+.outbound-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+}
+.outbound-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.outbound-phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--tng-blue);
+  letter-spacing: -0.2px;
+  text-decoration: none;
+}
+.outbound-phone:hover { text-decoration: underline; }
+.outbound-phone.sm { font-size: 13.5px; font-weight: 550; }
+
+.outbound-notes {
+  margin-top: 14px;
+  padding: 11px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+/* --- Ergebnis-Erfassung ------------------------------------------- */
+.call-result { margin-top: 20px; }
+.call-result-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 10px;
+}
+.call-outcome-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+.call-outcome-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 550;
+  text-align: left;
+  transition: all 0.16s var(--ease-spring-soft);
+}
+.call-outcome-btn:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.call-outcome-btn.positive { color: #157a3a; }
+:root[data-theme='dark'] .call-outcome-btn.positive { color: #6fdc8c; }
+.call-outcome-btn.active {
+  border-color: var(--tng-blue);
+  background: var(--tng-blue-50);
+  color: var(--tng-blue-dark);
+  box-shadow: 0 0 0 3px rgba(0, 102, 179, 0.12);
+}
+.call-outcome-btn.positive.active {
+  border-color: var(--green);
+  background: var(--green-bg);
+  color: #157a3a;
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.14);
+}
+:root[data-theme='dark'] .call-outcome-btn.active { color: #6cbef0; }
+:root[data-theme='dark'] .call-outcome-btn.positive.active { color: #6fdc8c; }
+
+.call-result-detail {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--separator);
+  animation: slide-up-fade 0.24s var(--ease-spring-soft);
+}
+.call-result-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* --- Anrufliste ---------------------------------------------------- */
+.outbound-list-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.outbound-list-toolbar .search-bar { flex: 1; min-width: 220px; }
+.outbound-row-name { font-weight: 550; }
+
+/* --- Kampagnen-Verwaltung ------------------------------------------ */
+.campaign-stat-row {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin: 14px 0 4px;
+}
+
+/* --- Import ---------------------------------------------------------- */
+.import-drop {
+  text-align: center;
+  padding: 26px 18px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+}
+.import-drop h4 {
+  margin: 10px 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.import-drop p { margin-bottom: 14px; font-size: 13px; }
+
+.import-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--tng-blue-50);
+  color: var(--tng-blue-dark);
+  font-size: 13px;
+}
+:root[data-theme='dark'] .import-source { color: #6cbef0; }
+.import-source .btn { margin-left: auto; }
+
+.import-map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+.import-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}

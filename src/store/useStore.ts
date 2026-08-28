@@ -14,6 +14,7 @@ import type {
   LeadActivity,
   CustomerAccessRequest,
   Campaign,
+  OutboundContact,
 } from '../types';
 import { useAuth } from './useAuth';
 import { useCalls } from './useCalls';
@@ -58,7 +59,15 @@ import {
   insertAccessRequest,
   updateAccessRequestStatus,
   fetchCustomers,
+  fetchOutboundContacts,
+  insertOutboundContacts,
+  updateOutboundContactRow,
+  deleteOutboundContactRow,
+  deleteContactsOfCampaign,
+  insertOutboundCall,
+  type OutboundContactDraft,
 } from '../lib/supabaseApi';
+import { applyCallResult, OUTCOME_TO_DISPOSITION, type CallResult } from '../lib/outbound';
 
 const currentUserKey = () => useAuth.getState().currentUserKey ?? undefined;
 
@@ -117,6 +126,8 @@ interface StoreState {
   incentives: Incentive[];
   /** Fester Kampagnen-Katalog (Migration 019) — bestimmt in der Extension Skript & Einwandkarten. */
   campaigns: Campaign[];
+  /** Die aus Excel/CSV importierten Anruflisten aller Kampagnen */
+  outboundContacts: OutboundContact[];
   leads: Lead[];
   /** Aktivitäten pro Lead, absteigend nach created_at */
   leadActivities: Record<string, LeadActivity[]>;
@@ -167,6 +178,20 @@ interface StoreState {
   addCampaign: (c: Omit<Campaign, 'id' | 'createdAt'>) => Promise<void>;
   updateCampaign: (id: string, c: Partial<Campaign>) => Promise<void>;
 
+  /** Importiert eine eingelesene Anrufliste. Gibt zurück, wie viele neu waren. */
+  importContacts: (campaignId: string, drafts: Omit<OutboundContactDraft, 'campaignId'>[]) => Promise<number>;
+  updateOutboundContact: (id: string, c: Partial<OutboundContact>) => Promise<void>;
+  deleteOutboundContact: (id: string) => Promise<void>;
+  /** Leert die Anrufliste einer Kampagne (Chef). */
+  clearCampaignContacts: (campaignId: string) => Promise<void>;
+  /** Übernimmt einen Kontakt in die eigene Zuständigkeit (oder gibt ihn frei). */
+  assignContact: (id: string, userKey?: string) => Promise<void>;
+  /**
+   * Protokolliert ein Gespräch, schreibt das Ergebnis auf den Kontakt fort
+   * und legt den Anruf in `calls` ab. Kern des Fokusmodus.
+   */
+  logCall: (contact: OutboundContact, result: CallResult) => Promise<void>;
+
   addLead: (l: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateLead: (id: string, l: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
@@ -216,6 +241,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   customerOwners: {},
   incentives: [],
   campaigns: [],
+  outboundContacts: [],
   leads: [],
   leadActivities: {},
   accessRequests: [],
@@ -225,7 +251,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   loadAll: async () => {
     const uid = useAuth.getState().currentUserKey;
     try {
-      const [contracts, tariffChanges, notes, owners, incentives, campaigns, leads, activities, accessRequests, customers, settingsRes] = await Promise.all([
+      const [contracts, tariffChanges, notes, owners, incentives, campaigns, leads, activities, accessRequests, customers, outboundContacts, settingsRes] = await Promise.all([
         fetchContracts(),
         fetchTariffChanges(),
         fetchNotes(),
@@ -243,6 +269,8 @@ export const useStore = create<StoreState>()((set, get) => ({
         fetchAccessRequests().catch(() => [] as CustomerAccessRequest[]),
         // Eigenständige Kunden-Entität (Migration 017).
         fetchCustomers().catch(() => [] as Customer[]),
+        // Anruflisten (Migration 026).
+        fetchOutboundContacts().catch(() => [] as OutboundContact[]),
         uid ? fetchSettings(uid) : Promise.resolve({ user: null, shared: null }),
       ]);
 
@@ -293,6 +321,7 @@ export const useStore = create<StoreState>()((set, get) => ({
         customerOwners: owners,
         incentives,
         campaigns,
+        outboundContacts,
         leads,
         leadActivities,
         accessRequests,
@@ -314,6 +343,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       customerOwners: {},
       incentives: [],
       campaigns: [],
+      outboundContacts: [],
       leads: [],
       leadActivities: {},
       accessRequests: [],
@@ -340,6 +370,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     });
     const reloadIncentives = debounce(() => {
       fetchIncentives().then((rows) => set({ incentives: rows })).catch(() => {});
+    });
+    const reloadOutboundContacts = debounce(() => {
+      fetchOutboundContacts().then((rows) => set({ outboundContacts: rows })).catch(() => {});
     });
     const reloadCampaigns = debounce(() => {
       fetchCampaigns().then((rows) => set({ campaigns: rows })).catch(() => {});
@@ -374,6 +407,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_ownerships' }, reloadOwners)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incentives' }, reloadIncentives)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'campaigns' }, reloadCampaigns)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'outbound_contacts' }, reloadOutboundContacts)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, reloadLeads)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_activities' }, reloadActivities)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_access_requests' }, reloadAccessRequests)
@@ -922,5 +956,140 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (e) {
       fail('Kundendaten konnten nicht gelöscht werden.', e);
     }
+  },
+  // ==========================================================================
+  // Anruflisten (Outbound)
+  // ==========================================================================
+
+  importContacts: async (campaignId, drafts) => {
+    if (drafts.length === 0) return 0;
+    const uid = currentUserKey();
+    try {
+      const inserted = await insertOutboundContacts(
+        drafts.map((d) => ({ ...d, campaignId, createdBy: uid })),
+      );
+      // Nach dem Bulk-Insert einmal frisch laden — die Datenbank hat
+      // Dubletten still verworfen, der genaue Bestand steht nur dort.
+      const rows = await fetchOutboundContacts();
+      set({ outboundContacts: rows });
+      const campaign = get().campaigns.find((c) => c.id === campaignId);
+      toast.success(
+        inserted === 1 ? '1 Kontakt importiert.' : `${inserted} Kontakte importiert.`,
+      );
+      logAudit({
+        action: 'create',
+        entityType: 'campaign',
+        entityId: campaignId,
+        entityLabel: campaign?.name ?? campaignId,
+        details: { importiert: inserted, ausDatei: drafts.length },
+      });
+      return inserted;
+    } catch (e) {
+      fail('Import fehlgeschlagen – es wurden keine Kontakte übernommen.', e);
+      return 0;
+    }
+  },
+
+  updateOutboundContact: async (id, c) => {
+    const prev = get().outboundContacts;
+    const now = new Date().toISOString();
+    set({ outboundContacts: prev.map((x) => (x.id === id ? { ...x, ...c, updatedAt: now } : x)) });
+    try {
+      await updateOutboundContactRow(id, c);
+    } catch (e) {
+      fail('Änderung fehlgeschlagen – Kontakt wurde zurückgesetzt.', e);
+      set({ outboundContacts: prev });
+    }
+  },
+
+  deleteOutboundContact: async (id) => {
+    const prev = get().outboundContacts;
+    const before = prev.find((x) => x.id === id);
+    set({ outboundContacts: prev.filter((x) => x.id !== id) });
+    try {
+      await deleteOutboundContactRow(id);
+      toast.success('Kontakt gelöscht.');
+      logAudit({
+        action: 'delete',
+        entityType: 'outbound_contact',
+        entityId: id,
+        entityLabel: before?.customerName ?? id,
+      });
+    } catch (e) {
+      fail('Löschen fehlgeschlagen – Kontakt wiederhergestellt.', e);
+      set({ outboundContacts: prev });
+    }
+  },
+
+  clearCampaignContacts: async (campaignId) => {
+    const prev = get().outboundContacts;
+    const removed = prev.filter((x) => x.campaignId === campaignId).length;
+    set({ outboundContacts: prev.filter((x) => x.campaignId !== campaignId) });
+    try {
+      await deleteContactsOfCampaign(campaignId);
+      toast.success(`Anrufliste geleert (${removed} Kontakte).`);
+      logAudit({
+        action: 'delete',
+        entityType: 'campaign',
+        entityId: campaignId,
+        entityLabel: get().campaigns.find((c) => c.id === campaignId)?.name ?? campaignId,
+        details: { geloescht: removed },
+      });
+    } catch (e) {
+      fail('Anrufliste konnte nicht geleert werden.', e);
+      set({ outboundContacts: prev });
+    }
+  },
+
+  assignContact: async (id, userKey) => {
+    await get().updateOutboundContact(id, { assignedTo: userKey });
+  },
+
+  logCall: async (contact, result) => {
+    const uid = currentUserKey();
+    const prev = get().outboundContacts;
+    const patch = applyCallResult(contact, result, uid);
+
+    // Optimistisch schreiben, damit der Fokusmodus ohne Wartezeit weiterspringt.
+    set({
+      outboundContacts: prev.map((x) =>
+        x.id === contact.id ? { ...x, ...patch, updatedAt: new Date().toISOString() } : x,
+      ),
+    });
+
+    try {
+      await updateOutboundContactRow(contact.id, patch);
+    } catch (e) {
+      fail('Ergebnis konnte nicht gespeichert werden.', e);
+      set({ outboundContacts: prev });
+      return;
+    }
+
+    // Der Anruf-Eintrag ist zweitrangig: Scheitert er, bleibt das Ergebnis am
+    // Kontakt trotzdem stehen — nur die Anrufstatistik ist dann unvollständig.
+    if (uid) {
+      try {
+        await insertOutboundCall({
+          contactId: contact.id,
+          campaignId: contact.campaignId,
+          customerNumber: contact.customerNumber,
+          customerName: contact.customerName,
+          phone: contact.phone,
+          disposition: OUTCOME_TO_DISPOSITION[result.outcome],
+          note: result.note,
+          agentId: uid,
+        });
+      } catch (e) {
+        console.warn('[useStore] Anruf nicht protokolliert:', e);
+      }
+    }
+
+    logAudit({
+      action: 'update',
+      entityType: 'outbound_contact',
+      entityId: contact.id,
+      entityLabel: contact.customerName,
+      details: { ergebnis: result.outcome, versuch: patch.attempts ?? contact.attempts },
+    });
   },
 }));

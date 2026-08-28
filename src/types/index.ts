@@ -126,7 +126,19 @@ export interface Customer {
 }
 
 /** Gesprächsergebnis, vom Abschluss-Panel der Extension gesetzt (Migration 021) */
-export type CallDisposition = 'gehalten' | 'gekuendigt' | 'rueckruf' | 'kein-interesse' | 'sonstige';
+export type CallDisposition =
+  // Inbound/Churn (Migration 021)
+  | 'gehalten'
+  | 'gekuendigt'
+  | 'rueckruf'
+  | 'kein-interesse'
+  | 'sonstige'
+  // Outbound-Listen (Migration 026)
+  | 'termin'
+  | 'abschluss'
+  | 'nicht-erreicht'
+  | 'falsche-daten'
+  | 'sperren';
 
 /** Anruf-Historie (Migration 018) – von der Extension automatisch geschrieben */
 export interface Call {
@@ -146,6 +158,8 @@ export interface Call {
   cancellationReason?: string;
   /** Kampagne, die zum Zeitpunkt des Anrufs lief (Migration 021) */
   campaignId?: string;
+  /** Zeile der Anrufliste, aus der das Gespräch entstand (Migration 026) */
+  outboundContactId?: string;
 }
 
 // ============================================================================
@@ -161,8 +175,71 @@ export interface Campaign {
   name: string;
   callType: CampaignCallType;
   active: boolean;
+  /** Prämie je vereinbartem Termin (€) — zusätzlich zur Vertragsprovision */
+  bonusTermin: number;
+  /** Prämie je Abschluss (€) — zusätzlich zur Vertragsprovision */
+  bonusAbschluss: number;
+  /** Nach so vielen erfolglosen Versuchen fällt ein Kontakt aus der Liste */
+  maxAttempts: number;
+  startDate?: string;
+  endDate?: string;
+  /** Zielprodukt — vorbelegt beim Umwandeln eines Abschlusses in einen Vertrag */
+  targetProduct?: ProductType;
   createdBy?: string;
   createdAt: string;
+}
+
+// ----------------------------------------------------------------------------
+// Anrufliste einer Kampagne (Migration 026)
+// ----------------------------------------------------------------------------
+
+/**
+ * Ergebnis eines Kontaktversuchs aus der Anrufliste. Gleichzeitig der
+ * Folge-Status des Kontakts — `offen` gibt es nur als Anfangszustand.
+ */
+export type CallOutcome =
+  | 'wiedervorlage'
+  | 'nichtErreicht'
+  | 'termin'
+  | 'abschluss'
+  | 'keinInteresse'
+  | 'falscheDaten'
+  | 'sperren';
+
+/** Status eines Kontakts in der Anrufliste. */
+export type OutboundContactStatus = 'offen' | CallOutcome;
+
+/** Ein Eintrag der aus Excel/CSV importierten Anrufliste. */
+export interface OutboundContact {
+  id: string;
+  campaignId: string;
+  customerName: string;
+  customerNumber?: string;
+  phone?: string;
+  email?: string;
+  street?: string;
+  zip?: string;
+  city?: string;
+  /** Freitext aus der Importdatei, z.B. aktueller Tarif oder Vertragsende */
+  info?: string;
+  status: OutboundContactStatus;
+  /** Zahl der bisherigen Kontaktversuche */
+  attempts: number;
+  followUpDate?: string;
+  /** Uhrzeit der Wiedervorlage bzw. des Termins als HH:MM */
+  followUpTime?: string;
+  /** User-Key der zuständigen Person. undefined = freier Pool */
+  assignedTo?: string;
+  notes?: string;
+  lastCallAt?: string;
+  /** Wer hat das aktuelle Ergebnis gesetzt — Grundlage der Prämien-Zuordnung */
+  resultBy?: string;
+  resultAt?: string;
+  /** Normalisierter Schlüssel für idempotente Re-Importe */
+  dedupeKey: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -426,7 +503,9 @@ export type AuditEntity =
   | 'incentive'
   | 'auth'
   | 'settings'
-  | 'status';
+  | 'status'
+  | 'campaign'
+  | 'outbound_contact';
 
 /** Unveränderlicher Audit-Eintrag — wer hat wann was getan? */
 export interface AuditLogEntry {

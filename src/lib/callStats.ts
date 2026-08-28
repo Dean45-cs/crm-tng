@@ -227,6 +227,12 @@ export const DISPOSITION_LABEL: Record<CallDisposition, string> = {
   rueckruf: 'Rückruf vereinbart',
   'kein-interesse': 'Kein Interesse',
   sonstige: 'Sonstige',
+  // Ausgänge der Outbound-Anruflisten (Migration 026)
+  termin: 'Termin vereinbart',
+  abschluss: 'Abschluss',
+  'nicht-erreicht': 'Nicht erreicht',
+  'falsche-daten': 'Falsche Daten',
+  sperren: 'Nicht mehr anrufen',
 };
 
 /** Verteilung der Dispositionen (für eine kompakte Übersicht/Pie). */

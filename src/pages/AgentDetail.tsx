@@ -59,8 +59,18 @@ function initialsOf(name: string): string {
 }
 
 export function AgentDetail({ agentKey }: Props) {
-  const { contracts, tariffChanges, notes, leads, settings, deleteContract, deleteTariffChange, deleteNote } =
-    useStore();
+  const {
+    contracts,
+    tariffChanges,
+    notes,
+    leads,
+    settings,
+    campaigns,
+    outboundContacts,
+    deleteContract,
+    deleteTariffChange,
+    deleteNote,
+  } = useStore();
   const { users, isManager } = useAuth();
   const { navigate } = useRouter();
   const { editContract, editTariff, editNote } = useQuickAdd();
@@ -105,8 +115,12 @@ export function AgentDetail({ agentKey }: Props) {
   );
 
   const stats = useMemo(
-    () => agentStats(agentKey, contracts, tariffChanges, settings),
-    [agentKey, contracts, tariffChanges, settings],
+    () =>
+      agentStats(agentKey, contracts, tariffChanges, settings, new Date(), {
+        contacts: outboundContacts,
+        campaigns,
+      }),
+    [agentKey, contracts, tariffChanges, settings, outboundContacts, campaigns],
   );
 
   const chart6 = useMemo(

@@ -1,4 +1,11 @@
-import type { Contract, TariffChange, Settings, Lead } from '../types';
+import type {
+  Contract,
+  TariffChange,
+  Settings,
+  Lead,
+  Campaign,
+  OutboundContact,
+} from '../types';
 import {
   calcContractCommission,
   calcTariffCommission,
@@ -8,9 +15,19 @@ import {
   expiryBucket,
   followUpBucket,
 } from './utils';
+import { bonusSum } from './outbound';
+
+/**
+ * Outbound-Daten für die Provisionsrechnung. Optional — Aufrufer ohne
+ * Anruflisten (z.B. Tests) lassen sie einfach weg.
+ */
+export interface OutboundSource {
+  contacts: OutboundContact[];
+  campaigns: Campaign[];
+}
 
 export interface AgentStats {
-  /** Provision im Referenzmonat (Verträge + Tarifwechsel) */
+  /** Provision im Referenzmonat (Verträge + Tarifwechsel + Kampagnen-Prämien) */
   monthCommission: number;
   /** Nur der Vertragsanteil der Monatsprovision (z.B. für gestapelte Charts) */
   monthContractCommission: number;
@@ -20,6 +37,8 @@ export interface AgentStats {
   monthDeals: number;
   monthContracts: number;
   monthTariffs: number;
+  /** Kampagnen-Prämien im Referenzmonat (Anteil an monthCommission) */
+  monthOutboundBonus: number;
   /** Provision über alle Zeiten */
   totalCommission: number;
   totalDeals: number;
@@ -32,6 +51,7 @@ const emptyStats = (): AgentStats => ({
   monthDeals: 0,
   monthContracts: 0,
   monthTariffs: 0,
+  monthOutboundBonus: 0,
   totalCommission: 0,
   totalDeals: 0,
 });
@@ -48,6 +68,7 @@ export function agentStats(
   tariffChanges: TariffChange[],
   settings: Settings,
   ref: Date = new Date(),
+  outbound?: OutboundSource,
 ): AgentStats {
   const s = emptyStats();
   for (const c of contracts) {
@@ -78,6 +99,19 @@ export function agentStats(
       s.monthTariffs += 1;
     }
   }
+
+  // Kampagnen-Prämien zählen als Provision — sie kommen zur Vertragsprovision
+  // hinzu, nicht an ihre Stelle, und gelten nicht als eigener Abschluss (der
+  // Abschluss selbst wird als Vertrag erfasst und dort schon gezählt).
+  if (outbound) {
+    s.monthOutboundBonus = bonusSum(outbound.contacts, outbound.campaigns, {
+      agentKey,
+      ref,
+    });
+    s.monthCommission += s.monthOutboundBonus;
+    s.totalCommission += bonusSum(outbound.contacts, outbound.campaigns, { agentKey });
+  }
+
   return s;
 }
 

@@ -247,6 +247,53 @@ values
 on conflict (id) do update
   set name = excluded.name, call_type = excluded.call_type, active = excluded.active;
 
+-- Bauverweigerer wird als Liste abtelefoniert (Migration 026): Prämien,
+-- Zielprodukt und Versuchsgrenze setzen. Die übrigen Kampagnen bleiben reine
+-- Inbound-Kampagnen ohne Liste.
+update public.campaigns
+   set bonus_termin = 5,
+       bonus_abschluss = 25,
+       max_attempts = 3,
+       target_product = 'Fibrefamily',
+       start_date = current_date - 10,
+       end_date = current_date + 20
+ where id = 'c0000000-0000-4000-8000-000000000005';
+
+-- ----------------------------------------------------------------------------
+-- (9b) Anrufliste der BVW-Kampagne — teils schon abtelefoniert
+-- ----------------------------------------------------------------------------
+-- Wird über den Kampagnen-Delete oben mit weggeräumt (on delete cascade).
+insert into public.outbound_contacts
+  (campaign_id, customer_name, phone, street, zip, city, info,
+   status, attempts, follow_up_date, follow_up_time, assigned_to, notes,
+   result_by, result_at, dedupe_key, created_by)
+values
+  ('c0000000-0000-4000-8000-000000000005','Marion Petersen','0431 5512340','Holtenauer Str. 88','24105','Kiel','Bau 2024 abgelehnt',
+   'termin', 1, current_date + 2, '10:30', 'd0000000-0000-4000-8000-000000000001', 'Interessiert, Partner muss mitentscheiden.',
+   'd0000000-0000-4000-8000-000000000001', now() - interval '1 day', 'tel:04315512340', 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000005','Bernd Kruse','0431 5512341','Holtenauer Str. 92','24105','Kiel','Damals kein Bedarf',
+   'abschluss', 2, null, null, 'd0000000-0000-4000-8000-000000000001', 'Bucht Fibrefamily, Vertrag erfasst.',
+   'd0000000-0000-4000-8000-000000000001', now() - interval '2 day', 'tel:04315512341', 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000005','Sabine Lorenzen','0431 5512342','Feldstr. 12','24105','Kiel',null,
+   'wiedervorlage', 1, current_date, '14:00', 'd0000000-0000-4000-8000-000000000002', 'Bittet um Rückruf am Nachmittag.',
+   'd0000000-0000-4000-8000-000000000002', now() - interval '1 day', 'tel:04315512342', 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000005','Hendrik Boysen','0431 5512343','Feldstr. 40','24105','Kiel','Anschluss liegt bereits',
+   'keinInteresse', 1, null, null, null, 'Erst kürzlich verlängert.',
+   'd0000000-0000-4000-8000-000000000002', now() - interval '3 day', 'tel:04315512343', 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000005','Familie Thomsen','0431 5512344','Waitzstr. 5','24105','Kiel',null,
+   'nichtErreicht', 2, null, null, null, null,
+   'd0000000-0000-4000-8000-000000000003', now() - interval '1 day', 'tel:04315512344', 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000005','Ingrid Hansen','0431 5512345','Waitzstr. 19','24105','Kiel','Fragt nach Mobilfunk-Bundle',
+   'offen', 0, null, null, null, null, null, null, 'tel:04315512345', 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000005','Malte Jürgensen','0431 5512346','Düppelstr. 3','24105','Kiel',null,
+   'offen', 0, null, null, null, null, null, null, 'tel:04315512346', 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000005','Kirsten Ahlmann','0431 5512347','Düppelstr. 27','24105','Kiel',null,
+   'offen', 0, null, null, null, null, null, null, 'tel:04315512347', 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000005','Torben Reimers','0431 5512348','Knooper Weg 140','24105','Kiel','Ladenlokal',
+   'offen', 0, null, null, null, null, null, null, 'tel:04315512348', 'd0000000-0000-4000-8000-000000000001'),
+  ('c0000000-0000-4000-8000-000000000005','Gerda Stoltenberg','0431 5512349','Knooper Weg 166','24105','Kiel',null,
+   'offen', 0, null, null, null, null, null, null, 'tel:04315512349', 'd0000000-0000-4000-8000-000000000001')
+on conflict (campaign_id, dedupe_key) do nothing;
 -- ----------------------------------------------------------------------------
 -- (10) Schichtplan — Vorwoche, laufende Woche, Folgewoche
 -- ----------------------------------------------------------------------------
@@ -391,6 +438,35 @@ begin
     end loop;
   end loop;
 end $$;
+
+-- ----------------------------------------------------------------------------
+-- (12) Outbound-Gespräche
+-- ----------------------------------------------------------------------------
+-- Bewusst NACH Abschnitt (11): der räumt alle Anrufe der laufenden Woche ab
+-- und würde diese Zeilen sonst gleich wieder mitnehmen.
+-- Die geführten Gespräche als Anrufe — dieselbe Tabelle wie die der Extension,
+-- damit Outbound in Anrufvolumen und Dispositions-Auswertung mitzählt.
+insert into public.calls
+  (customer_number, caller_name, caller_number, direction, started_at, ended_at,
+   duration_s, agent_id, disposition, note, campaign_id, outbound_contact_id)
+select
+  oc.customer_number, oc.customer_name, oc.phone, 'outbound',
+  oc.result_at, oc.result_at + interval '3 minutes', 180,
+  oc.result_by,
+  case oc.status
+    when 'termin'        then 'termin'
+    when 'abschluss'     then 'abschluss'
+    when 'wiedervorlage' then 'rueckruf'
+    when 'keinInteresse' then 'kein-interesse'
+    when 'nichtErreicht' then 'nicht-erreicht'
+    when 'falscheDaten'  then 'falsche-daten'
+    else 'sperren'
+  end,
+  oc.notes, oc.campaign_id, oc.id
+from public.outbound_contacts oc
+where oc.campaign_id = 'c0000000-0000-4000-8000-000000000005'
+  and oc.result_by is not null
+  and oc.result_at is not null;
 
 -- ============================================================================
 -- Fertig. Im CRM neu laden — Team-Dashboard, Leaderboard, Leads, Berichte,

@@ -101,6 +101,8 @@ export function ContractForm({ open, editing, prefill, onClose }: Props) {
       const base = emptyDraft();
       if (prefill?.customerNumber) base.customerNumber = prefill.customerNumber;
       if (prefill?.customerName) base.customerName = prefill.customerName;
+      if (prefill?.products?.length) base.products = prefill.products;
+      if (prefill?.notes) base.notes = prefill.notes;
       setDraft(base);
       setShowMore(false);
       setErrors({});

@@ -57,9 +57,59 @@ create table if not exists public.campaigns (
   -- Typen siehe Migration 025: churn, welcome, prl, dupe, bvw, courtesy, other
   call_type text not null check (call_type in ('churn', 'welcome', 'prl', 'dupe', 'bvw', 'courtesy', 'other')),
   active boolean not null default true,
+  -- Kampagnen-Prämien und Steuerung der Anrufliste (Migration 026)
+  bonus_termin numeric not null default 0 check (bonus_termin >= 0),
+  bonus_abschluss numeric not null default 0 check (bonus_abschluss >= 0),
+  max_attempts integer not null default 3 check (max_attempts between 1 and 20),
+  start_date date,
+  end_date date,
+  target_product text,
   created_at timestamptz default now(),
   created_by uuid references public.users(id) on delete set null
 );
+
+-- ------------------------------------------------------------
+-- OUTBOUND-KONTAKTE (Anrufliste je Kampagne, Migration 026)
+-- ------------------------------------------------------------
+-- Die aus Excel/CSV importierte Liste. Geteiltes Team-Werkzeug wie leads;
+-- löschen dürfen nur Chef:innen. Der Unique-Index auf (campaign_id,
+-- dedupe_key) macht den erneuten Import derselben Liste zum No-Op.
+create table if not exists public.outbound_contacts (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  customer_name text not null,
+  customer_number text,
+  phone text,
+  email text,
+  street text,
+  zip text,
+  city text,
+  info text,
+  status text not null default 'offen'
+    check (status in (
+      'offen', 'wiedervorlage', 'nichtErreicht', 'termin',
+      'abschluss', 'keinInteresse', 'falscheDaten', 'sperren'
+    )),
+  attempts integer not null default 0 check (attempts >= 0),
+  follow_up_date date,
+  follow_up_time text,
+  assigned_to uuid references public.users(id) on delete set null,
+  notes text,
+  last_call_at timestamptz,
+  result_by uuid references public.users(id) on delete set null,
+  result_at timestamptz,
+  dedupe_key text not null,
+  created_by uuid references public.users(id) on delete set null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+create index if not exists idx_ob_contacts_campaign on public.outbound_contacts(campaign_id);
+create index if not exists idx_ob_contacts_status on public.outbound_contacts(campaign_id, status);
+create index if not exists idx_ob_contacts_assigned on public.outbound_contacts(assigned_to);
+create index if not exists idx_ob_contacts_followup on public.outbound_contacts(follow_up_date);
+create index if not exists idx_ob_contacts_customer on public.outbound_contacts(customer_number);
+create unique index if not exists uniq_ob_contact_dedupe
+  on public.outbound_contacts (campaign_id, dedupe_key);
 
 -- ------------------------------------------------------------
 -- SHIFTS
@@ -72,7 +122,8 @@ create table if not exists public.shifts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
   shift_date date not null,
-  shift_type text not null check (shift_type in ('frueh', 'spaet', 'frei')),
+  -- Abwesenheiten kamen mit Migration 024 dazu (siehe SHIFT_META in src/lib/shifts.ts)
+  shift_type text not null check (shift_type in ('frueh', 'spaet', 'frei', 'urlaub', 'krank', 'schulung')),
   campaign_id uuid references public.campaigns(id) on delete set null,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
@@ -165,9 +216,15 @@ create table if not exists public.calls (
   outcome text,
   note text,
   jira_ticket text,
-  disposition text check (disposition in ('gehalten', 'gekuendigt', 'rueckruf', 'kein-interesse', 'sonstige')),
+  -- Outbound-Ausgänge ab Migration 026 mit in derselben Werteliste
+  disposition text check (disposition in (
+    'gehalten', 'gekuendigt', 'rueckruf', 'kein-interesse', 'sonstige',
+    'termin', 'abschluss', 'nicht-erreicht', 'falsche-daten', 'sperren'
+  )),
   cancellation_reason text,
   campaign_id uuid references public.campaigns(id) on delete set null,
+  -- Zeile der Anrufliste, aus der dieses Gespräch entstand (Migration 026)
+  outbound_contact_id uuid references public.outbound_contacts(id) on delete set null,
   created_at timestamptz not null default now()
 );
 create index if not exists idx_calls_customer on public.calls(customer_number);
@@ -176,6 +233,7 @@ create index if not exists idx_calls_started on public.calls(started_at desc);
 create index if not exists idx_calls_active on public.calls(started_at) where ended_at is null;
 create index if not exists idx_calls_campaign on public.calls(campaign_id);
 create index if not exists idx_calls_disposition on public.calls(disposition);
+create index if not exists idx_calls_outbound_contact on public.calls(outbound_contact_id);
 
 -- ------------------------------------------------------------
 -- CONTRACTS
@@ -436,6 +494,7 @@ alter table public.customer_access_requests enable row level security;
 -- diese Zeilen liefe eine frisch aus schema.sql aufgesetzte Datenbank mit
 -- Policies, die mangels aktiviertem RLS nichts absichern.
 alter table public.campaigns enable row level security;
+alter table public.outbound_contacts enable row level security;
 alter table public.shifts enable row level security;
 alter table public.notifications enable row level security;
 alter table public.shift_swap_requests enable row level security;
@@ -725,6 +784,17 @@ create policy "campaigns insert manager" on public.campaigns
 create policy "campaigns update manager" on public.campaigns
   for update using (public.auth_is_manager());
 create policy "campaigns delete manager" on public.campaigns
+  for delete using (public.auth_is_manager());
+
+-- OUTBOUND-KONTAKTE: geteiltes Team-Werkzeug (lesen/anlegen/bearbeiten alle
+-- aktiven Nutzer), löschen nur Chefs — schützt importierte Listen.
+create policy "ob_contacts read active" on public.outbound_contacts
+  for select using (public.auth_is_active());
+create policy "ob_contacts insert active" on public.outbound_contacts
+  for insert with check (public.auth_is_active());
+create policy "ob_contacts update active" on public.outbound_contacts
+  for update using (public.auth_is_active());
+create policy "ob_contacts delete manager" on public.outbound_contacts
   for delete using (public.auth_is_manager());
 
 -- SHIFTS: alle aktiven Nutzer lesen den kompletten Plan (geteilte Ansicht,
@@ -1024,6 +1094,7 @@ alter publication supabase_realtime add table public.customer_access_requests;
 alter publication supabase_realtime add table public.user_status;
 alter publication supabase_realtime add table public.status_log;
 alter publication supabase_realtime add table public.campaigns;
+alter publication supabase_realtime add table public.outbound_contacts;
 alter publication supabase_realtime add table public.shifts;
 alter publication supabase_realtime add table public.user_settings;
 -- Ohne Realtime wäre das Postfach eines, das man selbst aufmachen muss — eine

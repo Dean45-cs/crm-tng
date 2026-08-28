@@ -17,7 +17,8 @@ interface Row {
 }
 
 export function Leaderboard() {
-  const { contracts, tariffChanges, settings, loaded } = useStore();
+  const { contracts, tariffChanges, settings, campaigns, outboundContacts, loaded } =
+    useStore();
   const { users, currentUserKey, setLeaderboardOptIn } = useAuth();
 
   const me = currentUserKey ? users[currentUserKey] : null;
@@ -33,7 +34,10 @@ export function Leaderboard() {
   // agentKey braucht.
   const rows: Row[] = useMemo(() => {
     const known: Row[] = Object.values(users).map((u) => {
-      const stats = agentStats(u.key, contracts, tariffChanges, settings);
+      const stats = agentStats(u.key, contracts, tariffChanges, settings, new Date(), {
+        contacts: outboundContacts,
+        campaigns,
+      });
       return {
         key: u.key,
         displayName: u.displayName,
@@ -78,7 +82,7 @@ export function Leaderboard() {
       .filter((r) => r.optedIn || r.isMe)
       .filter((r) => r.deals > 0 || r.isMe)
       .sort((a, b) => b.monthCommission - a.monthCommission);
-  }, [contracts, tariffChanges, settings, users, currentUserKey]);
+  }, [contracts, tariffChanges, settings, users, currentUserKey, outboundContacts, campaigns]);
 
   // `rows` ist bereits auf „sichtbar oder ich selbst" gefiltert — auch ein
   // ausgeblendeter Nutzer sieht sich also weiterhin im eigenen Ranking.

@@ -51,6 +51,7 @@ const Leads = lazy(() => import('./pages/Leads').then((m) => ({ default: m.Leads
 const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m.AuditLog })));
 const NettoRechner = lazy(() => import('./pages/NettoRechner').then((m) => ({ default: m.NettoRechner })));
 const Schedule = lazy(() => import('./pages/Schedule').then((m) => ({ default: m.Schedule })));
+const Outbound = lazy(() => import('./pages/Outbound').then((m) => ({ default: m.Outbound })));
 const CampaignManager = lazy(() => import('./pages/CampaignManager').then((m) => ({ default: m.CampaignManager })));
 const Postfach = lazy(() => import('./pages/Postfach').then((m) => ({ default: m.Postfach })));
 
@@ -76,6 +77,7 @@ const TITLES: Record<RouteName, string> = {
   netto: 'Netto-Rechner',
   schedule: 'Schichtplan',
   campaignmanager: 'Kampagnen-Verwaltung',
+  outbound: 'Outbound',
   postfach: 'Postfach',
 };
 
@@ -190,6 +192,7 @@ function Shell() {
               {route.name === 'incentives' && <Incentives />}
               {route.name === 'incentivemanager' && <IncentiveManager />}
               {route.name === 'leads' && <Leads />}
+              {route.name === 'outbound' && <Outbound />}
               {route.name === 'auditlog' && <AuditLog />}
               {route.name === 'netto' && <NettoRechner />}
               {route.name === 'schedule' && <Schedule />}

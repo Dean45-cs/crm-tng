@@ -40,6 +40,8 @@ import type {
   AppNotification,
   NotificationKind,
   NotificationLink,
+  OutboundContact,
+  OutboundContactStatus,
 } from '../types';
 import type { AuthUser } from '../store/useAuth';
 
@@ -718,6 +720,14 @@ interface CampaignRow {
   name: string;
   call_type: CampaignCallType;
   active: boolean;
+  // Anrufliste-Felder (Migration 026) — nullable, solange die Migration
+  // in einer Installation noch nicht eingespielt ist.
+  bonus_termin: number | null;
+  bonus_abschluss: number | null;
+  max_attempts: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  target_product: string | null;
   created_by: string | null;
   created_at: string;
 }
@@ -727,6 +737,12 @@ const mapCampaign = (r: CampaignRow): Campaign => ({
   name: r.name,
   callType: r.call_type,
   active: r.active,
+  bonusTermin: Number(r.bonus_termin ?? 0),
+  bonusAbschluss: Number(r.bonus_abschluss ?? 0),
+  maxAttempts: r.max_attempts ?? 3,
+  startDate: r.start_date ?? undefined,
+  endDate: r.end_date ?? undefined,
+  targetProduct: (r.target_product as ProductType | null) ?? undefined,
   createdBy: r.created_by ?? undefined,
   createdAt: r.created_at,
 });
@@ -747,6 +763,12 @@ export async function insertCampaign(
     name: c.name,
     call_type: c.callType,
     active: c.active,
+    bonus_termin: c.bonusTermin,
+    bonus_abschluss: c.bonusAbschluss,
+    max_attempts: c.maxAttempts,
+    start_date: c.startDate || null,
+    end_date: c.endDate || null,
+    target_product: c.targetProduct || null,
     created_by: c.createdBy ?? null,
   };
   const { data, error } = await getSupabase()
@@ -763,6 +785,12 @@ export async function updateCampaignRow(id: string, patch: Partial<Campaign>): P
   if (patch.name !== undefined) payload.name = patch.name;
   if (patch.callType !== undefined) payload.call_type = patch.callType;
   if (patch.active !== undefined) payload.active = patch.active;
+  if (patch.bonusTermin !== undefined) payload.bonus_termin = patch.bonusTermin;
+  if (patch.bonusAbschluss !== undefined) payload.bonus_abschluss = patch.bonusAbschluss;
+  if (patch.maxAttempts !== undefined) payload.max_attempts = patch.maxAttempts;
+  if (patch.startDate !== undefined) payload.start_date = patch.startDate || null;
+  if (patch.endDate !== undefined) payload.end_date = patch.endDate || null;
+  if (patch.targetProduct !== undefined) payload.target_product = patch.targetProduct || null;
   const { error } = await getSupabase().from('campaigns').update(payload).eq('id', id);
   if (error) throw error;
 }
@@ -1408,6 +1436,7 @@ interface CallRow {
   disposition: CallDisposition | null;
   cancellation_reason: string | null;
   campaign_id: string | null;
+  outbound_contact_id: string | null;
 }
 
 const mapCall = (r: CallRow): Call => ({
@@ -1424,6 +1453,7 @@ const mapCall = (r: CallRow): Call => ({
   disposition: r.disposition ?? undefined,
   cancellationReason: r.cancellation_reason ?? undefined,
   campaignId: r.campaign_id ?? undefined,
+  outboundContactId: r.outbound_contact_id ?? undefined,
 });
 
 /** Anrufe, die noch nicht beendet sind — Grundlage der Live-Anrufleiste. */
@@ -1773,5 +1803,207 @@ export async function clearStatusLog(): Promise<void> {
     .from('status_log')
     .delete()
     .not('id', 'is', null);
+  if (error) throw error;
+}
+
+// ============================================================================
+// Anrufliste einer Kampagne (Migration 026)
+// ============================================================================
+// Die aus Excel/CSV importierten Kontakte. Die Gespräche selbst landen in
+// `calls` (siehe insertOutboundCall weiter unten), damit Outbound in den
+// vorhandenen Auswertungen mitzählt statt in einem zweiten Silo zu liegen.
+
+interface OutboundContactRow {
+  id: string;
+  campaign_id: string;
+  customer_name: string;
+  customer_number: string | null;
+  phone: string | null;
+  email: string | null;
+  street: string | null;
+  zip: string | null;
+  city: string | null;
+  info: string | null;
+  status: OutboundContactStatus;
+  attempts: number | null;
+  follow_up_date: string | null;
+  follow_up_time: string | null;
+  assigned_to: string | null;
+  notes: string | null;
+  last_call_at: string | null;
+  result_by: string | null;
+  result_at: string | null;
+  dedupe_key: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const mapOutboundContact = (r: OutboundContactRow): OutboundContact => ({
+  id: r.id,
+  campaignId: r.campaign_id,
+  customerName: r.customer_name,
+  customerNumber: r.customer_number ?? undefined,
+  phone: r.phone ?? undefined,
+  email: r.email ?? undefined,
+  street: r.street ?? undefined,
+  zip: r.zip ?? undefined,
+  city: r.city ?? undefined,
+  info: r.info ?? undefined,
+  status: r.status,
+  attempts: r.attempts ?? 0,
+  followUpDate: r.follow_up_date ?? undefined,
+  followUpTime: r.follow_up_time ?? undefined,
+  assignedTo: r.assigned_to ?? undefined,
+  notes: r.notes ?? undefined,
+  lastCallAt: r.last_call_at ?? undefined,
+  resultBy: r.result_by ?? undefined,
+  resultAt: r.result_at ?? undefined,
+  dedupeKey: r.dedupe_key,
+  createdBy: r.created_by ?? undefined,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export async function fetchOutboundContacts(): Promise<OutboundContact[]> {
+  const { data, error } = await getSupabase()
+    .from('outbound_contacts')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data as OutboundContactRow[]).map(mapOutboundContact);
+}
+
+/** Ein importfertiger Kontakt, noch ohne Datenbank-Felder. */
+export type OutboundContactDraft = Pick<
+  OutboundContact,
+  | 'campaignId'
+  | 'customerName'
+  | 'customerNumber'
+  | 'phone'
+  | 'email'
+  | 'street'
+  | 'zip'
+  | 'city'
+  | 'info'
+  | 'dedupeKey'
+> & { createdBy?: string };
+
+/**
+ * Importiert viele Kontakte auf einmal — in Blöcken, damit auch lange Listen
+ * durchgehen. `ignoreDuplicates` zusammen mit dem Unique-Index auf
+ * (campaign_id, dedupe_key) macht einen erneuten Import derselben Liste zum
+ * No-Op, statt die ganze Einfügung scheitern zu lassen.
+ */
+export async function insertOutboundContacts(
+  rows: OutboundContactDraft[],
+  chunkSize = 500,
+): Promise<number> {
+  let inserted = 0;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize).map((c) => ({
+      campaign_id: c.campaignId,
+      customer_name: c.customerName,
+      customer_number: c.customerNumber || null,
+      phone: c.phone || null,
+      email: c.email || null,
+      street: c.street || null,
+      zip: c.zip || null,
+      city: c.city || null,
+      info: c.info || null,
+      dedupe_key: c.dedupeKey,
+      created_by: c.createdBy ?? null,
+    }));
+    const { data, error } = await getSupabase()
+      .from('outbound_contacts')
+      .upsert(chunk, { onConflict: 'campaign_id,dedupe_key', ignoreDuplicates: true })
+      .select('id');
+    if (error) throw error;
+    inserted += (data as { id: string }[] | null)?.length ?? 0;
+  }
+  return inserted;
+}
+
+export async function updateOutboundContactRow(
+  id: string,
+  patch: Partial<OutboundContact>,
+): Promise<void> {
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+  // Bewusst `in` statt `!== undefined`: ein gesetztes `followUpDate: undefined`
+  // heißt „Wiedervorlage löschen" (so räumt `applyCallResult` sie nach einem
+  // endgültigen Ergebnis ab). Mit einem undefined-Vergleich bliebe das alte
+  // Datum stehen und der Kontakt käme wieder in die Arbeitsliste.
+  const has = (k: keyof OutboundContact) => k in patch;
+
+  if (has('customerName')) payload.customer_name = patch.customerName;
+  if (has('customerNumber')) payload.customer_number = patch.customerNumber || null;
+  if (has('phone')) payload.phone = patch.phone || null;
+  if (has('email')) payload.email = patch.email || null;
+  if (has('street')) payload.street = patch.street || null;
+  if (has('zip')) payload.zip = patch.zip || null;
+  if (has('city')) payload.city = patch.city || null;
+  if (has('info')) payload.info = patch.info || null;
+  if (has('status')) payload.status = patch.status;
+  if (has('attempts')) payload.attempts = patch.attempts;
+  if (has('followUpDate')) payload.follow_up_date = patch.followUpDate || null;
+  if (has('followUpTime')) payload.follow_up_time = patch.followUpTime || null;
+  if (has('assignedTo')) payload.assigned_to = patch.assignedTo ?? null;
+  if (has('notes')) payload.notes = patch.notes || null;
+  if (has('lastCallAt')) payload.last_call_at = patch.lastCallAt || null;
+  if (has('resultBy')) payload.result_by = patch.resultBy ?? null;
+  if (has('resultAt')) payload.result_at = patch.resultAt || null;
+
+  const { error } = await getSupabase()
+    .from('outbound_contacts')
+    .update(payload)
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteOutboundContactRow(id: string): Promise<void> {
+  const { error } = await getSupabase().from('outbound_contacts').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/** Löscht alle Kontakte einer Kampagne (Chef-Aktion beim Neuaufsetzen). */
+export async function deleteContactsOfCampaign(campaignId: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from('outbound_contacts')
+    .delete()
+    .eq('campaign_id', campaignId);
+  if (error) throw error;
+}
+
+/**
+ * Schreibt ein Outbound-Gespräch in dieselbe `calls`-Tabelle, die auch die
+ * Extension befüllt — mit direction='outbound', Kampagne und Verweis auf die
+ * Zeile der Anrufliste. Dadurch zählt Outbound in callVolumeStats,
+ * dispositionBreakdown und den Reports automatisch mit.
+ */
+export async function insertOutboundCall(c: {
+  contactId: string;
+  campaignId: string;
+  customerNumber?: string;
+  customerName?: string;
+  phone?: string;
+  disposition: CallDisposition;
+  note?: string;
+  agentId: string;
+}): Promise<void> {
+  const now = new Date().toISOString();
+  const { error } = await getSupabase().from('calls').insert({
+    customer_number: c.customerNumber || null,
+    caller_name: c.customerName || null,
+    caller_number: c.phone || null,
+    direction: 'outbound',
+    started_at: now,
+    ended_at: now,
+    agent_id: c.agentId,
+    disposition: c.disposition,
+    note: c.note || null,
+    campaign_id: c.campaignId,
+    outbound_contact_id: c.contactId,
+  });
   if (error) throw error;
 }
