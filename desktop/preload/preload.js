@@ -57,5 +57,15 @@ contextBridge.exposeInMainWorld("hud", {
   // Meldungen angekommen sind, wann zuletzt, ob das URL-Schema registriert ist
   // und welches Programm tel:-Adressen bekommt. Gezählt wird im Hauptprozess,
   // damit es einen Neustart überlebt.
-  onPhone: subscribe("hud:phone")
+  onPhone: subscribe("hud:phone"),
+
+  // Ob gerade wirklich gesprochen wird, beobachtet am Medien-Socket von myApps
+  // (siehe main/media-watch.js). „media" heißt abgehoben, „idle" aufgelegt,
+  // „unknown" heißt: nicht gemessen – und daran wird ausdrücklich kein Gespräch
+  // beendet.
+  onMedia: subscribe("hud:media"),
+
+  // Was ein Gespräch von außen unterbricht: gesperrter Bildschirm, Ruhezustand,
+  // Herunterfahren. Braucht keinen Beweis – dort spricht niemand mehr.
+  onCallInterrupt: subscribe("hud:call-interrupt")
 });

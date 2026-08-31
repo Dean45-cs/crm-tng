@@ -26,9 +26,18 @@
 //     Autostart) und keine Trennung nach ankommend/abgehend; ausgelöst wird
 //     „upon incoming and outgoing call". Sie kommt deshalb aus dem eigenen
 //     Wählen oder bleibt bei der Voreinstellung.
-//   ✗ das Gesprächsende. Es gibt kein Ereignis dafür. Ein Anruf endet, wenn
-//     jemand „Aufgelegt" drückt, wenn der nächste beginnt, oder an der
-//     Sicherheitsgrenze in call-session.js.
+//   ✗ das Gesprächsende. Es gibt kein Ereignis dafür — und das ist nicht bloß
+//     im Wiki nachgelesen, sondern in innovaphones ausgeliefertem Code:
+//     PhoneCallExternalApplication.js startet die externe Anwendung 100 ms nach
+//     Aufbau des Gesprächsfensters, und beim Auflegen räumt dieselbe Datei nur
+//     ihre Knöpfe weg.
+//
+//     Erkannt wird es trotzdem, nur eben nicht gemeldet, sondern beobachtet:
+//     main/media-watch.js sieht dem Medien-Socket von myApps zu (gemessen:
+//     0 UDP im Leerlauf UND beim Klingeln, 6 beim Abgehobenen, 0 nach dem
+//     Auflegen). Beendet wird ein Gespräch nur, wenn für genau dieses Gespräch
+//     vorher Medien da waren — sonst bleibt es beim alten Weg: „Aufgelegt",
+//     der nächste Anruf, die Sicherheitsgrenze in call-session.js.
 //
 // Diese Datei ist nur die Verdrahtung. Der Verlauf eines Gesprächs — Anfang,
 // Auffrischen, Ende, Dauer — steht in call-session.js, weil man ihn dort ohne
@@ -128,11 +137,22 @@
     heartbeat = window.setInterval(() => {
       if (!session.heartbeat()) stopHeartbeat();
     }, HEARTBEAT_MS);
+    watchMedia(true);
   }
 
   function stopHeartbeat() {
     if (heartbeat) window.clearInterval(heartbeat);
     heartbeat = null;
+    watchMedia(false);
+  }
+
+  // Gemessen wird nur, solange ein Gespräch läuft — im Leerlauf kostet die
+  // Ende-Erkennung damit nichts. Der Hauptprozess fragt dafür das
+  // Betriebssystem, deshalb wird ihm ausdrücklich gesagt, wann.
+  function watchMedia(on) {
+    try {
+      window.hud.command("call-media-watch", { on: !!on });
+    } catch (error) { /* ältere Fassung des Hauptprozesses – dann eben ohne Erkennung */ }
   }
 
   // --- Was von außen hereinkommt ---------------------------------------------
@@ -167,4 +187,29 @@
     if (active) startHeartbeat();
     else stopHeartbeat();
   });
+
+  // Das Gesprächsende, beobachtet am Medien-Socket von myApps
+  // (main/media-watch.js). Ein Anruf endet hier nur, wenn für ihn vorher
+  // Medien gesehen wurden — die Entscheidung dazu steht in call-session.js,
+  // nicht hier. Diese Datei bleibt Verdrahtung.
+  if (typeof window.hud.onMedia === "function") {
+    window.hud.onMedia((msg) => {
+      if (!msg) return;
+      // Ein Rückgabewert heißt: das Gespräch ist beendet — nur dann darf der
+      // Herzschlag weg. Gäbe mediaState() auch beim ERKENNEN der Medien etwas
+      // zurück, hörte das Auffrischen von activeCall genau dann auf, wenn das
+      // Gespräch beginnt, und das Panel würfe den Anruf nach staleAfterMs als
+      // verwaist weg. Genau das ist einmal passiert; die Regel steht in
+      // call-session.js und wird dort geprüft.
+      if (session.mediaState(msg.state)) stopHeartbeat();
+    });
+  }
+
+  // Gesperrter Bildschirm oder Ruhezustand. Anders als der Medien-Socket
+  // braucht das keinen Beweis: dort spricht niemand mehr.
+  if (typeof window.hud.onCallInterrupt === "function") {
+    window.hud.onCallInterrupt((msg) => {
+      if (session.interrupted(msg && msg.reason)) stopHeartbeat();
+    });
+  }
 })();

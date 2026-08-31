@@ -14,6 +14,7 @@ import {
   Percent,
   LayoutGrid,
   Check,
+  Clock,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -34,7 +35,13 @@ import {
   isSameMonth,
 } from '../lib/utils';
 import { monthlySeries, trendPct } from '../lib/teamStats';
-import { callVolumeStats, linkCallsToOutcomes, conversionStats } from '../lib/callStats';
+import {
+  callVolumeStats,
+  linkCallsToOutcomes,
+  conversionStats,
+  callTimingStats,
+} from '../lib/callStats';
+import { formatDuration } from '../lib/reporting';
 import { useMonthCalls } from '../store/useMonthCalls';
 import { useCurrentShiftContext } from '../hooks/useCurrentShiftContext';
 import { StatusBadge } from '../components/StatusBadge';
@@ -94,6 +101,14 @@ export function Dashboard() {
   // (useMonthCalls) — eine Quelle für Dashboard/TeamDashboard/AgentDetail, die
   // per calls-Realtime aktuell bleibt. `null` = lädt noch (Skeleton).
   const monthCalls = useMonthCalls((s) => s.calls);
+
+  // Echte Gesprächszeiten und Erreichbarkeit (Migration 028). Beruht auf der
+  // Ende-Erkennung der Auskunft; wo nicht gemessen wurde, bleiben die Kacheln
+  // leer statt zu raten.
+  const callTiming = useMemo(() => {
+    if (!monthCalls) return null;
+    return callTimingStats(monthCalls, scope === 'mine' && userKey ? userKey : undefined);
+  }, [monthCalls, scope, userKey]);
 
   // Abschlussquote Anruf → Vertrag/Tarifwechsel (Stufe 4, KONZEPT-INTEGRATION.md).
   // Notizen/Leads werden hier bewusst per Store-Snapshot statt reaktivem
@@ -366,6 +381,34 @@ export function Dashboard() {
                   label="Anrufe diesen Monat"
                   value={callVolume === null ? '–' : `${callVolume.count}`}
                   delta="von der Extension automatisch erfasst"
+                />
+                <KpiWidget
+                  icon={<Phone size={14} />}
+                  accent={
+                    callTiming && callTiming.answerRatePct !== null && callTiming.answerRatePct >= 60
+                      ? 'green'
+                      : 'orange'
+                  }
+                  label="Erreichbarkeit"
+                  value={
+                    callTiming?.answerRatePct == null ? '–' : `${callTiming.answerRatePct} %`
+                  }
+                  delta={
+                    callTiming && callTiming.measured > 0
+                      ? `${callTiming.answered} angenommen · ${callTiming.unanswered} ohne Abheben`
+                      : 'noch kein Gesprächsende gemessen'
+                  }
+                />
+                <KpiWidget
+                  icon={<Clock size={14} />}
+                  accent="purple"
+                  label="Ø Gespräch (ab Abheben)"
+                  value={callTiming?.avgTalkS == null ? '–' : formatDuration(callTiming.avgTalkS)}
+                  delta={
+                    callTiming?.avgAhtS == null
+                      ? `${callTiming?.withTalkTime ?? 0} gemessene Gespräche`
+                      : `AHT Ø ${formatDuration(callTiming.avgAhtS)} mit Nachbearbeitung`
+                  }
                 />
                 <KpiWidget
                   icon={<Percent size={14} />}

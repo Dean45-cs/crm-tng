@@ -1408,6 +1408,10 @@ interface CallRow {
   disposition: CallDisposition | null;
   cancellation_reason: string | null;
   campaign_id: string | null;
+  connected_at?: string | null;
+  answered?: boolean | null;
+  end_reason?: string | null;
+  disposition_at?: string | null;
 }
 
 const mapCall = (r: CallRow): Call => ({
@@ -1424,6 +1428,12 @@ const mapCall = (r: CallRow): Call => ({
   disposition: r.disposition ?? undefined,
   cancellationReason: r.cancellation_reason ?? undefined,
   campaignId: r.campaign_id ?? undefined,
+  connectedAt: r.connected_at ?? undefined,
+  // Bewusst ?? und nicht ||: `false` heißt „sicher nicht abgehoben" und ist
+  // eine Messung, kein fehlender Wert.
+  answered: r.answered ?? undefined,
+  endReason: r.end_reason ?? undefined,
+  dispositionAt: r.disposition_at ?? undefined,
 });
 
 /** Anrufe, die noch nicht beendet sind — Grundlage der Live-Anrufleiste. */

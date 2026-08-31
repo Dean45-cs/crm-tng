@@ -12,6 +12,9 @@ import {
   Target,
   UserPlus,
   Wallet,
+  PhoneOff,
+  Timer,
+  Hourglass,
 } from 'lucide-react';
 import {
   Bar,
@@ -45,6 +48,7 @@ import {
   type ReportAgent,
   type ReportSource,
 } from '../lib/reporting';
+import { SHORT_CALL_S } from '../lib/callStats';
 
 /**
  * Berichtszentrale: eine Auswertung über einen frei wählbaren Zeitraum, die
@@ -282,6 +286,15 @@ export function Reports() {
         Gekündigt: report.calls.cancelled,
         'Save-Rate (%)': report.calls.saveRatePct ?? '',
         'Anruf→Abschluss (%)': report.calls.conversionPct ?? '',
+        'Gemessene Anrufe': report.calls.timing.measured,
+        'Erreichbarkeit (%)': report.calls.timing.answerRatePct ?? '',
+        'Angenommen': report.calls.timing.answered,
+        'Ohne Abheben': report.calls.timing.unanswered,
+        'Ø Gespräch echt (s)': report.calls.timing.avgTalkS ?? '',
+        'Ø Klingeln (s)': report.calls.timing.avgRingS ?? '',
+        'Kurzgespräche': report.calls.timing.shortCalls,
+        'Ø Nachbearbeitung (s)': report.calls.timing.avgAcwS ?? '',
+        'Ø AHT (s)': report.calls.timing.avgAhtS ?? '',
       },
     ]);
   };
@@ -313,6 +326,10 @@ export function Reports() {
         'Zielerreichung (%)': r.attainmentPct ?? '',
         Anrufe: r.calls,
         'Gesprächszeit (s)': r.talkTimeS,
+        'Erreichbarkeit (%)': r.timing.answerRatePct ?? '',
+        'Ø Gespräch echt (s)': r.timing.avgTalkS ?? '',
+        'Ø Nachbearbeitung (s)': r.timing.avgAcwS ?? '',
+        'Ø AHT (s)': r.timing.avgAhtS ?? '',
         'Save-Rate (%)': r.saveRatePct ?? '',
         'Anruf→Abschluss (%)': r.conversionPct ?? '',
       })),
@@ -574,6 +591,28 @@ export function Reports() {
       )}
 
       {/* ── Kennzahlen ── */}
+      {report.calls.total > 0 && report.calls.timing.measuredPct !== null && (
+        <div className="hint" style={{ marginBottom: 8 }}>
+          {report.calls.timing.measured === 0 ? (
+            <>
+              Für keinen Anruf im Zeitraum liegt eine gemessene Gesprächszeit vor —
+              Erreichbarkeit, echte Gesprächsdauer und Nachbearbeitung bleiben deshalb
+              aus. Sie entstehen erst mit der Ende-Erkennung der Auskunft auf dem
+              Schreibtisch.
+            </>
+          ) : (
+            <>
+              Echte Zeiten und Erreichbarkeit beruhen auf{' '}
+              <strong>
+                {report.calls.timing.measured} von {report.calls.total} Anrufen
+              </strong>{' '}
+              ({report.calls.timing.measuredPct} %) — nur bei diesen wurde das
+              Gesprächsende tatsächlich gemessen. Die übrigen fließen bewusst weder
+              positiv noch negativ ein.
+            </>
+          )}
+        </div>
+      )}
       <div className="team-kpis">
         <KpiTile
           icon={<Wallet size={15} />}
@@ -626,7 +665,7 @@ export function Reports() {
           accent="orange"
           label="Gesprächszeit"
           value={formatDuration(report.calls.talkTimeS)}
-          sub={`Ø ${formatDuration(report.calls.avgDurationS)} · ${report.calls.callsPerActiveDay} Anrufe/Tag`}
+          sub={`Ø ${formatDuration(report.calls.avgDurationS)} ab Klingeln · ${report.calls.callsPerActiveDay} Anrufe/Tag`}
         />
         <KpiTile
           icon={<Percent size={15} />}
@@ -639,6 +678,72 @@ export function Reports() {
               : `${report.calls.linkedCount} verknüpft · Ø ${report.calls.avgMinutesToOutcome} min danach`
           }
         />
+        {report.calls.timing.measured > 0 && (
+          <>
+            <KpiTile
+              icon={<PhoneOff size={15} />}
+              accent={
+                report.calls.timing.answerRatePct !== null &&
+                report.calls.timing.answerRatePct >= 60
+                  ? 'green'
+                  : 'orange'
+              }
+              label="Erreichbarkeit"
+              value={
+                report.calls.timing.answerRatePct === null
+                  ? '–'
+                  : `${report.calls.timing.answerRatePct} %`
+              }
+              sub={`${report.calls.timing.answered} angenommen · ${report.calls.timing.unanswered} ohne Abheben`}
+            />
+            <KpiTile
+              icon={<Timer size={15} />}
+              accent="orange"
+              label="Ø Gespräch (echt)"
+              value={
+                report.calls.timing.avgTalkS === null
+                  ? '–'
+                  : formatDuration(report.calls.timing.avgTalkS)
+              }
+              sub={
+                report.calls.timing.avgRingS === null
+                  ? `${report.calls.timing.withTalkTime} gemessene Gespräche`
+                  : `ab dem Abheben · Ø ${formatDuration(report.calls.timing.avgRingS)} klingeln`
+              }
+            />
+            <KpiTile
+              icon={<Hourglass size={15} />}
+              accent="purple"
+              label="Ø Nachbearbeitung"
+              value={
+                report.calls.timing.avgAcwS === null
+                  ? '–'
+                  : formatDuration(report.calls.timing.avgAcwS)
+              }
+              sub={
+                report.calls.timing.avgAhtS === null
+                  ? 'noch kein Ergebnis nach einem Gespräch erfasst'
+                  : `AHT Ø ${formatDuration(report.calls.timing.avgAhtS)} · ${report.calls.timing.withAht} Anrufe`
+              }
+            />
+            <KpiTile
+              icon={<PhoneOff size={15} />}
+              accent={
+                report.calls.timing.shortCallPct !== null &&
+                report.calls.timing.shortCallPct > 25
+                  ? 'red'
+                  : 'blue'
+              }
+              label="Kurzgespräche"
+              value={
+                report.calls.timing.shortCallPct === null
+                  ? '–'
+                  : `${report.calls.timing.shortCallPct} %`
+              }
+              sub={`${report.calls.timing.shortCalls} unter ${SHORT_CALL_S} s — meist Fehlkontakte`}
+            />
+          </>
+        )}
       </div>
 
       {/* ── Verlauf ── */}
@@ -874,6 +979,15 @@ export function Reports() {
                   <th style={{ textAlign: 'right' }}>Ziel %</th>
                   <th style={{ textAlign: 'right' }}>Anrufe</th>
                   <th style={{ textAlign: 'right' }}>Gesprächszeit</th>
+                  <th style={{ textAlign: 'right' }} title="Anteil der gemessenen Anrufe, bei denen abgehoben wurde">
+                    Erreichbar
+                  </th>
+                  <th style={{ textAlign: 'right' }} title="Ø Gesprächsdauer ab dem Abheben">
+                    Ø Gespräch
+                  </th>
+                  <th style={{ textAlign: 'right' }} title="Ø Gespräch + Nachbearbeitung je Anruf">
+                    Ø AHT
+                  </th>
                   <th style={{ textAlign: 'right' }}>Save-Rate</th>
                 </tr>
               </thead>
@@ -891,6 +1005,15 @@ export function Reports() {
                     </td>
                     <td style={{ textAlign: 'right' }}>{r.calls}</td>
                     <td style={{ textAlign: 'right' }}>{formatDuration(r.talkTimeS)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {r.timing.answerRatePct === null ? '–' : `${r.timing.answerRatePct} %`}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {r.timing.avgTalkS === null ? '–' : formatDuration(r.timing.avgTalkS)}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {r.timing.avgAhtS === null ? '–' : formatDuration(r.timing.avgAhtS)}
+                    </td>
                     <td style={{ textAlign: 'right' }}>
                       {r.saveRatePct === null ? '–' : `${r.saveRatePct} %`}
                     </td>
@@ -911,6 +1034,21 @@ export function Reports() {
                   <td style={{ textAlign: 'right', fontWeight: 600 }}>{report.calls.total}</td>
                   <td style={{ textAlign: 'right' }}>
                     {formatDuration(report.calls.talkTimeS)}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {report.calls.timing.answerRatePct === null
+                      ? '–'
+                      : `${report.calls.timing.answerRatePct} %`}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {report.calls.timing.avgTalkS === null
+                      ? '–'
+                      : formatDuration(report.calls.timing.avgTalkS)}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {report.calls.timing.avgAhtS === null
+                      ? '–'
+                      : formatDuration(report.calls.timing.avgAhtS)}
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     {report.calls.saveRatePct === null ? '–' : `${report.calls.saveRatePct} %`}

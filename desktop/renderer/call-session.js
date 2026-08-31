@@ -191,7 +191,19 @@
         status: ringing ? "ringing" : "connected",
         test: Boolean(msg && msg.test),
         dbCallId: null,
-        rowPending: false
+        rowPending: false,
+        // Ob für DIESES Gespräch je ein Medien-Socket gesehen wurde. Die
+        // Sicherung, auf der die ganze Ende-Erkennung steht — siehe
+        // mediaState().
+        sawMedia: false,
+        // Ob während dieses Gesprächs überhaupt gemessen wurde. Der Unterschied
+        // zu sawMedia ist der zwischen „hat nicht abgenommen" und „ich habe
+        // nicht hingesehen" — und er entscheidet, ob dieser Anruf in der
+        // Erreichbarkeitsquote mitzählen darf.
+        mediaWorked: false,
+        // Wann tatsächlich abgehoben wurde, beobachtet statt angenommen.
+        // startedAt ist das Klingeln; das hier ist das Gespräch.
+        connectedObservedAt: null
       };
 
       if (dial) clearPendingDial();
@@ -250,7 +262,7 @@
      * werden — oder vom Panel, wenn jemand „Aufgelegt" drückt. Dann steht er
      * schon im Storage, und ein zweites Schreiben wäre nur Lärm.
      */
-    function closeRow(durationS) {
+    function closeRow(durationS, reason) {
       if (!current) return;
       const ending = current;
       current = null;
@@ -258,25 +270,50 @@
       if (endRow && ending.dbCallId && !ending.test) {
         Promise.resolve(endRow(ending.dbCallId, {
           endedAt: new Date(now()).toISOString(),
-          durationS: typeof durationS === "number" ? durationS : null
+          durationS: typeof durationS === "number" ? durationS : null,
+          // Der beobachtete Verbindungszeitpunkt. Nur wenn er auch beobachtet
+          // wurde — geraten wird hier nichts, sonst stünde eine erfundene
+          // Gesprächsdauer in der Auswertung.
+          connectedAt: ending.connectedObservedAt
+            ? new Date(ending.connectedObservedAt).toISOString()
+            : null,
+          // Dreiwertig, und das ist der ganze Punkt (siehe Migration 028):
+          // true = abgehoben, false = sicher nicht abgehoben, null = nicht
+          // gemessen. Ohne das dritte „weiß nicht" fiele jede
+          // Erreichbarkeitsquote genau in dem Maß zu schlecht aus, wie die
+          // Erkennung ausfällt.
+          answered: ending.sawMedia ? true : (ending.mediaWorked ? false : null),
+          endReason: reason || ""
         })).catch(() => {});
       }
       return ending;
     }
 
-    /** Ende von hier aus: melden und schließen. */
-    function finish() {
+    /**
+     * Ende von hier aus: melden und schließen.
+     *
+     * Der Grund geht als Ereignis an die Einrichtungskarte, nicht in die
+     * Anrufhistorie — dort zählt die Dauer, nicht wie wir sie erfahren haben.
+     * Sichtbar sein muss er trotzdem: eine Erkennung, die sich bei Unklarheit
+     * still selbst abschaltet, ist sonst nicht von einer kaputten zu
+     * unterscheiden.
+     */
+    function finish(reason) {
       if (!current) return null;
       const seconds = durationSeconds();
+      const why = reason || "von-hand";
+      const sawMedia = current.sawMedia;
       publish("ended");
-      return closeRow(seconds);
+      const ending = closeRow(seconds, why);
+      onEvent({ type: "call-end", at: now(), reason: why, sawMedia, durationS: seconds });
+      return ending;
     }
 
     /** Zu lange offen – siehe MAX_CALL_MS. */
     function expireIfStale() {
       if (!current || !current.startedAt) return false;
       if (now() - current.startedAt < MAX_CALL_MS) return false;
-      finish();
+      finish("grenze");
       return true;
     }
 
@@ -288,7 +325,7 @@
       expireIfStale();
 
       if (String(msg.ev || "").toLowerCase() === "end") {
-        finish();
+        finish("anlage");
         return null;
       }
 
@@ -317,7 +354,7 @@
       // Ein neuer Anruf beendet den vorherigen. Ohne Ende-Meldung von der
       // Anlage ist das der einzige verlässliche Zeitpunkt, an dem feststeht,
       // dass das vorige Gespräch vorbei ist.
-      if (current) finish();
+      if (current) finish("naechster-anruf");
       return begin(msg);
     }
 
@@ -345,7 +382,10 @@
       if (!current || !payload) return null;
       if (payload.callId && payload.callId !== current.callId) return null;
       const seconds = typeof payload.durationS === "number" ? payload.durationS : durationSeconds();
-      return closeRow(seconds);
+      const sawMedia = current.sawMedia;
+      const ending = closeRow(seconds, "von-hand");
+      onEvent({ type: "call-end", at: now(), reason: "von-hand", sawMedia, durationS: seconds });
+      return ending;
     }
 
     /**
@@ -365,6 +405,68 @@
       return current;
     }
 
+    /**
+     * Was am Medien-Socket von myApps beobachtet wurde (main/media-watch.js).
+     *
+     * DIE SICHERUNG: beendet wird ein Gespräch nur, wenn für genau dieses
+     * Gespräch vorher Medien gesehen wurden. Ein Anruf endet nie daran, dass
+     * etwas FEHLT — nur daran, dass etwas Dagewesenes verschwindet.
+     *
+     * Der Unterschied ist der zwischen „aufgelegt" und „ich kann nicht
+     * hinsehen". Auf einem Rechner, auf dem die Beobachtung nicht greift (andere
+     * Plattform, andere myApps-Fassung, lsof fehlt), kommt nie ein „media" an —
+     * und damit beendet sie auch nie etwas. Der Rückfall ist dann genau das
+     * Verhalten von vorher: „Aufgelegt", der nächste Anruf, die Sicherheitsgrenze.
+     *
+     * Deshalb ist „unknown" hier ausdrücklich kein Ende. Eine misslungene
+     * Messung ist kein Auflegen.
+     *
+     * @returns das beendete Gespräch — und NUR dann etwas. Alles andere ist
+     *          null, auch das Erkennen der Medien.
+     */
+    function mediaState(state) {
+      if (!current) return null;
+
+      // DER RÜCKGABEWERT IST EIN VERSPRECHEN: „hier ist das beendete Gespräch"
+      // — nichts anderes. Er hat einmal beim Auftauchen der Medien `current`
+      // zurückgegeben, und die Verdrahtung las das als Ende: sie stellte den
+      // Herzschlag genau dann ab, wenn das Gespräch gerade erst begann. Danach
+      // frischte niemand mehr `activeCall` auf, und das Panel hielt den Anruf
+      // nach staleAfterMs (15 s) für verwaist — ein laufendes Gespräch endete
+      // nach rund zwanzig Sekunden von selbst, ohne Fehlermeldung.
+      // Jede eindeutige Messung — auch eine, die nichts findet — beweist, dass
+      // die Erkennung auf diesem Rechner arbeitet. Nur „unknown" beweist nichts.
+      if (state === "media" || state === "idle") current.mediaWorked = true;
+
+      if (state === "media") {
+        current.sawMedia = true;
+        // Der erste Medien-Socket IST das Abheben. Bei einem eingehenden Anruf
+        // liegt zwischen startedAt und hier die Klingelzeit; sie gehört nicht
+        // in die Gesprächsdauer.
+        if (!current.connectedObservedAt) {
+          current.connectedObservedAt = now();
+          if (current.status === "ringing") {
+            current.status = "connected";
+            current.connectedAt = current.connectedObservedAt;
+            publish(current.status);
+          }
+        }
+        return null;
+      }
+      if (state !== "idle" || !current.sawMedia) return null;
+      return finish("aufgelegt-erkannt");
+    }
+
+    /**
+     * Von außen unterbrochen: gesperrter Bildschirm, Ruhezustand, myApps
+     * beendet. Anders als der Medien-Socket braucht das keinen Beweis — dort
+     * spricht niemand mehr, egal was vorher beobachtet wurde.
+     */
+    function interrupted(reason) {
+      if (!current) return null;
+      return finish(reason || "unterbrochen");
+    }
+
     function snapshot() {
       if (!current) return null;
       return {
@@ -380,11 +482,17 @@
         startedAt: current.startedAt,
         connectedAt: current.connectedAt,
         test: current.test,
-        dbCallId: current.dbCallId
+        dbCallId: current.dbCallId,
+        sawMedia: current.sawMedia,
+        mediaWorked: current.mediaWorked,
+        connectedObservedAt: current.connectedObservedAt
       };
     }
 
-    return { report, heartbeat, endedByPanel, assignCustomer, finish, snapshot, MAX_CALL_MS, PENDING_DIAL_MS };
+    return {
+      report, heartbeat, endedByPanel, assignCustomer, finish, mediaState, interrupted,
+      snapshot, MAX_CALL_MS, PENDING_DIAL_MS
+    };
   }
 
   app.createCallSession = createCallSession;

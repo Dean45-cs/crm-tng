@@ -286,6 +286,131 @@ async function run() {
     assert.strictEqual(env.ended.length, 0, "und es wird nichts geschlossen, was nie geöffnet wurde");
   }
 
+  // --- Das erkannte Gesprächsende ------------------------------------------
+  //
+  // DIE SICHERUNG, und der Grund, warum diese Erkennung überhaupt eingebaut
+  // werden durfte: beendet wird nur, was vorher als laufend beobachtet wurde.
+  {
+    const env = makeSession();
+    env.session.report({ id: "c-20", nr: "+4970310000000", name: "PK 182962 Daniel Ratcliffe" });
+    await env.flush();
+
+    // Ein „idle", bevor je Medien da waren, darf nichts tun. Genau so sieht es
+    // auf einem Rechner aus, auf dem die Beobachtung gar nicht greift.
+    assert.strictEqual(env.session.mediaState("idle"), null,
+      "ohne je gesehene Medien beendet ein leerer Socket-Stand kein Gespräch");
+    assert.strictEqual(env.ended.length, 0, "und schließt erst recht keine Zeile");
+    assert.strictEqual(env.last().status, "connected", "das Gespräch läuft weiter");
+
+    // Abgehoben. DER RÜCKGABEWERT ist hier das Entscheidende: er bedeutet
+    // „das Gespräch ist beendet", und die Verdrahtung stellt daran den
+    // Herzschlag ab. Gab er beim Auftauchen der Medien etwas zurück, hörte das
+    // Auffrischen genau dann auf, wenn das Gespräch begann — und das Panel warf
+    // den Anruf nach staleAfterMs (15 s) als verwaist weg. Ein laufendes
+    // Gespräch endete nach rund zwanzig Sekunden von selbst.
+    assert.strictEqual(env.session.mediaState("media"), null,
+      "das Erkennen der Medien meldet KEIN Ende");
+    assert.strictEqual(env.last().status, "connected", "und beendet auch nichts");
+
+    env.advance(30000);
+    assert.ok(env.session.mediaState("idle"), "nach gesehenen Medien beendet ihr Verschwinden das Gespräch");
+    await env.flush();
+
+    assert.strictEqual(env.last().status, "ended", "das Cockpit erfährt es über den Storage");
+    assert.strictEqual(env.ended.length, 1, "die Zeile in der Historie wird genau einmal geschlossen");
+    assert.strictEqual(env.ended[0].durationS, 30,
+      "die Dauer zählt ab dem Gespräch, nicht ab dem Verschwinden des Sockets");
+
+    const ende = env.events.filter((e) => e.type === "call-end").pop();
+    assert.strictEqual(ende.reason, "aufgelegt-erkannt", "der Grund geht an die Einrichtungskarte");
+    assert.strictEqual(ende.sawMedia, true);
+  }
+
+  // --- Der Herzschlag überlebt das Erkennen der Medien ----------------------
+  //
+  // Genau der Weg, den die Verdrahtung geht: solange mediaState() nichts
+  // zurückgibt, läuft heartbeat() weiter und hält den Anruf im Panel frisch.
+  {
+    const env = makeSession();
+    env.session.report({ id: "c-26", nr: "+4970310000000", name: "" });
+    await env.flush();
+
+    env.session.mediaState("media");
+    for (let i = 0; i < 10; i++) {
+      env.advance(4000);
+      assert.strictEqual(env.session.heartbeat(), true,
+        "der Herzschlag läuft nach dem Erkennen der Medien weiter");
+    }
+    assert.strictEqual(env.last().status, "connected",
+      "nach 40 Sekunden läuft das Gespräch immer noch");
+    assert.strictEqual(env.ended.length, 0, "und nichts wurde geschlossen");
+  }
+
+  // --- Eine misslungene Messung ist kein Auflegen --------------------------
+  {
+    const env = makeSession();
+    env.session.report({ id: "c-21", nr: "+4970310000000", name: "" });
+    await env.flush();
+    env.session.mediaState("media");
+
+    assert.strictEqual(env.session.mediaState("unknown"), null,
+      "„nicht gemessen\u201c ist etwas anderes als „nichts gefunden\u201c");
+    assert.strictEqual(env.last().status, "connected", "das Gespräch läuft weiter");
+    assert.strictEqual(env.ended.length, 0);
+  }
+
+  // --- Von außen unterbrochen ----------------------------------------------
+  //
+  // Anders als der Medien-Socket braucht das keinen Beweis: bei gesperrtem
+  // Bildschirm spricht niemand mehr, auch wenn nie Medien beobachtet wurden.
+  {
+    const env = makeSession();
+    env.session.report({ id: "c-22", nr: "+4970310000000", name: "" });
+    await env.flush();
+    env.advance(12000);
+
+    assert.ok(env.session.interrupted("gesperrt"), "der gesperrte Bildschirm beendet das Gespräch");
+    await env.flush();
+    assert.strictEqual(env.ended.length, 1);
+    const ende = env.events.filter((e) => e.type === "call-end").pop();
+    assert.strictEqual(ende.reason, "gesperrt");
+    assert.strictEqual(ende.sawMedia, false, "und zwar ausdrücklich ohne je Medien gesehen zu haben");
+
+    assert.strictEqual(env.session.interrupted("gesperrt"), null,
+      "ein zweites Mal schließt nichts nach");
+  }
+
+  // --- Medien gehören zu genau einem Gespräch -------------------------------
+  //
+  // Sonst erbte der nächste Anruf die Beobachtung des vorigen und ließe sich
+  // sofort von einem einzigen leeren Socket-Stand beenden.
+  {
+    const env = makeSession();
+    env.session.report({ id: "c-23", nr: "+4970310000000", name: "" });
+    await env.flush();
+    env.session.mediaState("media");
+
+    env.advance(5000);
+    env.session.report({ id: "c-24", nr: "+4970311111111", name: "" });
+    await env.flush();
+    assert.strictEqual(env.ended.length, 1, "der neue Anruf schließt den alten");
+
+    assert.strictEqual(env.session.mediaState("idle"), null,
+      "der neue Anruf beginnt ohne gesehene Medien – und endet daran nicht");
+    assert.strictEqual(env.last().status, "connected");
+  }
+
+  // --- Die Gründe der übrigen Wege ------------------------------------------
+  {
+    const env = makeSession();
+    env.session.report({ id: "c-25", nr: "+4970310000000", name: "" });
+    await env.flush();
+    env.session.finish();
+    await env.flush();
+    assert.strictEqual(env.events.filter((e) => e.type === "call-end").pop().reason, "von-hand",
+      "ohne Angabe gilt das Gespräch als von Hand beendet");
+  }
+
   console.log("call-session.test.js: alle Prüfungen bestanden");
 }
 

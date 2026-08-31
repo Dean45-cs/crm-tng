@@ -146,6 +146,24 @@ export interface Call {
   cancellationReason?: string;
   /** Kampagne, die zum Zeitpunkt des Anrufs lief (Migration 021) */
   campaignId?: string;
+
+  // --- Echte Gesprächszeiten (Migration 028) --------------------------------
+  // Erfasst über die Ende-Erkennung am Medien-Socket von myApps. Auf
+  // Altbeständen und bei Anrufen aus timio fehlt das alles.
+
+  /** Wann tatsächlich abgehoben wurde. `startedAt` ist dagegen das Klingeln. */
+  connectedAt?: string;
+  /**
+   * DREIWERTIG, und das ist der Punkt: `true` abgehoben, `false` sicher nicht
+   * abgehoben, `undefined` nicht gemessen. Der Nenner jeder
+   * Erreichbarkeitsquote sind nur die Anrufe mit einem echten true/false —
+   * sonst zöge jeder Rechner ohne Erkennung die Quote nach unten.
+   */
+  answered?: boolean;
+  /** Woran das Ende erkannt wurde. Sagt, welchen Dauern man trauen darf. */
+  endReason?: string;
+  /** Wann das Gesprächsergebnis erfasst wurde — Grundlage der Nachbearbeitungszeit. */
+  dispositionAt?: string;
 }
 
 // ============================================================================

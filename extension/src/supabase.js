@@ -663,7 +663,22 @@
   // Anruf. Best-effort — schlägt der Request fehl, bleibt die Zeile offen
   // (ended_at null); die Live-Anrufleiste im CRM federt das über einen
   // Staleness-Filter ab (siehe src/components/LiveCallBar.tsx).
-  async function endCall(callId, { endedAt, durationS }) {
+  /**
+   * Der Rumpf des Ende-PATCH. Eigene Funktion, weil hier zwei Quellen
+   * zusammenlaufen: die Anlage über den HUD (kennt Verbindungszeitpunkt und
+   * Erreichbarkeit) und timio im Browser (kennt beides nicht). Was nicht
+   * gemessen wurde, wird auch nicht geschrieben — sonst stünde für jeden
+   * timio-Anruf ein „nicht abgenommen" in der Erreichbarkeitsquote.
+   */
+  function callEndBody({ endedAt, durationS, connectedAt, answered, endReason }) {
+    const body = { ended_at: endedAt, duration_s: durationS };
+    if (connectedAt) body.connected_at = connectedAt;
+    if (answered === true || answered === false) body.answered = answered;
+    if (endReason) body.end_reason = String(endReason).slice(0, 40);
+    return body;
+  }
+
+  async function endCall(callId, { endedAt, durationS, connectedAt, answered, endReason }) {
     const config = await getEffectiveSupabaseConfig();
     if (!config) return { ok: false, reason: "not-configured" };
 
@@ -682,7 +697,13 @@
         // timio-content.js). Ohne keepalive bricht der Browser den Request beim
         // Schließen ab und die Zeile bliebe ohne ended_at zurück.
         keepalive: true,
-        body: JSON.stringify({ ended_at: endedAt, duration_s: durationS })
+        // connected_at/answered/end_reason kommen aus der Ende-Erkennung
+        // (desktop/main/media-watch.js) und fehlen, wenn der Anruf aus timio
+        // stammt — dort gibt es sie nicht. Deshalb wird nur geschrieben, was
+        // auch bekannt ist: ein Feld mitzusenden, das niemand gemessen hat,
+        // hieße eine Null in die Auswertung zu schreiben, die wie eine Messung
+        // aussieht.
+        body: JSON.stringify(callEndBody({ endedAt, durationS, connectedAt, answered, endReason }))
       });
 
       if (res.status === 401) {
@@ -738,10 +759,44 @@
         const errJson = await res.json().catch(() => null);
         return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
       }
+
+      if (disposition) await stampDispositionTime(config, session, callId);
       return { ok: true };
     } catch (error) {
       return { ok: false, reason: "network", error: String((error && error.message) || error) };
     }
+  }
+
+  /**
+   * Den Zeitpunkt der Nachbearbeitung festhalten — aber nur beim ERSTEN Mal.
+   *
+   * Nachbearbeitungszeit ist die Spanne vom Auflegen bis zum erfassten
+   * Ergebnis. Wer eine halbe Stunde später den Kündigungsgrund nachträgt,
+   * hat nicht eine halbe Stunde nachbearbeitet — würde der Zeitstempel dabei
+   * überschrieben, wäre der Durchschnitt für alle dahin, und zwar nach oben
+   * und unbemerkt.
+   *
+   * Deshalb ein zweiter, gefilterter PATCH (`disposition_at=is.null`) statt
+   * eines Feldes im ersten: PostgREST kann nicht „nur setzen, wenn leer".
+   * Die Reihenfolge ist Absicht — das Ergebnis selbst ist schon geschrieben,
+   * wenn das hier fehlschlägt. Dann fehlt eine Kennzahl, nicht ein Ergebnis.
+   */
+  async function stampDispositionTime(config, session, callId) {
+    try {
+      await fetch(
+        `${config.url}/rest/v1/calls?id=eq.${encodeURIComponent(callId)}&disposition_at=is.null`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: config.anonKey,
+            Authorization: `Bearer ${session.accessToken}`
+          },
+          keepalive: true,
+          body: JSON.stringify({ disposition_at: new Date().toISOString() })
+        }
+      );
+    } catch (error) { /* eine Kennzahl weniger, kein verlorenes Ergebnis */ }
   }
 
   // Aktuelle Schicht + Kampagne des eingeloggten Agenten (Outbound-Umbau,

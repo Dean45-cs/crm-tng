@@ -7,6 +7,8 @@ import {
   cancellationReasonBreakdown,
   campaignPerformance,
   dispositionBreakdown,
+  callTimingStats,
+  SHORT_CALL_S,
 } from './callStats';
 import { makeCall, makeContract, makeTariff, makeLead, makeNote } from '../test/fixtures';
 import type { Campaign } from '../types';
@@ -249,5 +251,126 @@ describe('dispositionBreakdown', () => {
     ]);
     expect(rows[0]).toEqual({ disposition: 'gehalten', count: 2 });
     expect(rows).toHaveLength(2);
+  });
+});
+
+// ============================================================================
+// Echte Gesprächszeiten und Erreichbarkeit (Migration 028)
+// ============================================================================
+
+/** Ein Anruf mit echten Rändern: klingelt ab T, abgehoben nach `ring`, Gespräch `talk`. */
+const timedCall = (over: {
+  ring?: number;
+  talk?: number;
+  acw?: number;
+  answered?: boolean;
+  agentId?: string;
+  base?: string;
+}) => {
+  const base = Date.parse(over.base ?? '2026-09-01T10:00:00.000Z');
+  const at = (s: number) => new Date(base + s * 1000).toISOString();
+  const ring = over.ring ?? 0;
+  const talk = over.talk ?? 0;
+  const connected = over.answered === false ? undefined : at(ring);
+  const ended = over.answered === false ? at(ring) : at(ring + talk);
+  return makeCall({
+    agentId: over.agentId ?? 'a',
+    startedAt: at(0),
+    connectedAt: connected,
+    endedAt: ended,
+    answered: over.answered,
+    dispositionAt: over.acw === undefined ? undefined : at(ring + talk + over.acw),
+    disposition: over.acw === undefined ? undefined : 'gehalten',
+  });
+};
+
+describe('callTimingStats', () => {
+  it('rechnet die Gesprächsdauer ab dem Abheben, nicht ab dem Klingeln', () => {
+    // 25 s klingeln, dann 100 s sprechen. durationS wäre 125 – und damit falsch.
+    const s = callTimingStats([timedCall({ ring: 25, talk: 100, answered: true })]);
+    expect(s.avgTalkS).toBe(100);
+    expect(s.avgRingS).toBe(25);
+    expect(s.talkTimeS).toBe(100);
+    expect(s.withTalkTime).toBe(1);
+  });
+
+  it('zählt die Erreichbarkeit gegen die gemessenen Anrufe, nicht gegen alle', () => {
+    // DER FALL, der die Zahl sonst still ruiniert: zwei Anrufe von einem
+    // Rechner ohne Erkennung (answered undefined). Sie dürfen die Quote weder
+    // heben noch senken – sie sagen nichts aus.
+    const s = callTimingStats([
+      timedCall({ talk: 60, answered: true }),
+      timedCall({ answered: false }),
+      makeCall({ answered: undefined }),
+      makeCall({ answered: undefined }),
+    ]);
+    expect(s.measured).toBe(2);
+    expect(s.answered).toBe(1);
+    expect(s.unanswered).toBe(1);
+    expect(s.answerRatePct).toBe(50);
+    expect(s.measuredPct).toBe(50);
+  });
+
+  it('gibt keine Quote aus, wo nichts gemessen wurde', () => {
+    const s = callTimingStats([makeCall({}), makeCall({})]);
+    expect(s.measured).toBe(0);
+    // null, nicht 0 – „keine Angabe" ist etwas anderes als „null Prozent".
+    expect(s.answerRatePct).toBeNull();
+    expect(s.avgTalkS).toBeNull();
+    expect(s.avgAhtS).toBeNull();
+  });
+
+  it('erkennt Kurzgespräche unter der Schwelle', () => {
+    const s = callTimingStats([
+      timedCall({ talk: SHORT_CALL_S - 1, answered: true }),
+      timedCall({ talk: SHORT_CALL_S, answered: true }),
+      timedCall({ talk: 300, answered: true }),
+    ]);
+    expect(s.shortCalls).toBe(1);
+    expect(s.shortCallPct).toBeCloseTo(33.3, 1);
+  });
+
+  it('rechnet AHT je Anruf statt als Summe zweier Durchschnitte', () => {
+    // Anruf 1: 100 s Gespräch + 20 s Nachbearbeitung = 120
+    // Anruf 2: 200 s Gespräch, Ergebnis nie erfasst -> zählt bei AHT nicht mit
+    const s = callTimingStats([
+      timedCall({ talk: 100, acw: 20, answered: true }),
+      timedCall({ talk: 200, answered: true }),
+    ]);
+    expect(s.avgTalkS).toBe(150);
+    expect(s.avgAcwS).toBe(20);
+    expect(s.withAht).toBe(1);
+    // Die Summe der Durchschnitte wäre 170 – eine Zahl, die zu keinem der
+    // beiden Anrufe gehört.
+    expect(s.avgAhtS).toBe(120);
+  });
+
+  it('wirft kaputte Zeitstempel weg, statt den Durchschnitt zu verderben', () => {
+    const s = callTimingStats([
+      timedCall({ talk: 100, answered: true }),
+      // Ende vor dem Anfang (Uhrensprung)
+      makeCall({
+        startedAt: '2026-09-01T10:00:00.000Z',
+        connectedAt: '2026-09-01T10:05:00.000Z',
+        endedAt: '2026-09-01T10:01:00.000Z',
+        answered: true,
+      }),
+      // Ein Gespräch über der Obergrenze – eine verwaiste Zeile, kein Messwert
+      timedCall({ talk: 5 * 60 * 60, answered: true }),
+    ]);
+    expect(s.withTalkTime).toBe(1);
+    expect(s.avgTalkS).toBe(100);
+  });
+
+  it('lässt sich auf eine Person einschränken', () => {
+    const s = callTimingStats(
+      [
+        timedCall({ talk: 100, answered: true, agentId: 'a' }),
+        timedCall({ talk: 900, answered: true, agentId: 'b' }),
+      ],
+      'a',
+    );
+    expect(s.withTalkTime).toBe(1);
+    expect(s.avgTalkS).toBe(100);
   });
 });

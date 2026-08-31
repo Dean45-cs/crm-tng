@@ -37,7 +37,13 @@ import {
 } from '../lib/utils';
 import { agentStats, attainmentPct, monthlySeries } from '../lib/teamStats';
 import { useMonthCalls } from '../store/useMonthCalls';
-import { callVolumeStats, linkCallsToOutcomes, conversionStats } from '../lib/callStats';
+import {
+  callVolumeStats,
+  linkCallsToOutcomes,
+  conversionStats,
+  callTimingStats,
+} from '../lib/callStats';
+import { formatDuration } from '../lib/reporting';
 import { KpiTile } from '../components/KpiTile';
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
@@ -72,6 +78,11 @@ export function AgentDetail({ agentKey }: Props) {
 
   const agentCallVolume = useMemo(
     () => (monthCalls ? callVolumeStats(monthCalls, agentKey) : null),
+    [monthCalls, agentKey],
+  );
+  // Echte Gesprächszeiten und Erreichbarkeit dieser Person (Migration 028).
+  const agentTiming = useMemo(
+    () => (monthCalls ? callTimingStats(monthCalls, agentKey) : null),
     [monthCalls, agentKey],
   );
   const agentCallConversion = useMemo(() => {
@@ -215,6 +226,33 @@ export function AgentDetail({ agentKey }: Props) {
           label="Anrufe (Monat)"
           value={agentCallVolume === null ? '–' : agentCallVolume.count}
           sub="von der Extension automatisch erfasst"
+        />
+        <KpiTile
+          label="Erreichbarkeit"
+          value={agentTiming?.answerRatePct == null ? '–' : `${agentTiming.answerRatePct} %`}
+          sub={
+            agentTiming && agentTiming.measured > 0
+              ? `${agentTiming.answered} angenommen · ${agentTiming.unanswered} ohne Abheben`
+              : 'noch kein Gesprächsende gemessen'
+          }
+        />
+        <KpiTile
+          label="Ø Gespräch (ab Abheben)"
+          value={agentTiming?.avgTalkS == null ? '–' : formatDuration(agentTiming.avgTalkS)}
+          sub={
+            agentTiming?.avgRingS == null
+              ? `${agentTiming?.withTalkTime ?? 0} gemessene Gespräche`
+              : `Ø ${formatDuration(agentTiming.avgRingS)} klingeln bis zum Abheben`
+          }
+        />
+        <KpiTile
+          label="Ø Nachbearbeitung"
+          value={agentTiming?.avgAcwS == null ? '–' : formatDuration(agentTiming.avgAcwS)}
+          sub={
+            agentTiming?.avgAhtS == null
+              ? 'noch kein Ergebnis nach einem Gespräch erfasst'
+              : `AHT Ø ${formatDuration(agentTiming.avgAhtS)}`
+          }
         />
         <KpiTile
           label="Abschlussquote (Anruf → Vertrag/Tarifwechsel)"

@@ -13,7 +13,7 @@
 // bestehen und liefert weiterhin Ticketdaten und die lokale KI (Gemini Nano
 // gibt es nur in Chrome selbst, siehe README).
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, globalShortcut, shell, nativeImage, screen, nativeTheme, dialog } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, globalShortcut, shell, nativeImage, screen, nativeTheme, dialog, powerMonitor } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
@@ -57,6 +57,7 @@ const MIN_OPACITY = 0.35;
 // Conference-ID ist der wertvollste Teil: eine stabile Kennung pro Gespräch,
 // an der sich wiederholte Aufrufe als derselbe Anruf erkennen lassen.
 const { PROTOCOL: CALL_PROTOCOL, parseCallUrl, callUrlFromArgv } = require("./call-url");
+const { parseLsof, parseNetstat, isMediaSocket, createMediaWatcher } = require("./media-watch");
 
 // Nur eine Instanz: zwei HUDs würden sich um den Port und um die
 // Extension-Verbindung streiten.
@@ -548,7 +549,14 @@ function handleCallUrl(raw, options) {
 // ankam, `calls` zählt, was daraus im Panel geworden ist. Klaffen sie
 // auseinander, liegt es nicht an myApps.
 
-const PHONE_STATS_DEFAULT = { received: 0, lastReceivedAt: 0, calls: 0, recognized: 0, lastCallAt: 0, lastTestAt: 0 };
+const PHONE_STATS_DEFAULT = {
+  received: 0, lastReceivedAt: 0, calls: 0, recognized: 0, lastCallAt: 0, lastTestAt: 0,
+  // Das Gespraechsende (siehe main/media-watch.js). Aus demselben Grund
+  // gezaehlt wie die Anrufe selbst: eine Erkennung, die sich bei Unklarheit
+  // still selbst abschaltet, ist sonst nicht von einer kaputten zu
+  // unterscheiden.
+  mediaSeen: 0, autoEnds: 0, lastMediaAt: 0, lastEndReason: ""
+};
 
 // Meldungen, die eintreffen, bevor es den Store gibt. Das ist kein Randfall,
 // sondern der wichtigste: ein Anruf, der die App überhaupt erst startet, kommt
@@ -600,7 +608,21 @@ function recordCallUrl(call) {
 
 /** Rückmeldung aus dem Panel: aus der Meldung ist ein Gespräch geworden. */
 function recordCallSeen(event) {
-  if (!event || event.type !== "call" || event.test) return;
+  if (!event || event.test) return;
+
+  // Wie ein Gespräch geendet hat. Das gehört nicht in die Anrufhistorie – dort
+  // zählt die Dauer, nicht wie wir sie erfahren haben – aber sehr wohl in die
+  // Einrichtungskarte: eine Erkennung, die sich bei Unklarheit selbst
+  // abschaltet, ist sonst nicht von einer kaputten zu unterscheiden.
+  if (event.type === "call-end") {
+    updatePhoneStats((stats) => {
+      stats.lastEndReason = String(event.reason || "");
+      if (event.reason === "aufgelegt-erkannt") stats.autoEnds += 1;
+    });
+    return;
+  }
+
+  if (event.type !== "call") return;
   const now = Date.now();
   updatePhoneStats((stats) => {
     stats.calls += 1;
@@ -660,7 +682,10 @@ function phoneState() {
     // dann klingelt beim Wählen nichts in der Telefonanlage – ohne diese
     // Anzeige wäre das ein Rätsel ohne Hinweis.
     telHandler: safeCall(() => app.getApplicationNameForProtocol("tel://"), ""),
-    platform: process.platform
+    platform: process.platform,
+    // Die letzte Messung am Medien-Socket, für den Prüfknopf. null heißt: noch
+    // nie gemessen – nicht „nichts gefunden".
+    mediaProbe: mediaProbeResult
   };
 }
 
@@ -690,6 +715,202 @@ function dial(number) {
   if (!/^\+?[0-9]{3,20}$/.test(cleaned)) return false;
   shell.openExternal(`tel:${cleaned}`);
   return true;
+}
+
+// --- Das Gesprächsende erkennen ---------------------------------------------
+//
+// myApps meldet einen Anruf genau einmal und beim Auflegen gar nicht (der Beleg
+// steht in main/media-watch.js). Beobachtet wird stattdessen der Medien-Socket:
+// solange gesprochen wird, hat myApps UDP-Sockets offen, im Leerlauf keinen
+// einzigen.
+//
+// Gefragt wird das Betriebssystem, und dafür braucht es zum ersten Mal ein
+// fremdes Programm im laufenden Hauptprozess. Deshalb eng geschnürt, in
+// derselben Machart wie dial(): feste Programmpfade, feste Argumentliste, kein
+// shell, ein Zeitlimit – und als einziger veränderlicher Teil eine PID, die wir
+// selbst ermittelt und als Zahl geprüft haben.
+
+const { execFile } = require("child_process");
+
+// Wie der Prozess heißt. Unter macOS gemessen: „myapps". Der Windows-Name ist
+// nicht geprüft, deshalb mehrere Kandidaten – und ohne Treffer bleibt die
+// Erkennung schlicht aus, statt etwas zu raten.
+const MYAPPS_PROCESS_NAMES = ["myapps", "myApps", "myapps.exe", "myApps.exe"];
+
+const MEDIA_POLL_MS = 1000;
+const PROBE_TIMEOUT_MS = 2000;
+
+let myAppsPid = 0;
+let mediaTimer = null;
+let mediaWatcher = null;
+let mediaProbeResult = null;
+
+/**
+ * execFile als Versprechen, mit Zeitlimit. Ein Fehlschlag ist kein Ausnahmefall
+ * — deshalb kommt der Exit-Code mit heraus und nicht nur „hat geklappt".
+ *
+ * Der Unterschied trägt die ganze Erkennung: `lsof` meldet Code 1, wenn es
+ * nichts anzuzeigen gibt, und genau das ist der Normalfall zwischen zwei
+ * Gesprächen. Würde man das als Fehler lesen, hörte die Erkennung im Leerlauf
+ * auf; würde man umgekehrt JEDEN Fehlschlag als „nichts gefunden" lesen, könnte
+ * ein kaputtes lsof ein laufendes Gespräch beenden. Beides wäre still.
+ */
+function run(file, args) {
+  return new Promise((resolve) => {
+    try {
+      execFile(file, args, { timeout: PROBE_TIMEOUT_MS, windowsHide: true }, (error, stdout, stderr) => {
+        resolve({
+          code: error ? (typeof error.code === "number" ? error.code : -1) : 0,
+          out: String(stdout || ""),
+          err: String(stderr || ""),
+          error: error ? String(error.message || error) : ""
+        });
+      });
+    } catch (error) {
+      resolve({ code: -1, out: "", err: "", error: String(error && error.message ? error.message : error) });
+    }
+  });
+}
+
+/**
+ * Die PID von myApps. Gemerkt, aber neu gesucht, sobald eine Messung ins Leere
+ * läuft – myApps darf zwischendurch neu starten, ohne dass die Erkennung für
+ * den Rest der Sitzung blind bleibt.
+ */
+async function resolveMyAppsPid() {
+  if (myAppsPid > 0) return myAppsPid;
+
+  if (process.platform === "win32") {
+    const root = process.env.SystemRoot || "C:\\Windows";
+    for (const name of MYAPPS_PROCESS_NAMES) {
+      if (!name.toLowerCase().endsWith(".exe")) continue;
+      const result = await run(`${root}\\System32\\tasklist.exe`,
+        ["/FI", `IMAGENAME eq ${name}`, "/NH", "/FO", "CSV"]);
+      const match = result.out.match(/^"[^"]+","(\d+)"/m);
+      if (match) { myAppsPid = Number(match[1]); return myAppsPid; }
+    }
+    return 0;
+  }
+
+  // -i, weil die Schreibweise des Prozessnamens nichts ist, worauf man sich
+  // über Fassungen hinweg verlassen sollte.
+  const result = await run("/usr/bin/pgrep", ["-i", "-x", "myapps"]);
+  const first = result.out.split("\n").map((line) => line.trim()).find((line) => /^\d+$/.test(line));
+  myAppsPid = first ? Number(first) : 0;
+  return myAppsPid;
+}
+
+/**
+ * Eine Messung: welche Sockets hat myApps gerade offen?
+ *
+ * `ok: false` heißt ausdrücklich „nicht gemessen", nicht „nichts gefunden" –
+ * der Unterschied entscheidet darüber, ob ein Gespräch beendet werden darf.
+ */
+async function probeMedia() {
+  const pid = await resolveMyAppsPid();
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return { ok: false, pid: 0, sockets: [], error: "myApps nicht gefunden" };
+  }
+
+  const result = process.platform === "win32"
+    ? await run(`${process.env.SystemRoot || "C:\\Windows"}\\System32\\netstat.exe`, ["-ano", "-p", "UDP"])
+    : await run("/usr/sbin/lsof", ["-nP", "-a", "-p", String(pid), "-i", "-F", "pcfnP"]);
+
+  // Code 0 heißt „gemessen, hier ist die Liste"; Code 1 bei lsof heißt
+  // „gemessen, die Liste ist leer" – der Normalfall, wenn der Prozess gerade
+  // keinen einzigen Socket offen hat. Alles andere ist NICHT gemessen: ein
+  // fehlendes Programm, ein Zeitlimit, ein Rechteproblem. Daran darf kein
+  // Gespräch enden, deshalb geht das als ok:false heraus.
+  const measured = result.code === 0 || (result.code === 1 && !result.err.trim());
+  if (!measured) {
+    myAppsPid = 0;
+    return { ok: false, pid, sockets: [], error: result.error || result.err.trim() || "Messung fehlgeschlagen" };
+  }
+
+  const sockets = process.platform === "win32"
+    ? parseNetstat(result.out, pid)
+    : parseLsof(result.out);
+
+  // Keine einzige Zeile, obwohl wir eine PID hatten: myApps ist vermutlich
+  // beendet worden. Beim nächsten Mal neu suchen – und das Gespräch darf enden,
+  // denn ohne myApps spricht niemand mehr.
+  if (!sockets.length) myAppsPid = 0;
+
+  return { ok: true, pid, sockets, error: "" };
+}
+
+/** Die Messung so aufbereiten, wie die Einrichtungskarte sie zeigt. */
+function describeProbe(result) {
+  const sockets = (result && result.sockets) || [];
+  return {
+    at: Date.now(),
+    ok: !!(result && result.ok),
+    pid: (result && result.pid) || 0,
+    sockets: sockets.length,
+    media: sockets.filter(isMediaSocket).length,
+    error: (result && result.error) || "",
+    platform: process.platform
+  };
+}
+
+function sendMedia(state) {
+  // Gezählt wird nur das Auftauchen. Ein „idle" heißt für sich genommen gar
+  // nichts – es steht auch vor dem Abheben und nach jedem Gespräch. Ob daraus
+  // ein Ende wurde, weiß nur call-session.js, und das meldet es als Ereignis.
+  if (state === "media") {
+    updatePhoneStats((stats) => { stats.mediaSeen += 1; stats.lastMediaAt = Date.now(); });
+  }
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send("hud:media", { state, at: Date.now() });
+}
+
+/**
+ * Gemessen wird NUR, solange ein Gespräch läuft. Das Panel schaltet ein und
+ * aus – im Leerlauf kostet die Erkennung damit nichts.
+ */
+function setMediaWatch(on) {
+  if (!on) {
+    if (mediaTimer) clearInterval(mediaTimer);
+    mediaTimer = null;
+    mediaWatcher = null;
+    return;
+  }
+  if (mediaTimer) return;
+
+  mediaWatcher = createMediaWatcher({
+    probe: async () => {
+      const result = await probeMedia();
+      mediaProbeResult = describeProbe(result);
+      return result;
+    },
+    onChange: sendMedia
+  });
+
+  const tick = () => { mediaWatcher.tick().catch(() => {}); };
+  tick();
+  mediaTimer = setInterval(tick, MEDIA_POLL_MS);
+}
+
+/** Der Prüfknopf in der Einrichtungskarte: eine einzelne Messung. */
+async function probeMediaOnce() {
+  mediaProbeResult = describeProbe(await probeMedia());
+  pushPhoneState();
+}
+
+/**
+ * Was ein Gespräch von außen unterbricht. Gesperrter Bildschirm oder
+ * schlafender Rechner heißt: hier spricht niemand mehr. Kostet nichts und
+ * stimmt immer – anders als die Beobachtung der Sockets braucht das keinen
+ * Beweis.
+ */
+function watchPowerEvents() {
+  const stop = (reason) => () => {
+    if (!win || win.isDestroyed()) return;
+    win.webContents.send("hud:call-interrupt", { reason });
+  };
+  safeCall(() => powerMonitor.on("lock-screen", stop("gesperrt")), null);
+  safeCall(() => powerMonitor.on("suspend", stop("ruhezustand")), null);
+  safeCall(() => powerMonitor.on("shutdown", stop("herunterfahren")), null);
 }
 
 // Muss so früh wie möglich stehen: unter macOS kann open-url schon feuern,
@@ -848,6 +1069,13 @@ function registerIpc() {
       case "phone-direction":
         setPhoneDirection(args.value);
         return;
+      case "call-media-watch":
+        // Das Panel sagt, ob gerade ein Gespräch läuft. Nur dann wird gemessen.
+        setMediaWatch(!!(args && args.on));
+        return;
+      case "media-probe":
+        probeMediaOnce();
+        return;
       default:
         // Alles Übrige ist ein Auftrag an die Extension (z. B. timio-Tab nach
         // vorn holen) – dort sitzt der Zugriff auf die Chrome-Tabs.
@@ -997,6 +1225,7 @@ app.whenReady().then(async () => {
   }
 
   registerIpc();
+  watchPowerEvents();
   installEditMenu();
   hideFromDock();
   createWindow();

@@ -225,11 +225,16 @@ UC clients*). Der Dialog kennt vier Felder – Name, URL, Parameter, Autostart �
 und sonst nichts. Daraus folgen zwei Grenzen, die **keine Einstellungssache**
 sind:
 
-**Das Gesprächsende.** Es gibt dort kein Ereignis dafür; ausgelöst wird beim
-Anruf, nicht beim Auflegen. Deshalb beendet der Knopf **„Aufgelegt"** im
-Cockpit das Gespräch – er ist nicht der Notausgang, sondern der reguläre Weg.
-Zusätzlich endet ein Anruf, wenn der nächste beginnt, und spätestens nach zwei
-Stunden (Sicherheitsgrenze in `renderer/call-session.js`), damit kein Anruf für
+**Das Gesprächsende.** Es gibt dort kein Ereignis dafür – und das ist nicht bloß
+im Wiki nachgelesen, sondern im ausgelieferten Code von myApps selbst
+(`softphone/PhoneCallExternalApplication.js`): die externe Anwendung wird bei
+`autostart` 100 ms nach Aufbau des Gesprächsfensters gestartet, und beim
+Auflegen räumt dieselbe Datei nur ihre Knöpfe weg.
+
+*Gemeldet* wird das Ende also nicht. *Erkannt* wird es trotzdem – siehe
+„Auflegen erkennen" weiter unten. Wo diese Beobachtung nicht greift, bleibt es
+beim Knopf **„Aufgelegt"** im Cockpit, beim nächsten Anruf, und spätestens bei
+der Zwei-Stunden-Grenze in `renderer/call-session.js`, damit kein Anruf für
 immer als „läuft" in der Live-Anrufleiste des CRM stehen bleibt.
 
 **Die Richtung.** Ausgelöst wird „upon incoming and outgoing call" – dieselbe
@@ -246,6 +251,57 @@ verlassen sollte man sich heute nicht darauf.
 Anbindung nichts. Wer wirklich *alle* Anrufe braucht, kommt an den
 Verbindungsdatensätzen der Anlage nicht vorbei – dafür braucht es Zugang zur
 Anlage selbst.
+
+### Auflegen erkennen
+
+Was myApps nicht meldet, hinterlässt es trotzdem auf dem Rechner: solange
+gesprochen wird, hat der Prozess Sprachverbindungen offen. Gemessen (31.08.2026,
+macOS, zwei echte Anrufe):
+
+| Lage | UDP-Sockets von myApps |
+| --- | --- |
+| kein Anruf | **0** |
+| es klingelt, Fenster ist auf | **0** |
+| abgehoben | **6** (Ports 50000/50001 über alle Adressen) |
+| aufgelegt | **0**, ohne Verzug |
+
+Damit ist „ein UDP-Socket ist da" kein Rauschen, sondern ein Signal – im
+Leerlauf gibt es keinen einzigen. Gefragt wird `lsof` (macOS) bzw. `netstat`
+(Windows), einmal pro Sekunde und **nur, solange ein Gespräch läuft**; drei
+gleichlautende Messungen machen einen Wechsel aus, das Auflegen steht also nach
+rund drei Sekunden fest. Das Auseinandernehmen und die Entscheidung stehen in
+`main/media-watch.js` und sind ohne laufendes Fenster prüfbar.
+
+**Die Sicherung, auf der das steht:** ein Gespräch wird nie beendet, weil ein
+Socket *fehlt* – nur, wenn er für genau dieses Gespräch vorher **da war** und
+dann verschwindet (`mediaState()` in `renderer/call-session.js`). Der
+Unterschied ist der zwischen „aufgelegt" und „ich kann nicht hinsehen". Auf
+einem Rechner, auf dem die Beobachtung nicht greift – andere Plattform, andere
+myApps-Fassung, `lsof` fehlt – kommt nie ein „da war" an, und damit endet auch
+nie etwas von selbst. Der Rückfall ist dann exakt das Verhalten von vorher.
+Deshalb ist eine misslungene Messung ausdrücklich kein Auflegen.
+
+Dazu zwei Signale, die keinen Beweis brauchen: **gesperrter Bildschirm** und
+**Ruhezustand** (`powerMonitor` in `main/main.js`) beenden ein Gespräch immer –
+dort spricht niemand mehr.
+
+Ob es auf einem Rechner greift, steht in der Einrichtungskarte: ⚙ →
+„Telefonanlage" → Zeile **Gesprächsende**, dazu der Knopf **„Erkennung
+prüfen"** für eine einzelne Messung. Ohne diese Anzeige wäre eine Erkennung,
+die sich bei Unklarheit still selbst abschaltet, nicht von einer kaputten zu
+unterscheiden.
+
+**Unter Windows ungeprüft.** Der Prozessname und das Socket-Verhalten sind dort
+nicht gemessen. Kaputt ist dadurch nichts – ohne beobachtete Medien endet
+schlicht nichts von selbst.
+
+**Was es weiterhin nicht sieht:** Anrufe, die gar nicht über myApps laufen
+(Tischtelefon, Handy). Wer die auch braucht, kommt an der Anlage nicht vorbei –
+die App-Websocket-Schnittstelle (`PBX0/APPS/websocket`, RCC-API) meldet
+`CallAdd`/`CallDel` samt `conf-id`, also derselben Kennung, die `$c` liefert.
+`ev=end` und `dir=in|out` sind in `call-url.js` und `call-session.js` schon
+vollständig verdrahtet; es fehlt nur der Absender. Dafür braucht es ein
+App-Objekt in der Anlage.
 
 ### Wählen
 
@@ -276,6 +332,15 @@ Von Hand, bei laufender App:
 ```
 open "stadtnetzcrm://call?id=test-1&nr=%2B4970310000000&name=PK%20182962%20Daniel%20Ratcliffe"
 ```
+
+Beachten: hier steht `%2B`, myApps setzt für `$I` dagegen ein echtes `+` ein.
+Beides muss dasselbe bedeuten – dass es das lange nicht tat, war ein echter
+Fehler und hat die Rufnummernsuche stillgelegt: `URLSearchParams` liest ein `+`
+nach Formularregeln als Leerzeichen, das `trim()` warf es weg, und übrig blieb
+eine Nummer ohne Plus. `shared.phoneKey()` entscheidet genau daran, ob die
+Landesvorwahl abzuschneiden ist. Deshalb nimmt `call-url.js` die Query jetzt
+selbst auseinander. Wer von Hand prüft, sollte **beide** Schreibweisen
+durchlassen.
 
 Das Overlay muss nach vorn kommen und das Cockpit „Daniel Ratcliffe" mit
 „Privatkunde · 182962" zeigen – nicht den Rohstring. Kommt nichts, ist meist

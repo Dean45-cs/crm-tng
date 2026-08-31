@@ -41,6 +41,7 @@ import { agentStats, attainmentPct, teamKpis, monthlySeries, trendPct } from '..
 import { useMonthCalls } from '../store/useMonthCalls';
 import {
   callVolumeStats,
+  callTimingStats,
   linkCallsToOutcomes,
   conversionStats,
   saveRateStats,
@@ -50,6 +51,7 @@ import {
 import { SkeletonTable } from '../components/Skeleton';
 import { StatusInsights } from '../components/StatusInsights';
 import { KpiTile } from '../components/KpiTile';
+import { formatDuration } from '../lib/reporting';
 
 function initialsOf(name: string): string {
   return name
@@ -93,6 +95,8 @@ interface AgentRow {
   lastActivity: string;
   /** Anrufe diesen Monat — null solange der Fetch noch läuft. */
   callCount: number | null;
+  /** Erreichbarkeit in %, null wenn für diese Person nichts gemessen wurde. */
+  answerRatePct: number | null;
 }
 
 export function TeamDashboard() {
@@ -120,6 +124,11 @@ export function TeamDashboard() {
   // Disposition-basierte Kennzahlen (Migration 021): Save-Rate über gehaltene
   // vs. gekündigte Anrufe, häufigste Kündigungsgründe, Performance je Kampagne.
   const teamSaveRate = useMemo(() => (monthCalls ? saveRateStats(monthCalls) : null), [monthCalls]);
+
+  // Echte Gesprächszeiten und Erreichbarkeit (Migration 028), gespeist aus der
+  // Ende-Erkennung der Auskunft. Ohne Messung bleiben die Werte null — die
+  // Kacheln zeigen dann einen Strich statt einer erfundenen Null.
+  const teamTiming = useMemo(() => (monthCalls ? callTimingStats(monthCalls) : null), [monthCalls]);
   const churnReasons = useMemo(
     () => (monthCalls ? cancellationReasonBreakdown(monthCalls).slice(0, 6) : []),
     [monthCalls],
@@ -174,6 +183,7 @@ export function TeamDashboard() {
           trendPct: trendPct(stats.monthCommission, prevCommission),
           lastActivity: lastActivity.get(u.key) ?? '',
           callCount: monthCalls ? callVolumeStats(monthCalls, u.key).count : null,
+          answerRatePct: monthCalls ? callTimingStats(monthCalls, u.key).answerRatePct : null,
         };
       })
       .sort((a, b) => b.monthCommission - a.monthCommission);
@@ -342,6 +352,36 @@ export function TeamDashboard() {
           label="Anrufe (Monat)"
           value={teamCallVolume === null ? '–' : `${teamCallVolume.count}`}
           sub="von der Extension automatisch erfasst"
+        />
+        <KpiTile
+          icon={<Phone size={15} />}
+          accent={
+            teamTiming && teamTiming.answerRatePct !== null && teamTiming.answerRatePct >= 60
+              ? 'green'
+              : 'orange'
+          }
+          label="Erreichbarkeit (Team)"
+          value={teamTiming?.answerRatePct == null ? '–' : `${teamTiming.answerRatePct} %`}
+          sub={
+            teamTiming && teamTiming.measured > 0
+              ? `${teamTiming.answered} angenommen · ${teamTiming.unanswered} ohne Abheben · gemessen bei ${teamTiming.measuredPct} % der Anrufe`
+              : 'noch kein Gesprächsende gemessen'
+          }
+        />
+        <KpiTile
+          icon={<Clock size={15} />}
+          accent="purple"
+          label="Ø Bearbeitung (AHT)"
+          value={teamTiming?.avgAhtS == null ? '–' : formatDuration(teamTiming.avgAhtS)}
+          sub={
+            teamTiming?.avgTalkS == null
+              ? 'Gespräch + Nachbearbeitung, sobald gemessen'
+              : `Ø ${formatDuration(teamTiming.avgTalkS)} Gespräch${
+                  teamTiming.avgAcwS == null
+                    ? ''
+                    : ` · Ø ${formatDuration(teamTiming.avgAcwS)} Nachbearbeitung`
+                }`
+          }
         />
         <KpiTile
           icon={<Percent size={15} />}
@@ -645,6 +685,12 @@ export function TeamDashboard() {
                   <th style={{ textAlign: 'right' }}>Verträge</th>
                   <th style={{ textAlign: 'right' }}>Tarifw.</th>
                   <th style={{ textAlign: 'right' }}>Anrufe</th>
+                  <th
+                    style={{ textAlign: 'right' }}
+                    title="Anteil der gemessenen Anrufe, bei denen abgehoben wurde"
+                  >
+                    Erreichbar
+                  </th>
                   <th style={{ textAlign: 'right' }}>Provision (Monat)</th>
                   <th style={{ textAlign: 'right' }}>vs. VM</th>
                   <th style={{ textAlign: 'right' }}>Monatsziel</th>
@@ -686,6 +732,9 @@ export function TeamDashboard() {
                     <td style={{ textAlign: 'right' }}>{r.monthContracts}</td>
                     <td style={{ textAlign: 'right' }}>{r.monthTariffs}</td>
                     <td style={{ textAlign: 'right' }}>{r.callCount ?? '–'}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {r.answerRatePct === null ? '–' : `${r.answerRatePct} %`}
+                    </td>
                     <td style={{ textAlign: 'right', fontWeight: 600 }}>
                       {formatCurrency(r.monthCommission)}
                     </td>

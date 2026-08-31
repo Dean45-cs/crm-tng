@@ -194,6 +194,26 @@
       ? `<p class="sc-input-hint sc-hint-warn">Bei keinem Gespräch war ein Kunde erkennbar. Steht <code>name=$d</code> in der Adresse?</p>`
       : "";
 
+    // Das Gesprächsende. myApps meldet es nicht, deshalb wird es beobachtet
+    // (main/media-watch.js) — und deshalb muss hier stehen, ob das auf DIESEM
+    // Rechner je funktioniert hat. Die Erkennung schaltet sich bei Unklarheit
+    // selbst ab; ohne diese Zeile wäre das von „kaputt" nicht zu unterscheiden.
+    const ende = p.autoEnds
+      ? `${p.autoEnds}× automatisch erkannt`
+      : (p.mediaSeen ? "Gespräch erkannt, Auflegen noch nicht" : "Noch nie erkannt");
+    const endeOk = p.autoEnds > 0;
+    const probe = p.mediaProbe;
+    const probeText = !probe
+      ? ""
+      : (!probe.ok
+        ? `Zuletzt geprüft: ${escapeHtml(probe.error || "myApps nicht gefunden")}.`
+        : `Zuletzt geprüft: myApps läuft, ${probe.media} Medien-Verbindung${probe.media === 1 ? "" : "en"} offen${probe.media ? "" : " – richtig, solange kein Gespräch läuft"}.`);
+    // Erst warnen, wenn es etwas zu warnen gibt: nach ein paar Gesprächen ohne
+    // ein einziges erkanntes Ende.
+    const endeWarn = p.calls > 2 && p.autoEnds === 0 && p.mediaSeen === 0
+      ? `<p class="sc-input-hint sc-hint-warn">Das Auflegen wurde noch nie von selbst erkannt – auf diesem Rechner greift die Beobachtung offenbar nicht. Es bleibt beim Knopf „Aufgelegt“; kaputt ist dadurch nichts.</p>`
+      : "";
+
     return `
       <section class="sc-section">
         <div class="sc-section-title-row">
@@ -221,11 +241,19 @@
             <strong>Wählen:</strong> ${p.telHandler ? `tel:-Adressen gehen an „${escapeHtml(p.telHandler)}“` : "kein Programm für tel:-Adressen gefunden"}
             ${telOk ? "" : "<small>Damit der Anrufen-Knopf wirkt, muss myApps sie bekommen: FaceTime öffnen → Menü „FaceTime“ → „Einstellungen…“ → „Standard für Telefonate“ auf myApps. Einmalig, Apple bietet das nirgends sonst an.</small>"}
           </li>
+          <li class="${endeOk ? "is-ok" : ""}">
+            <strong>Gesprächsende:</strong> ${escapeHtml(ende)}
+            ${probeText ? `<small>${probeText}</small>` : ""}
+          </li>
         </ul>
+        <div class="sc-inline-actions">
+          <button class="sc-secondary-button" type="button" data-action="hud-media-probe">Erkennung prüfen</button>
+        </div>
         ${stuck}
         ${unrecognized}
+        ${endeWarn}
 
-        <p class="sc-input-hint">Zwei Dinge liefert myApps nicht, und das ist keine Einstellungssache: <strong>das Gesprächsende</strong> – es gibt dort kein Ereignis dafür, deshalb beendet der Knopf „Aufgelegt“ das Gespräch – und <strong>die Richtung</strong>, weil dieselbe Adresse für ankommende wie abgehende Anrufe geöffnet wird.</p>
+        <p class="sc-input-hint">Zwei Dinge meldet myApps nicht, und das ist keine Einstellungssache. <strong>Das Gesprächsende:</strong> die Adresse wird beim Anruf geöffnet, beim Auflegen passiert nichts. Erkannt wird es trotzdem – die App sieht nach, ob myApps noch eine Sprachverbindung offen hat. Klappt das auf einem Rechner nicht, bleibt es beim Knopf „Aufgelegt“, und es endet nichts von selbst. <strong>Die Richtung:</strong> dieselbe Adresse wird für ankommende wie abgehende Anrufe geöffnet.</p>
 
         <label class="sc-input-label">Anrufe gelten als
           <select class="sc-text-input" data-role="hud-phone-direction">
@@ -251,6 +279,12 @@
         return true;
       case "hud-phone-test":
         window.hud.command("call-test", {});
+        return true;
+      case "hud-media-probe":
+        // Eine einzelne Messung. Die Antwort kommt über hud:phone zurück und
+        // zeichnet die Karte neu – ohne sie wäre „erkennt nichts" nicht von
+        // „es läuft gerade kein Gespräch" zu unterscheiden.
+        window.hud.command("media-probe", {});
         return true;
       case "hud-quit":
         // Beenden nimmt die Anrufanzeige und die Rückruf-Erinnerungen mit –

@@ -31,6 +31,58 @@ const KEYS = ["id", "nr", "name", "uri", "dir", "ev"];
 const MAX_VALUE_LENGTH = 200;
 
 /**
+ * Die Query selbst auseinandernehmen, statt URLSearchParams zu fragen.
+ *
+ * DER GRUND, und er hat die halbe Kundenerkennung lahmgelegt: URLSearchParams
+ * liest nach den Regeln von HTML-Formularen, und dort steht ein „+" für ein
+ * Leerzeichen. myApps setzt für $I aber eine echte internationale Nummer ein:
+ *
+ *   nr=+4917645874682   →   searchParams.get("nr")   →   " 4917645874682"
+ *
+ * Das Plus war weg, das Leerzeichen fiel dem trim() zum Opfer, und übrig blieb
+ * eine Nummer, die wie eine nationale aussieht. shared.phoneKey() entscheidet
+ * genau an diesem Plus, ob die Landesvorwahl abzuschneiden ist – aus
+ * „+4917645874682" wird der Schlüssel 17645874682, aus „4917645874682" der
+ * Schlüssel 4917645874682. Zwei verschiedene Kunden, so gesehen. Deshalb fand
+ * customer_by_phone() nie etwas, und deshalb passte auch der vorgemerkte
+ * Wählvorgang nie zur Meldung der Anlage – samt falscher Richtung.
+ *
+ * Aufgefallen ist es lange nicht, weil die Anleitung zum Prüfen von Hand die
+ * Nummer als %2B… schreibt. So kodiert kommt sie richtig an; nur genau so
+ * schickt myApps sie eben nicht.
+ *
+ * Hier gilt deshalb: „+" ist ein Plus. Ein Leerzeichen steht als %20 in der
+ * Adresse, und so schickt myApps es auch.
+ */
+function queryValues(search) {
+  const values = Object.create(null);
+  const text = String(search == null ? "" : search).replace(/^\?/, "");
+  if (!text) return values;
+
+  text.split("&").forEach((pair) => {
+    if (!pair) return;
+    const eq = pair.indexOf("=");
+    const key = decodeValue(eq === -1 ? pair : pair.slice(0, eq));
+    if (!key || values[key] !== undefined) return; // der erste Wert gewinnt
+    values[key] = decodeValue(eq === -1 ? "" : pair.slice(eq + 1));
+  });
+  return values;
+}
+
+/**
+ * Entschlüsseln, ohne an kaputter Kodierung zu scheitern. Ein einzelnes „%" im
+ * Namen einer Firma ist kein Grund, den ganzen Anrufer wegzuwerfen – dann steht
+ * eben der rohe Text da, gekürzt wie jeder andere Wert auch.
+ */
+function decodeValue(text) {
+  try {
+    return decodeURIComponent(text);
+  } catch (error) {
+    return text;
+  }
+}
+
+/**
  * Liest eine Anruf-URL. Gibt null zurück, wenn es keine ist – hier landet
  * alles, was das System für unser Schema hält, auch Unfug.
  *
@@ -42,7 +94,7 @@ function parseCallUrl(raw, now) {
   const text = String(raw == null ? "" : raw).trim();
   if (!text.toLowerCase().startsWith(`${PROTOCOL}:`)) return null;
 
-  let url = null;
+  let url;
   try {
     url = new URL(text);
   } catch (error) {
@@ -53,9 +105,10 @@ function parseCallUrl(raw, now) {
   // misszuverstehen – so bleibt Platz für spätere Zwecke desselben Schemas.
   if (url.hostname && url.hostname !== "call") return null;
 
+  const values = queryValues(url.search);
   const call = { receivedAt: typeof now === "number" ? now : Date.now() };
   KEYS.forEach((key) => {
-    const value = url.searchParams.get(key);
+    const value = values[key];
     if (value == null) return;
     const trimmed = String(value).trim();
     if (!trimmed) return;

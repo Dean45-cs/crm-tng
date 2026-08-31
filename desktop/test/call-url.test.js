@@ -105,6 +105,48 @@ function run() {
     assert.strictEqual(callUrlFromArgv([]), null, "leere Argumente");
   }
 
+  // --- Das Plus der internationalen Nummer, UNKODIERT -----------------------
+  //
+  // Der Fall, an dem die Kundenerkennung wirklich gescheitert ist. Die Tests
+  // oben schreiben die Nummer als %2B… – so kommt sie richtig an. myApps setzt
+  // für $I aber ein echtes Plus ein, und URLSearchParams liest ein „+" nach
+  // Formularregeln als Leerzeichen. Übrig blieb eine Nummer ohne Plus, die wie
+  // eine nationale aussieht, mit einem völlig anderen phoneKey().
+  {
+    const call = parseCallUrl(
+      "stadtnetzcrm://call?id=c-1&nr=+4917645874682&name=PK%20287246%20Kevin%20Carlsson", NOW);
+    assert.ok(call, "die Meldung wird angenommen");
+    assert.strictEqual(call.nr, "+4917645874682",
+      "das Plus überlebt auch unkodiert – sonst greift weder die Rufnummernsuche noch der Abgleich mit dem eigenen Wählen");
+    assert.strictEqual(call.name, "PK 287246 Kevin Carlsson",
+      "%20 bleibt ein Leerzeichen");
+  }
+
+  // Beide Schreibweisen müssen zum selben Ergebnis führen – sonst hängt die
+  // Kundenerkennung daran, wie die Adresse zufällig kodiert wurde.
+  {
+    const roh = parseCallUrl("stadtnetzcrm://call?nr=+4970310000000", NOW);
+    const kodiert = parseCallUrl("stadtnetzcrm://call?nr=%2B4970310000000", NOW);
+    assert.strictEqual(roh.nr, kodiert.nr, "+ und %2B bedeuten dasselbe");
+  }
+
+  // --- Kaputte Kodierung wirft den Anrufer nicht weg ------------------------
+  {
+    const call = parseCallUrl("stadtnetzcrm://call?nr=%2B49123&name=50%%20Rabatt%20GmbH", NOW);
+    assert.ok(call, "eine unvollständige Prozent-Folge macht die Meldung nicht ungültig");
+    assert.ok(call.name && call.name.indexOf("Rabatt") !== -1,
+      "der Name kommt roh durch, statt zu verschwinden");
+    assert.strictEqual(call.nr, "+49123", "die Nummer bleibt davon unberührt");
+  }
+
+  // --- Doppelte Schlüssel ---------------------------------------------------
+  //
+  // Von außen geschrieben: ein zweiter Wert darf den ersten nicht überschreiben.
+  {
+    const call = parseCallUrl("stadtnetzcrm://call?nr=%2B49111&nr=%2B49222", NOW);
+    assert.strictEqual(call.nr, "+49111", "der erste Wert gewinnt");
+  }
+
   console.log("call-url.test.js: alle Szenarien bestanden.");
 }
 

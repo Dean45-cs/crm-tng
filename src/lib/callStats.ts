@@ -240,3 +240,139 @@ export function dispositionBreakdown(calls: Call[]): { disposition: CallDisposit
     .map(([disposition, count]) => ({ disposition, count }))
     .sort((a, b) => b.count - a.count);
 }
+
+// ============================================================================
+// ECHTE GESPRÄCHSZEITEN UND ERREICHBARKEIT (Migration 028)
+// ============================================================================
+// Diese Kennzahlen gibt es erst, seit das Gesprächsende erkannt wird
+// (desktop/main/media-watch.js). Vorher war `durationS` die Spanne vom
+// KLINGELN bis zu dem Moment, in dem jemand an den Knopf gedacht hat — mit
+// Klingelzeit, Nachdenkzeit und im schlimmsten Fall einem Zwangsende nach zwei
+// Stunden darin. Hier wird deshalb ausschließlich auf `connectedAt`/`endedAt`
+// gerechnet und alles übersprungen, wo diese Ränder fehlen.
+//
+// Der Preis dafür ist, dass jede Zahl eine kleinere Grundmenge hat als
+// `count`. Das ist kein Makel, sondern der Punkt: lieber ein Durchschnitt über
+// 60 % der Anrufe, von dem man weiß, dass er stimmt, als einer über 100 %, von
+// dem man es nicht weiß. Wie groß die Grundmenge ist, steht deshalb in jeder
+// Kennzahl mit dabei.
+
+/** Angenommene Gespräche unter dieser Dauer gelten als Fehlkontakt. */
+export const SHORT_CALL_S = 20;
+
+/**
+ * Obergrenzen, jenseits derer ein Wert kein Messwert mehr ist, sondern ein
+ * Datenfehler (Uhrensprung, verwaiste Zeile). Ohne sie reicht ein einziger
+ * kaputter Datensatz, um einen Monatsdurchschnitt unbrauchbar zu machen.
+ */
+const MAX_TALK_S = 4 * 60 * 60;
+const MAX_RING_S = 10 * 60;
+/** Deckt sich mit CONFIG.call.closeoutWindowMs — so lange gilt Nachbearbeitung. */
+const MAX_ACW_S = 30 * 60;
+
+export interface CallTimingStats {
+  /** Anrufe, bei denen die Erkennung überhaupt gemessen hat. */
+  measured: number;
+  /** Anteil belastbar gemessener Anrufe in %. Der Ehrlichkeits-Wert zu allem Übrigen. */
+  measuredPct: number | null;
+
+  answered: number;
+  unanswered: number;
+  /** Nenner ist `measured`, NICHT `count` — siehe unten. */
+  answerRatePct: number | null;
+
+  withTalkTime: number;
+  /** Summe echter Gesprächszeit in Sekunden (ab dem Abheben). */
+  talkTimeS: number;
+  avgTalkS: number | null;
+  /** Ø Sekunden vom Klingeln bis zum Abheben. */
+  avgRingS: number | null;
+  shortCalls: number;
+  shortCallPct: number | null;
+
+  withAcw: number;
+  /** Ø Nachbearbeitung in Sekunden (Auflegen → Ergebnis erfasst). */
+  avgAcwS: number | null;
+  withAht: number;
+  /** Ø Gesamtbearbeitung = Gespräch + Nachbearbeitung, je Anruf gerechnet. */
+  avgAhtS: number | null;
+}
+
+const secondsBetween = (from?: string, to?: string): number | null => {
+  if (!from || !to) return null;
+  const a = Date.parse(from);
+  const b = Date.parse(to);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  const s = Math.round((b - a) / 1000);
+  return s < 0 ? null : s;
+};
+
+const avg = (values: number[]): number | null =>
+  values.length > 0 ? Math.round(values.reduce((s, v) => s + v, 0) / values.length) : null;
+
+const share = (part: number, whole: number): number | null =>
+  whole > 0 ? Math.round((part / whole) * 1000) / 10 : null;
+
+/**
+ * Zeiten und Erreichbarkeit aus den echten Rändern eines Gesprächs.
+ *
+ * ZUM NENNER DER ERREICHBARKEIT, weil das der Punkt ist, an dem so eine Zahl
+ * still falsch wird: gezählt wird gegen `measured`, also gegen die Anrufe, bei
+ * denen die Erkennung tatsächlich hingesehen hat — nicht gegen alle. `answered`
+ * ist dreiwertig (siehe Migration 028): `undefined` heißt „nicht gemessen" und
+ * ist etwas anderes als `false` („nicht abgenommen"). Würde man beides
+ * zusammenwerfen, sänke die Erreichbarkeitsquote genau in dem Maß, wie die
+ * Erkennung ausfällt — auf einem Windows-Rechner ohne Messung stünde dann
+ * 0 % Erreichbarkeit, und niemand käme auf die Ursache.
+ */
+export function callTimingStats(calls: Call[], agentKey?: string): CallTimingStats {
+  const relevant = agentKey ? calls.filter((c) => c.agentId === agentKey) : calls;
+
+  const measured = relevant.filter((c) => typeof c.answered === 'boolean');
+  const answered = measured.filter((c) => c.answered === true);
+
+  const talks: number[] = [];
+  const rings: number[] = [];
+  const acws: number[] = [];
+  const ahts: number[] = [];
+  let shortCalls = 0;
+
+  for (const call of relevant) {
+    const talk = secondsBetween(call.connectedAt, call.endedAt);
+    const valid = talk !== null && talk <= MAX_TALK_S ? talk : null;
+    if (valid !== null) {
+      talks.push(valid);
+      if (valid < SHORT_CALL_S) shortCalls += 1;
+    }
+
+    const ring = secondsBetween(call.startedAt, call.connectedAt);
+    if (ring !== null && ring <= MAX_RING_S) rings.push(ring);
+
+    const acw = secondsBetween(call.endedAt, call.dispositionAt);
+    const acwValid = acw !== null && acw <= MAX_ACW_S ? acw : null;
+    if (acwValid !== null) acws.push(acwValid);
+
+    // AHT je Anruf, nicht als Summe zweier Durchschnitte über verschiedene
+    // Grundmengen — sonst addierte man Zahlen, die von verschiedenen Anrufen
+    // stammen, und das Ergebnis gehörte zu keinem einzigen davon.
+    if (valid !== null && acwValid !== null) ahts.push(valid + acwValid);
+  }
+
+  return {
+    measured: measured.length,
+    measuredPct: share(measured.length, relevant.length),
+    answered: answered.length,
+    unanswered: measured.length - answered.length,
+    answerRatePct: share(answered.length, measured.length),
+    withTalkTime: talks.length,
+    talkTimeS: talks.reduce((s, v) => s + v, 0),
+    avgTalkS: avg(talks),
+    avgRingS: avg(rings),
+    shortCalls,
+    shortCallPct: share(shortCalls, talks.length),
+    withAcw: acws.length,
+    avgAcwS: avg(acws),
+    withAht: ahts.length,
+    avgAhtS: avg(ahts),
+  };
+}

@@ -24,6 +24,8 @@ import {
   linkCallsToOutcomes,
   saveRateStats,
   type CampaignPerformance,
+  callTimingStats,
+  type CallTimingStats,
 } from './callStats';
 import {
   bucketKeyOf,
@@ -151,6 +153,16 @@ export interface CallSummary {
   /** Anrufe je Tagesstunde (0–23), immer 24 Einträge. */
   hourly: { hour: number; count: number }[];
   busiestHour: number | null;
+  /**
+   * Echte Zeiten und Erreichbarkeit aus der Ende-Erkennung (Migration 028).
+   *
+   * Bewusst als eigener Block und nicht unter die vorhandenen Felder gemischt:
+   * `avgDurationS` und `talkTimeS` oben rechnen weiter auf `durationS`, also
+   * vom Klingeln bis zum Knopfdruck. Sie bleiben, weil Altbestände nur das
+   * hergeben — aber sie bedeuten etwas anderes als `timing.avgTalkS`, und wer
+   * beide nebeneinander sieht, soll das merken statt es zu verwechseln.
+   */
+  timing: CallTimingStats;
 }
 
 export interface ReportSeriesPoint {
@@ -176,6 +188,8 @@ export interface AgentReportRow {
   talkTimeS: number;
   saveRatePct: number | null;
   conversionPct: number | null;
+  /** Echte Zeiten und Erreichbarkeit je Person (Migration 028). */
+  timing: CallTimingStats;
 }
 
 export interface ContractReportRow {
@@ -396,6 +410,7 @@ function buildCalls(
     callsPerActiveDay: activeDays > 0 ? round2(calls.length / activeDays) : 0,
     hourly,
     busiestHour: peak.count > 0 ? peak.hour : null,
+    timing: callTimingStats(calls),
   };
 }
 
@@ -471,6 +486,7 @@ function buildPerAgent(src: ReportSource, filter: ReportFilter): AgentReportRow[
         talkTimeS: calls.reduce((s, c) => s + (c.durationS ?? 0), 0),
         saveRatePct: rate.saveRatePct,
         conversionPct: conversion.conversionPct,
+        timing: callTimingStats(calls),
       };
     })
     .sort((a, b) => b.commission - a.commission || b.deals - a.deals);
