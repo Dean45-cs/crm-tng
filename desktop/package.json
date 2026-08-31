@@ -23,6 +23,12 @@
     "files": ["main/**", "preload/**", "renderer/**", "package.json"],
     "extraResources": [{ "from": "../extension", "to": "extension", "filter": ["src/**", "styles/**", "icons/**"] }],
     "afterPack": "build/afterPack.js",
+    "protocols": [
+      {
+        "name": "Stadtnetz CRM Copilot",
+        "schemes": ["stadtnetzcrm"]
+      }
+    ],
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "build/icon.png",

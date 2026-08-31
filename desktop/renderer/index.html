@@ -63,6 +63,10 @@
   <script src="../../extension/src/theme.js"></script>
   <script src="../../extension/src/ui.js"></script>
   <script src="notes.js"></script>
+  <!-- Anrufe aus myApps (innovaphone): main.js nimmt sie über das URL-Schema
+       an, hier werden sie zu demselben activeCall-Signal, das in Chrome
+       timio-content.js schreibt. -->
+  <script src="myapps-calls.js"></script>
   <!-- Ergänzt das Panel um das, was es nur auf dem Schreibtisch gibt:
        Verbindungspunkt, Notizknopf, Offline-Hinweis, Overlay-Einstellungen.
        Muss vor boot.js laufen, das anschließend mountet. -->

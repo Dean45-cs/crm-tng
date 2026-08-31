@@ -39,6 +39,25 @@ const GLOBAL_HOTKEY_IDS = ["toggleOverlay", "clickThrough"];
 
 const MIN_OPACITY = 0.35;
 
+// Anrufe aus myApps (innovaphone).
+//
+// myApps kann unter „Einstellungen · Externe Anwendungen" bei einem
+// Anruf-Ereignis eine Webadresse öffnen und dabei Platzhalter ersetzen. Genau
+// das ist unser Draht zur Telefonanlage – die einzige Alternative wäre, das
+// Fenster eines fremden Programms auszulesen, und myApps läuft als
+// eigenständige App, nicht als Seite im Browser.
+//
+// Ein eigenes URL-Schema statt eines Pfads auf die App: unter macOS ist es
+// nicht verlässlich, einem .app-Bundle Argumente mitzugeben (je nachdem, wie
+// der Aufrufer startet, kommen sie gar nicht an). Eine URL reicht das System
+// dagegen sauber an die registrierte – auch schon laufende – App durch.
+//
+// Was myApps liefert (Hilfe im Dialog): $n Rufnummer, $N national, $I
+// international (+49…), $u URI, $d Displayname, $c Conference-ID. Die
+// Conference-ID ist der wertvollste Teil: eine stabile Kennung pro Gespräch,
+// an der sich wiederholte Aufrufe als derselbe Anruf erkennen lassen.
+const { PROTOCOL: CALL_PROTOCOL, parseCallUrl, callUrlFromArgv } = require("./call-url");
+
 // Nur eine Instanz: zwei HUDs würden sich um den Port und um die
 // Extension-Verbindung streiten.
 if (!app.requestSingleInstanceLock()) {
@@ -465,6 +484,62 @@ function showWindow() {
   win.focus();
 }
 
+// --- Anrufe aus myApps -----------------------------------------------------
+//
+// Eine Meldung kommt als `stadtnetzcrm://call?id=…&nr=…` herein – je nach
+// System auf zwei Wegen (open-url unter macOS, als Argument unter Windows) und
+// zu jedem Zeitpunkt, auch als allererstes noch vor dem Fenster. Alles davon
+// endet hier und geht von hier aus als EINE Nachricht an das Panel, das den
+// Rest macht (renderer/hud-host.js).
+
+// Zwischenlager für Meldungen, die eintreffen, bevor das Panel steht. Genau der
+// Fall, den man am wenigsten verlieren darf: ein Anruf, der die App erst
+// startet, meldet sich, während der Renderer noch lädt.
+let pendingCalls = [];
+let rendererReady = false;
+
+function deliverCall(call) {
+  if (!rendererReady || !win || win.isDestroyed()) {
+    // Mehr als eine Handvoll ist kein Rückstand, sondern ein Fehler – dann
+    // lieber die ältesten fallen lassen als unbegrenzt sammeln.
+    pendingCalls = pendingCalls.concat(call).slice(-5);
+    return;
+  }
+  win.webContents.send("hud:call", call);
+}
+
+function flushPendingCalls() {
+  if (!pendingCalls.length) return;
+  const queued = pendingCalls;
+  pendingCalls = [];
+  // Aufgestaut heißt: die Meldung kam, bevor es ein Fenster gab – der Anruf hat
+  // die App also gerade erst gestartet. handleCallUrl konnte damals nicht nach
+  // vorn holen, was es noch nicht gab; hier ist der Nachholtermin. Ohne das
+  // liefe der wichtigste Fall ins Leere: ein Anruf kommt, die App startet, und
+  // die Auskunft bleibt unsichtbar.
+  showWindow();
+  queued.forEach(deliverCall);
+}
+
+/**
+ * Nimmt eine URL an, egal woher. Holt das Fenster nach vorn: Ein Anruf ist der
+ * Moment, in dem die Auskunft gebraucht wird – ausgeblendet nützt sie nichts.
+ */
+function handleCallUrl(raw) {
+  const call = parseCallUrl(raw);
+  if (!call) return false;
+  if (app.isReady()) showWindow();
+  deliverCall(call);
+  return true;
+}
+
+// Muss so früh wie möglich stehen: unter macOS kann open-url schon feuern,
+// bevor die App bereit ist (wenn der Anruf sie überhaupt erst startet).
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  handleCallUrl(url);
+});
+
 // Ein-/Ausblenden wie bei einem Spiel-Overlay: sichtbar heißt weg, weg heißt
 // da. Bewusst nicht mehr am Fokus festgemacht – ein Overlay hat den Fokus
 // meistens nicht (und bei durchgereichten Klicks nie), die Taste hätte es dann
@@ -537,16 +612,24 @@ function registerIpc() {
   ipcMain.handle("hud:ai-call", (event, request) => bridge.aiCall(request));
   ipcMain.on("hud:ai-abort", (event, id) => bridge.aiAbort(id));
 
-  ipcMain.handle("hud:state", () => ({
-    connected: bridge.connected,
-    ticket: bridge.ticket,
-    storage: bridge.storageGet(null),
-    overlay: overlayState(),
-    notes: store.hudGet("notes", []),
-    notesDraft: store.hudGet("notesDraft", ""),
-    platform: process.platform,
-    version: app.getVersion()
-  }));
+  // Der Renderer holt sich seinen Startzustand genau einmal beim Aufbau – das
+  // ist zugleich das verlässlichste Lebenszeichen, das es gibt. Ab hier hört
+  // jemand zu, also darf Aufgestautes raus (eine Anruf-Meldung, die die App
+  // erst gestartet hat).
+  ipcMain.handle("hud:state", () => {
+    rendererReady = true;
+    setImmediate(flushPendingCalls);
+    return {
+      connected: bridge.connected,
+      ticket: bridge.ticket,
+      storage: bridge.storageGet(null),
+      overlay: overlayState(),
+      notes: store.hudGet("notes", []),
+      notesDraft: store.hudGet("notesDraft", ""),
+      platform: process.platform,
+      version: app.getVersion()
+    };
+  });
 
   ipcMain.on("hud:notes", (event, notes) => store.hudSet("notes", Array.isArray(notes) ? notes : []));
   ipcMain.on("hud:notes-draft", (event, text) => store.hudSet("notesDraft", typeof text === "string" ? text : ""));
@@ -633,7 +716,15 @@ function installEditMenu() {
 
 // --- Start -----------------------------------------------------------------
 
-app.on("second-instance", showWindow);
+// Ein zweiter Start ist unter Windows der Normalfall für eine Anruf-Meldung:
+// dort öffnet das System die URL, indem es die App erneut aufruft, und die
+// Einmal-Sperre schickt die Argumente hierher. Vorher hat diese Zeile nur das
+// Fenster nach vorn geholt und alles Mitgeschickte weggeworfen.
+app.on("second-instance", (event, argv) => {
+  const url = callUrlFromArgv(argv);
+  if (url) handleCallUrl(url);
+  showWindow();
+});
 
 app.whenReady().then(async () => {
   // Das Overlay ist immer hell – auch auf einem Rechner, der gerade im dunklen
@@ -656,6 +747,26 @@ app.whenReady().then(async () => {
   // Produktnamens, und ein angehefteter Eintrag in der Taskleiste zeigte auf
   // das falsche Programm. Muss zur appId in package.json (build.appId) passen.
   if (process.platform === "win32") app.setAppUserModelId("de.stadtnetz.crm.hud");
+
+  // Das Schema anmelden, über das myApps die Anrufe meldet. Im gepackten Paket
+  // steht es zusätzlich fest in den Metadaten (build.protocols in package.json)
+  // – das hier ist der Weg für den Quellstand und für Windows, wo die
+  // Registrierung im Benutzerprofil hängt. Aus dem Quellstand heraus trägt sich
+  // Electron selbst ein, nicht die App: zum Ausprobieren reicht das, verlassen
+  // sollte man sich darauf nicht.
+  if (app.isPackaged) {
+    app.setAsDefaultProtocolClient(CALL_PROTOCOL);
+  } else if (process.platform === "win32") {
+    app.setAsDefaultProtocolClient(CALL_PROTOCOL, process.execPath, [path.resolve(process.argv[1] || ".")]);
+  } else {
+    app.setAsDefaultProtocolClient(CALL_PROTOCOL);
+  }
+
+  // Kaltstart unter Windows/Linux: dort steht die URL im eigenen Aufruf, es gab
+  // also weder open-url noch second-instance. Ohne das ginge genau der Anruf
+  // verloren, der die App gestartet hat.
+  const startupCallUrl = callUrlFromArgv(process.argv);
+  if (startupCallUrl) handleCallUrl(startupCallUrl);
 
   store = new Store(app.getPath("userData"));
 

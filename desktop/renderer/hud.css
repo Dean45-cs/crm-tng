@@ -1458,6 +1458,41 @@ html, body {
   background: var(--hud-bar);
 }
 
+/* „Aufgelegt" — seit die Anlage über myApps nur den Anfang eines Gesprächs
+   meldet, ist das der einzige Weg, einen Anruf zu beenden. Also kein
+   Neben-Knopf: gefülltes Rot, wie an jedem Telefon, und der einzige farbige
+   Fleck in der Kopfzeile. Er steht bewusst vor Minimieren und Schließen —
+   die beiden verstecken nur, dieser beendet.
+
+   Für das Panel in der Jira-Seite fehlt die Regel noch; sie gehört dort nach
+   content.css, wie schon beim Schritt-Leitfaden. */
+#stadtnetzcrm-root .sc-hangup-button {
+  flex: none;
+  margin-left: auto;
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 999px;
+  background: #ff3b30;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(255, 59, 48, 0.28);
+  transition: filter var(--hud-dur) var(--hud-ease);
+}
+
+#stadtnetzcrm-root .sc-hangup-button:hover {
+  filter: brightness(1.07);
+}
+
+/* Der Anfasser zum Verschieben liegt auf der ganzen Kopfzeile – ohne diese
+   Ausnahme schluckte er den Klick auf den Knopf. */
+#stadtnetzcrm-root .sc-cockpit-header .sc-hangup-button {
+  -webkit-app-region: no-drag;
+}
+
 /* --- Befehlspalette ------------------------------------------------------- */
 
 #sc-jira-palette { z-index: 20001; }

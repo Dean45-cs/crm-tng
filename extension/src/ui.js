@@ -635,6 +635,40 @@
     render();
   }
 
+  // „Aufgelegt" — der Bearbeiter beendet das Gespräch von Hand.
+  //
+  // Bei timio war das nie nötig: das Content-Script sah den Beendet-Bildschirm
+  // und meldete das Ende selbst. Die Telefonanlage über myApps meldet dagegen
+  // nur den ANFANG eines Gesprächs (siehe desktop/renderer/myapps-calls.js) —
+  // ohne diesen Knopf liefe der Anruf im Cockpit weiter, während der Kunde
+  // längst aufgelegt hat, und die Dauer in der Historie wäre erfunden.
+  //
+  // Geschrieben wird nur der gemeinsame Storage-Schlüssel: wer die Zeile in
+  // Supabase geöffnet hat, schließt sie auch (er allein kennt ihre ID). Der
+  // Statuswechsel auf "ended" ist zugleich das Signal, das die Ergebnis-
+  // Erfassung aufklappt — Auflegen und Erfassen sind derselbe Handgriff.
+  function endCurrentCall() {
+    const call = currentActiveCall();
+    if (!call || call.status === "ended") return;
+
+    const startedAt = call.connectedAt || call.updatedAt || Date.now();
+    const payload = {
+      ...call,
+      status: "ended",
+      updatedAt: Date.now(),
+      // Sekunden, wie sie auch timio liefert – daraus wird duration_s.
+      // Nicht als Sekundenzahl: shared.callTimerText() gibt finalDuration
+      // unverändert aus – eine 2 stünde dann als "2" im Gesprächskopf statt als
+      // "0:02". Dasselbe Format, das timio geschrieben hat.
+      finalDuration: formatDuration(Date.now() - startedAt),
+      endedByUser: true
+    };
+    safeLocalSet({ [CONFIG.storageKeys.activeCall]: payload });
+    // Nicht auf den Rückweg über storage.onChanged warten: der Knopf soll
+    // sofort reagieren, sonst drückt man ihn ein zweites Mal.
+    handleActiveCallChange(payload);
+  }
+
   function toggleCockpitMode() {
     state.callOverlay.mode = state.callOverlay.mode === "mini" ? "full" : "mini";
     persistCockpitPrefs();
@@ -827,6 +861,7 @@
             <span class="sc-cockpit-status">${escapeHtml(status.label)}</span>
             <strong class="sc-cockpit-mini-name">${escapeHtml(nameLine)}</strong>
             <span class="sc-cockpit-timer" data-role="overlay-call-timer">${escapeHtml(timer)}</span>
+            ${call.status === "ended" ? "" : `<button class="sc-hangup-button" type="button" data-action="end-call" title="Gespräch beenden">Aufgelegt</button>`}
             <button class="sc-icon-button" type="button" data-action="toggle-cockpit-mode" title="Cockpit ausklappen" aria-label="Cockpit ausklappen">▢</button>
             <button class="sc-icon-button" type="button" data-action="dismiss-call-overlay" title="Für diesen Anruf ausblenden" aria-label="Schließen">×</button>
           </div>
@@ -847,6 +882,7 @@
         <div class="sc-cockpit-header" data-role="cockpit-drag" title="Zum Verschieben ziehen">
           <span class="sc-cockpit-status">${escapeHtml(status.label)}</span>
           <span class="sc-cockpit-timer" data-role="overlay-call-timer">${escapeHtml(timer)}</span>
+          ${call.status === "ended" ? "" : `<button class="sc-hangup-button" type="button" data-action="end-call" title="Gespräch beenden – danach kommt die Ergebnis-Erfassung">Aufgelegt</button>`}
           <button class="sc-icon-button" type="button" data-action="toggle-cockpit-mode" title="Minimieren" aria-label="Minimieren">–</button>
           <button class="sc-icon-button" type="button" data-action="dismiss-call-overlay" title="Für diesen Anruf ausblenden" aria-label="Schließen">×</button>
         </div>
@@ -4147,6 +4183,7 @@
       case "supabase-logout": handleSupabaseLogout(); return;
       case "enable-ai": enableAi(); return;
       case "recheck-ai": loadCapabilities(); render(); return;
+      case "end-call": endCurrentCall(); return;
       case "dismiss-call-overlay": dismissCallOverlay(); return;
       case "toggle-cockpit-mode": toggleCockpitMode(); return;
       case "wipe-data": wipeAllData(); return;

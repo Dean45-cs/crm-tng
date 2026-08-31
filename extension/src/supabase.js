@@ -478,7 +478,11 @@
   // wird explizit aus der Session gesetzt (gleiche Konvention wie
   // insertContract() im CRM: der Client setzt created_by/agent_id selbst,
   // kein DB-Default) — RLS verlangt ohnehin auth.uid() = agent_id.
-  async function startCall({ customerNumber, callerName, callerNumber, direction, queueGroup }) {
+  // externalId ist die Anruf-Kennung der Telefonanlage (myApps liefert sie als
+  // Conference-ID, $c). Sie ist optional — timio kennt so etwas nicht —, aber
+  // wo es sie gibt, verhindert der eindeutige Index in Migration 026, dass ein
+  // wiederholt gemeldetes Gespräch zu einer zweiten Zeile wird.
+  async function startCall({ customerNumber, callerName, callerNumber, direction, queueGroup, externalId }) {
     const config = await getEffectiveSupabaseConfig();
     if (!config) return { ok: false, reason: "not-configured" };
 
@@ -500,6 +504,7 @@
           caller_number: callerNumber || null,
           direction,
           queue_group: queueGroup || null,
+          external_id: externalId || null,
           agent_id: session.userId
         })
       });

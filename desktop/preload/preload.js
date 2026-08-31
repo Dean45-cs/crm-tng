@@ -46,5 +46,10 @@ contextBridge.exposeInMainWorld("hud", {
   // Overlay-Schalter, die auch außerhalb des Panels umgelegt werden können
   // (Tray-Menü, Tastenkombination) – das Panel muss den Haken sonst nicht
   // mitbekommen und zeigte einen veralteten Stand.
-  onOverlay: subscribe("hud:overlay")
+  onOverlay: subscribe("hud:overlay"),
+
+  // Ein Anruf, gemeldet von myApps über das URL-Schema (siehe main.js). Kommt
+  // als { id, nr, name, uri, dir, ev, receivedAt } – alles außer receivedAt
+  // kann fehlen, je nachdem, welche Platzhalter in myApps eingetragen sind.
+  onCall: subscribe("hud:call")
 });

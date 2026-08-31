@@ -39,10 +39,17 @@ Chrome                                   Desktop-App
 │                   │       │            │  shim-jira-reader.js       │
 │ Service-Worker    │       │            │  shim-local-ai.js          │
 │  hud-bridge.js  ←─┘       │            │  notes.js  ← neu           │
+│                   │       │            │  myapps-calls.js ← neu     │
 └──────────┬────────────────┘            └────────────┬───────────────┘
            │      WebSocket 127.0.0.1:8777            │  IPC
            └──────────────────► main/bridge.js ◄──────┘
+
+myApps (innovaphone) ──── stadtnetzcrm://call?… ────► main/call-url.js
 ```
+
+Anrufe haben damit zwei mögliche Quellen: timio in Chrome (liest den Bildschirm)
+und myApps über das URL-Schema. Beide schreiben denselben Storage-Schlüssel,
+`activeCall` – das Panel merkt keinen Unterschied. Siehe „Anrufe aus myApps".
 
 Der Kniff: **`ui.js` läuft im Fenster unverändert.** Es weiß nicht, dass es nicht
 mehr in einem Jira-Tab steckt. Ersetzt sind nur die drei Dinge, die es dort gäbe
@@ -128,6 +135,86 @@ Programm belegt, Symbol in der Menüleiste übersehen), tragen die übrigen.
 
 Die Tastenkombination steht bei jedem Start auf dem Startbild und in den
 Einstellungen des Panels unter „Overlay".
+
+## Anrufe aus myApps (innovaphone)
+
+In Chrome liest `extension/src/timio-content.js` die Anrufe aus dem Bildschirm
+des timio-Portals. Für myApps geht das nicht: es läuft als eigenständige App,
+nicht als Seite im Browser – ein Content-Script kommt da nicht heran.
+
+Stattdessen meldet myApps von sich aus. Unter **Einstellungen · Externe
+Anwendungen · Anwendung für eine Aktion hinzufügen** lässt sich eine Adresse
+hinterlegen, die bei einem Anruf-Ereignis geöffnet wird, mit Platzhaltern für
+Nummer, Name und Anruf-Kennung. Die App meldet dafür ein eigenes URL-Schema an
+(`stadtnetzcrm://`), nimmt die Meldung entgegen und macht daraus genau dasselbe
+Signal, das sonst timio schreibt. Alles Weitere – Call-Cockpit, Kundenakte,
+Ergebnis erfassen, Live-Anrufleiste im CRM – läuft unverändert.
+
+### Was einzutragen ist
+
+| Feld | Wert |
+| --- | --- |
+| Name | `Stadtnetz CRM Copilot` |
+| Pfad | `stadtnetzcrm://call?id=$c&nr=$I&name=$d` |
+| Parameter | leer lassen – alles steht schon in der Adresse |
+| Autostart | nach Belieben |
+
+**Kein Pfad auf die `.app`.** Unter macOS ist es nicht verlässlich, einem
+App-Bundle Argumente mitzugeben; je nachdem, wie der Aufrufer startet, kommen
+sie gar nicht an. Die Adresse reicht das System dagegen sauber an die
+registrierte – auch schon laufende – App durch.
+
+Die Platzhalter kommen aus myApps (Hilfe im Dialog): `$n` Rufnummer roh, `$N`
+national, `$I` international (`+49…`), `$u` URI, `$d` Displayname, `$c`
+Conference-ID. Verwendet werden `$I` (das Format, in dem Rufnummern verglichen
+werden), `$d` und `$c`.
+
+`$c` ist der wichtigste davon: eine stabile Kennung pro Gespräch. Meldet myApps
+denselben Anruf mehrfach, wird daraus keine zweite Zeile in der Historie – dafür
+sorgt der eindeutige Index aus Migration 026 (`calls.external_id`). Ohne die
+Migration funktioniert die Anbindung trotzdem, nur ohne diesen Schutz.
+
+### Zwei eigene Parameter
+
+Die kennt myApps nicht; sie werden von Hand in die Adresse geschrieben, wenn es
+sie braucht:
+
+- `dir=in` / `dir=out` – die Richtung. myApps liefert sie nicht (alle
+  Platzhalter heißen „des Anrufers"). Ohne Angabe gilt der Inbound/Outbound-
+  Schalter im Panel, genau wie bei timio. Bietet myApps getrennte Aktionen für
+  ankommende und abgehende Anrufe, legt man dort besser zwei Einträge an:
+  `…&dir=in` und `…&dir=out`.
+- `ev=ring` – der Anruf klingelt erst. Ohne Angabe gilt er als laufend.
+- `ev=end` – das Gespräch ist vorbei.
+
+### Was diese Anbindung nicht kann
+
+**Das Gesprächsende.** myApps meldet je nach eingerichteter Aktion nur den
+Anfang. Solange keine zweite Aktion fürs Auflegen eingerichtet ist (`ev=end`),
+endet ein Anruf hier erst, wenn der nächste beginnt – die Dauer in der Historie
+ist dann zu lang. Als Notbremse gilt eine Grenze von zwei Stunden, damit kein
+Anruf für immer als „läuft" in der Live-Anrufleiste des CRM stehen bleibt.
+
+**Anrufe außerhalb von myApps.** Vom Tischtelefon oder übers Handy sieht diese
+Anbindung nichts. Wer wirklich *alle* Anrufe braucht, kommt an den
+Verbindungsdatensätzen der Anlage nicht vorbei – dafür braucht es Zugang zur
+Anlage selbst.
+
+**Die Kundennummer.** myApps kennt sie nicht. Die Zuordnung passiert im Panel
+über die Rufnummer, wie bei einem unbekannten Anrufer in timio.
+
+### Prüfen, ob es ankommt
+
+Bei laufender App im Terminal:
+
+```
+open "stadtnetzcrm://call?id=test-1&nr=%2B4970310000000&name=Testanruf"
+```
+
+Das Overlay muss nach vorn kommen und das Call-Cockpit mit „Testanruf" zeigen.
+Kommt nichts, ist meist das Schema nicht registriert: aus dem Quellstand heraus
+trägt sich Electron selbst ein, nicht die App – verlässlich ist es erst im
+gepackten Paket (`build.protocols` in `package.json`).
 
 ## Im Team verteilen
 
