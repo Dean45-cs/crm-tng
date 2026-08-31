@@ -1,71 +1,143 @@
-/* Aussehen des Overlays auf dem Schreibtisch.
+/* Das Cockpit als Overlay über dem Schreibtisch.
  *
  * extension/styles/content.css bleibt unangetastet – es beschreibt dasselbe
- * Panel, wie es in einer fremden Seite schwebt. Dort ist ein weißes Kärtchen
- * im Jira-Look richtig: es liegt in einer weißen Seite. Hier liegt es über dem
- * Schreibtisch, und dort ist genau das falsch – ein undurchsichtiger heller
- * Kasten ist das Aufdringlichste, was man über fremde Fenster legen kann.
+ * Panel, wie es in einer fremden Seite schwebt. Dort ist ein weißes Kärtchen im
+ * Jira-Look richtig: es liegt in einer weißen Jira-Seite und soll sich nicht
+ * dagegenstellen.
  *
- * Deshalb bekommt das Overlay hier eine eigene Erscheinung: dunkles,
- * durchscheinendes Glas, feine Trennlinien statt Kästen in Kästen, ein
- * gedrängteres Raster und eine klare Größenstaffel. Immer dunkel, unabhängig
- * von der Hell/Dunkel-Einstellung des Rechners (main.js stellt dafür
- * nativeTheme auf "dark") – ein Overlay ist kein Dokument, das sich der
- * Systemfarbe anpasst, sondern eine Anzeige über allem.
+ * Hier ist der Maßstab ein anderer: **die Auskunft soll aussehen wie das CRM.**
+ * Es ist dasselbe Produkt, nur in einem kleinen Fenster – wer vom CRM-Tab auf
+ * das Overlay schaut, soll nicht zwei Programme sehen. Alles Optische in dieser
+ * Datei ist deshalb aus src/index.css übersetzt: dieselbe Schrift (Inter
+ * Variable), dieselben Farbrollen, dieselbe Radien- und Schattenstaffel,
+ * dieselben Bauteile (Widget, Segment-Schalter, Badge, Knopf, Feld).
+ *
+ * Die eine Stelle, an der das Overlay vom CRM abweicht, ist das Material des
+ * Fensters selbst: statt einer undurchsichtigen App-Fläche ist der Grund
+ * durchscheinend (dasselbe Rezept wie die CRM-Seitenleiste: milchige Fläche +
+ * Weichzeichner). Ein Overlay liegt über fremden Fenstern; ganz dicht wäre es
+ * das Aufdringlichste, was man dort hinlegen kann. Die Abschnitte darauf sind
+ * dann wieder echte CRM-Widgets – weiße Karten mit feiner Kante und ruhigem
+ * Schatten. Diese Figur-Grund-Ordnung (Karten auf Grundfläche) ist das, was das
+ * CRM ausmacht; vorher war es hier umgekehrt (weiße Fläche, graue Abschnitte)
+ * und sah deshalb nach allem Möglichen aus, nur nicht nach dem CRM.
+ *
+ * Immer hell, unabhängig von der Hell/Dunkel-Einstellung des Rechners (main.js
+ * stellt dafür nativeTheme auf "light"). Das CRM kann zwar dunkel, aber die
+ * Auskunft folgt bisher nicht der Theme-Wahl des CRM – solange das so ist, ist
+ * eine feste Fassung ehrlicher als eine, die zufällig zur Systemfarbe passt.
  *
  * Was hier bewusst NICHT steht: eine Titelleiste. Das Fenster hat keinen
  * Rahmen, keine Fensterknöpfe und kein Kreuz oben rechts – es ist die Auskunft
- * und sonst nichts. Immer-im-Vordergrund, Deckkraft, Ausblenden und Beenden
- * stehen im Panel unter „Einstellungen · Overlay" (siehe hud-host.js).
+ * selbst. Gezogen wird am Kopf des Panels, die Größe ändert der Anfasser unten
+ * rechts, und alles, was man sonst am Rahmen bedient, steht im Panel unter
+ * „Einstellungen · Overlay".
  */
 
+/* --- Schrift ---------------------------------------------------------------
+ *
+ * Die @font-face-Regeln für Inter Variable stehen in fonts.css, weil sie auch
+ * das Mitteilungsfenster braucht (das hud.css nicht lädt). Hier wird die
+ * Schrift nur noch angewandt.
+ *
+ * Die Schriftmerkmale sind dieselben wie in src/index.css: cv11 (offene Ziffern
+   – wichtig für Kundennummern) und ss01. Sie stehen hier auf dem Dokument, damit
+   sie auch das greifen, was neben dem Panel-Wurzelelement liegt (Notizbereich,
+   Startbild). */
 html, body {
-  height: 100%;
   margin: 0;
+  height: 100%;
   overflow: hidden;
-  /* Durchsichtig bis auf das Panel selbst: alles außerhalb der abgerundeten
-     Ecken ist Schreibtisch, nicht Programmfenster. */
   background: transparent;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Inter Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-optical-sizing: auto;
+  font-feature-settings: "cv11", "ss01", "kern" on;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* --- Palette des Overlays -------------------------------------------------
+/* --- Farbrollen ------------------------------------------------------------
  *
- * Überschreibt die Farbrollen aus content.css für dieses Fenster. Bewusst
- * ohne !important: wer sich in den Einstellungen ein eigenes Theme einfärbt,
- * schreibt über theme.js Inline-Werte ans Wurzelelement – und die sollen
- * gewinnen. Für alle, die das Theme nie anfassen (der Normalfall), gilt das
- * hier.
+ * Die --sc-*-Namen sind eine feste Schnittstelle: extension/src/theme.js legt
+ * ein persönlich eingefärbtes Schema per Inline-Stil genau auf diese Variablen
+ * (ink, muted, line, surface, soft, blue, blue-dark, success, warning, danger,
+ * amber, amber-soft). Was hier steht, ist die Werkseinstellung – wer sich in den
+ * Einstellungen etwas anderes einfärbt, gewinnt. Für alle, die das Theme nie
+ * anfassen (der Normalfall), gilt das hier.
  *
- * Die Flächen sind durchscheinendes Weiß statt fester Grautöne: dadurch
- * bleibt jede Ebene über dem Schreibtisch durchsichtig und stapelt sich nicht
- * zu einer undurchsichtigen Wand.
+ * Die Werte sind 1:1 aus src/index.css übernommen, damit dieselbe Farbe auch
+ * wirklich dieselbe Farbe ist – nicht „ungefähr das Blau des CRM".
  */
 
 #stadtnetzcrm-root {
-  /* Das Material des Fensters selbst. */
-  --hud-glass: rgba(17, 20, 27, 0.86);
-  --hud-raise: rgba(255, 255, 255, 0.045);
-  --hud-raise-hover: rgba(255, 255, 255, 0.085);
-  --hud-hairline: rgba(255, 255, 255, 0.09);
-  --hud-edge: rgba(255, 255, 255, 0.14);
-  --hud-accent-soft: rgba(90, 162, 255, 0.16);
+  /* Material des Fensters: die App-Grundfläche des CRM (--bg-app), aber
+     durchscheinend. Zusammen mit dem Weichzeichner ist das dasselbe Rezept, mit
+     dem im CRM die Seitenleiste gebaut ist. */
+  /* Die Deckung ist Absicht und war der erste Versuch zu niedrig: über einem
+     hellen Schreibtisch wurde der Grund selbst fast weiß, und die weißen Karten
+     darauf verloren ihre Kante. Genau die Ordnung „Karte auf Fläche" macht aber
+     den CRM-Look aus – sie darf nicht davon abhängen, was zufällig hinter dem
+     Fenster liegt. Durchsichtig genug, dass man den Schreibtisch ahnt; deckend
+     genug, dass das Panel immer gleich aussieht. */
+  --hud-canvas: rgba(234, 237, 243, 0.9);
+  /* Die Kopfleiste muss MINDESTENS so deckend sein wie der Grund darunter,
+     sonst kippt sie über einem dunklen Schreibtisch ins Dunklere und sieht aus
+     wie eine Schattenkante – gemeint ist das Gegenteil: sie liegt über der
+     Fläche, nicht darunter. */
+  --hud-bar: rgba(248, 249, 252, 0.94);
+  --hud-blur: saturate(180%) blur(20px);
 
-  --sc-ink: #eef2f8;
-  --sc-muted: #98a5b8;
-  --sc-line: rgba(255, 255, 255, 0.09);
-  --sc-surface: rgba(255, 255, 255, 0.045);
-  --sc-soft: rgba(255, 255, 255, 0.03);
-  --sc-blue: #5aa2ff;
-  --sc-blue-dark: #85bcff;
-  --sc-success: #5fd39a;
-  --sc-warning: #f0b45f;
-  --sc-danger: #ff8f80;
-  --sc-amber: #f0b45f;
-  --sc-amber-soft: rgba(240, 180, 95, 0.12);
+  /* Kartenmaterial (CRM: --widget-*). */
+  --hud-card: rgba(255, 255, 255, 0.96);
+  --hud-card-border: rgba(0, 0, 0, 0.06);
+  --hud-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 18px rgba(0, 0, 0, 0.04);
 
-  /* Etwas kleiner als im Jira-Tab: das Overlay ist schmal, und alles, was hier
-     steht, liest man im Gespräch quer – nicht als Fließtext. */
+  /* Neutrale Füllungen für Gruppierungen INNERHALB einer Karte (CRM:
+     --surface-2/-3). Damit kommt man ohne einen zweiten Rahmen aus. */
+  --hud-fill: #f5f6f9;
+  --hud-fill-strong: #eef0f5;
+  --hud-hover: rgba(60, 60, 67, 0.06);
+  --hud-border-strong: rgba(60, 60, 67, 0.18);
+  --hud-separator: rgba(60, 60, 67, 0.08);
+  --hud-focus: 0 0 0 3px rgba(0, 102, 179, 0.32);
+
+  /* Radien und Bewegung wie im CRM. */
+  --hud-r-sm: 6px;
+  --hud-r-md: 9px;
+  --hud-r-lg: 12px;
+  --hud-r-card: 14px;
+  --hud-r-window: 16px;
+  --hud-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --hud-dur: 0.18s;
+
+  /* Farbrollen (theme.js überschreibt genau diese). */
+  --sc-ink: #1d1d1f;
+  --sc-muted: #5e5e63;
+  --sc-line: rgba(60, 60, 67, 0.1);
+  --sc-surface: rgba(255, 255, 255, 0.92);
+  --sc-soft: #f5f6f9;
+  --sc-blue: #0066b3;
+  --sc-blue-dark: #004a85;
+  --sc-success: #157a3a;
+  --sc-warning: #aa5f00;
+  --sc-danger: #b8261d;
+  --sc-amber: #aa5f00;
+  --sc-amber-soft: rgba(255, 149, 0, 0.14);
+
+  /* Dritte Textstufe. Kein Theme-Token: sie ist keine Rolle, sondern das
+     Verblassen von --sc-muted; ein eingefärbtes Schema braucht dafür nichts. */
+  --hud-ink-3: #8e8e93;
+
+  color: var(--sc-ink);
+  /* content.css setzt hier -apple-system fest – im Overlay soll aber dieselbe
+     Schrift stehen wie im CRM. */
+  font-family: "Inter Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* Einen Tick kleiner als im CRM-Fenster: das Overlay ist 420 px breit, und
+     alles, was hier steht, liest man im Gespräch quer – nicht als Fließtext.
+     Die Verhältnisse der Staffel bleiben dieselben. */
   font-size: 13px;
   line-height: 1.45;
 }
@@ -77,20 +149,18 @@ html, body {
   inset: 0;
   width: auto;
   max-width: none;
-  border: 1px solid var(--hud-edge);
-  border-radius: 14px;
-  background: var(--hud-glass);
-  /* Weichzeichner für alles, was im Fenster hinter einer Ebene liegt. Ob auch
-     der Schreibtisch dahinter weichgezeichnet wird, entscheidet das Fenster
-     (macOS: vibrancy in main.js) – ohne das bleibt es beim durchscheinenden
-     Ton, was für sich schon richtig aussieht. */
-  backdrop-filter: blur(30px) saturate(150%);
-  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  border: 1px solid var(--hud-border-strong);
+  /* --r-xl des CRM: die Stufe für Fenster und Modals, nicht die für Karten. */
+  border-radius: var(--hud-r-window);
+  background: var(--hud-canvas);
+  backdrop-filter: var(--hud-blur);
+  -webkit-backdrop-filter: var(--hud-blur);
   /* Kein Schlagschatten: er müsste außerhalb der Fensterkante liegen und würde
      dort abgeschnitten. Das Fenster selbst wirft ebenfalls keinen (hasShadow:
      false in main.js) – ein Schatten ist das, was ein Overlay am ehesten wie
-     ein Fenster aussehen lässt. Abgehoben wird über die helle Oberkante. */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+     ein Fenster aussehen lässt. Abgehoben wird über die Kante und einen feinen
+     Glanz an der Oberkante. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
   /* Im Fenster gibt es nichts ein- und auszublenden: das Panel ist das Fenster.
      Die Klasse is-open aus ui.js bleibt damit ohne Wirkung. */
   opacity: 1;
@@ -122,58 +192,66 @@ html, body {
   -webkit-app-region: no-drag;
 }
 
-/* --- Kopfzeile ------------------------------------------------------------ */
+/* --- Kopfzeile ------------------------------------------------------------
+ *
+ * Eine Werkzeugleiste im Material der CRM-Seitenleiste: etwas heller als der
+ * Grund, darunter eine Trennlinie. Mehr als „hört Chrome zu, worüber reden wir,
+ * welche Werkzeuge gibt es" steht dort nicht.
+ */
 
 #stadtnetzcrm-root .sc-panel-header {
-  min-height: 38px;
-  padding: 4px 6px 4px 12px;
-  border-bottom: 1px solid var(--hud-hairline);
-  background: transparent;
+  min-height: 40px;
+  padding: 5px 7px 5px 13px;
+  border-bottom: 1px solid var(--hud-separator);
+  background: var(--hud-bar);
 }
 
-/* „OUTBOUND" war als fette Versalzeile mit weitem Sperrsatz der lauteste Text
-   im ganzen Fenster – dabei ist es die Zeile, die am wenigsten aussagt. */
+/* „OUTBOUND" stand als fette Versalzeile mit weitem Sperrsatz da und war damit
+   der lauteste Text im ganzen Fenster – dabei ist es die Zeile, die am wenigsten
+   aussagt. Jetzt die Wortmarke aus der CRM-Seitenleiste: gemischt, eng
+   gesetzt, ruhig. Die Versalien kommen aus content.css und werden hier
+   zurückgenommen. */
 #stadtnetzcrm-root .sc-panel-name {
   color: var(--sc-ink);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  opacity: 0.92;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  text-transform: none;
 }
 
 /* Der offene Vorgang hängt mit einem Trennpunkt am Namen statt frei daneben. */
 #stadtnetzcrm-root .sc-panel-context {
-  font-size: 11px;
+  color: var(--sc-muted);
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
 
 #stadtnetzcrm-root .sc-panel-context::before {
   margin-right: 7px;
   content: "·";
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 /* Verbindungspunkt links im Kopf (hud-host.js). Er ersetzt die frühere
-   Titelzeile: mehr als „hört Chrome zu?" muss dort nicht stehen. */
+   Titelzeile: mehr als „hört Chrome zu?" muss dort nicht stehen. Die Farben
+   sind die Statusfarben des CRM (--green/--red). */
 .hud-dot {
   width: 7px;
   height: 7px;
   flex: none;
   border-radius: 50%;
-  background: #7d8798;
-  transition: background 200ms ease, box-shadow 200ms ease;
+  background: #aeaeb2;
+  transition: background var(--hud-dur) var(--hud-ease), box-shadow var(--hud-dur) var(--hud-ease);
 }
 
-/* Der Punkt sitzt in einer dunklen Fläche – ein schwacher Hof macht ihn ohne
-   zusätzliche Beschriftung lesbar. */
 .hud-dot.is-connected {
-  background: #4ade80;
-  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.16);
+  background: #34c759;
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.2);
 }
 
 .hud-dot.is-offline {
-  background: #f87171;
-  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.16);
+  background: #ff3b30;
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.18);
 }
 
 /* --- Werkzeug-Symbole ------------------------------------------------------
@@ -184,27 +262,38 @@ html, body {
  * ▦ ist ein fast schwarzer Klotz, das ↻ ein Haarstrich).
  *
  * Hier bekommen sie stattdessen gezeichnete Symbole in einheitlicher
- * Strichstärke. Umgesetzt als Maske, damit sie die Farbe des Knopfes annehmen
- * (auch im Schwebe- und Aktiv-Zustand). Das Schriftzeichen wird nur bei den
- * Knöpfen ausgeblendet, für die es hier auch wirklich ein Symbol gibt – ein
- * unbekannter Knopf behält sein Zeichen und verschwindet nicht.
+ * Strichstärke – dieselbe Sprache wie die lucide-Symbole im CRM (24er Raster,
+ * 2 px Strich, runde Enden). Umgesetzt als Maske, damit sie die Farbe des
+ * Knopfes annehmen (auch im Schwebe- und Aktiv-Zustand). Das Schriftzeichen
+ * wird nur bei den Knöpfen ausgeblendet, für die es hier auch wirklich ein
+ * Symbol gibt – ein unbekannter Knopf behält sein Zeichen und verschwindet
+ * nicht.
+ *
+ * Der Knopf selbst ist der .icon-btn des CRM: 30 px, Radius 8, gefüllte
+ * Neutralfläche erst beim Überfahren.
  */
 
 #stadtnetzcrm-root .sc-icon-button {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: transparent;
   color: var(--sc-muted);
-  transition: background 140ms ease, color 140ms ease;
+  transition: background var(--hud-dur) var(--hud-ease), color var(--hud-dur) var(--hud-ease),
+    transform var(--hud-dur) var(--hud-ease);
 }
 
 #stadtnetzcrm-root .sc-icon-button:hover {
-  background: var(--hud-raise-hover);
+  background: var(--hud-fill-strong);
   color: var(--sc-ink);
 }
 
+#stadtnetzcrm-root .sc-icon-button:active {
+  transform: scale(0.92);
+}
+
 #stadtnetzcrm-root .sc-icon-button.is-active {
-  background: var(--hud-accent-soft);
+  background: rgba(0, 102, 179, 0.1);
   color: var(--sc-blue-dark);
 }
 
@@ -260,87 +349,133 @@ html, body {
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='9' width='11' height='11' rx='2'/%3E%3Cpath d='M5 15V5a2 2 0 0 1 2-2h10'/%3E%3C/svg%3E");
 }
 
-/* --- Bereichswahl ---------------------------------------------------------
+/* --- Segment-Schalter ------------------------------------------------------
  *
- * Aus vier unterstrichenen Wörtern über die ganze Breite wird ein
- * Segment-Schalter: er zeigt auf einen Blick, dass es genau vier Bereiche
- * gibt und in welchem man steht – und braucht dafür weniger Höhe.
+ * Der .seg-group/.seg des CRM, Bauteil für Bauteil: neutrale Wanne, darin
+ * schwimmt die gewählte Lage als weiße Karte mit feinem Schatten. Zwei Stellen
+ * im Panel benutzen ihn – die Bereichswahl oben und der Call-Typ-Schalter im
+ * Leitfaden. Vorher waren das zwei verschiedene Bauteile, und beim zweiten war
+ * die gewählte Lage hellblau auf hellblau, also praktisch unsichtbar.
  */
 
-#stadtnetzcrm-root .sc-tabs {
-  gap: 2px;
-  margin: 8px 10px 0;
+#stadtnetzcrm-root .sc-tabs,
+#stadtnetzcrm-root .sc-calltype-switch {
+  display: flex;
+  gap: 3px;
+  overflow: visible;
   padding: 3px;
-  border: 1px solid var(--hud-hairline);
-  border-bottom: 1px solid var(--hud-hairline);
+  border: 0;
   border-radius: 10px;
-  background: var(--hud-raise);
+  background: var(--hud-fill);
 }
 
-#stadtnetzcrm-root .sc-tab {
+#stadtnetzcrm-root .sc-tabs {
+  margin: 9px 11px 0;
+}
+
+#stadtnetzcrm-root .sc-tab,
+#stadtnetzcrm-root .sc-calltype-toggle {
+  flex: 1;
   min-height: 26px;
-  padding: 4px 3px;
+  padding: 5px 9px;
+  border: 0;
   border-bottom: 0;
   border-radius: 7px;
-  font-size: 11px;
-  font-weight: 600;
-  transition: background 140ms ease, color 140ms ease;
+  background: transparent;
+  color: var(--sc-ink);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--hud-dur) var(--hud-ease), color var(--hud-dur) var(--hud-ease),
+    box-shadow var(--hud-dur) var(--hud-ease);
 }
 
-#stadtnetzcrm-root .sc-tab:hover {
-  background: var(--hud-raise-hover);
+#stadtnetzcrm-root .sc-tab:hover,
+#stadtnetzcrm-root .sc-calltype-toggle:hover {
+  background: rgba(60, 60, 67, 0.04);
   color: var(--sc-ink);
 }
 
-#stadtnetzcrm-root .sc-tab.is-active {
+#stadtnetzcrm-root .sc-tab.is-active,
+#stadtnetzcrm-root .sc-calltype-toggle.is-active {
   border-bottom-color: transparent;
-  background: var(--hud-accent-soft);
-  color: #cadfff;
+  background: #fff;
+  color: var(--sc-blue-dark);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 0 rgba(0, 0, 0, 0.02);
 }
 
-/* --- Inhalt ---------------------------------------------------------------
+/* Der Call-Typ-Schalter steht in einer Karte und darf deshalb nicht die ganze
+   Breite fressen. */
+#stadtnetzcrm-root .sc-calltype-switch {
+  display: inline-flex;
+}
+
+#stadtnetzcrm-root .sc-calltype-toggle {
+  flex: none;
+  min-height: 24px;
+  padding: 4px 11px;
+  font-size: 11.5px;
+}
+
+/* --- Inhalt ----------------------------------------------------------------
  *
- * Der Inhaltsbereich hatte eine eigene Grundfarbe (--sc-soft), auf der die
- * weißen Abschnitte lagen. Über dem Schreibtisch ist das eine Ebene zu viel:
- * hier ist der Grund das Fenster selbst.
+ * Der Grund ist das Fenster selbst (die CRM-App-Fläche), darauf liegen die
+ * Abschnitte als Widgets. Genau diese eine Ebene – Karten auf Fläche – gibt es
+ * im CRM auch, und keine mehr.
  */
 
 #stadtnetzcrm-root .sc-panel-content {
-  padding-bottom: 6px;
+  padding-bottom: 8px;
   background: transparent;
 }
 
 #stadtnetzcrm-root .sc-section {
-  margin: 8px 10px;
-  padding: 11px 12px;
-  border: 1px solid var(--hud-hairline);
-  border-radius: 12px;
-  background: var(--hud-raise);
+  margin: 9px 11px;
+  padding: 13px 14px;
+  border: 1px solid var(--hud-card-border);
+  border-radius: var(--hud-r-card);
+  background: var(--hud-card);
+  box-shadow: var(--hud-card-shadow);
 }
 
+/* „Gedämpfte" Abschnitte sind im CRM keine andere Farbe, sondern eine Karte
+   ohne Schatten – sie liegen auf, statt sich abzuheben. */
 #stadtnetzcrm-root .sc-section--muted {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: none;
 }
 
-/* Größenstaffel: vorher lagen Überschrift, Fließtext und Inhalt alle um
-   12–14 px und unterschieden sich fast nur in der Fettschrift. */
-#stadtnetzcrm-root .sc-section h2 {
-  margin-bottom: 6px;
+/* Größenstaffel. Die Abschnittsüberschrift ist der .widget-title des CRM:
+   klein, in Versalien, gesperrt, gedämpft. Das ist das auffälligste Merkmal des
+   CRM-Layouts – wer es sieht, erkennt dieselbe Anwendung wieder. */
+#stadtnetzcrm-root .sc-section h3,
+#stadtnetzcrm-root .sc-section-title-row h3 {
+  margin: 0 0 11px;
+  color: var(--sc-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+/* h2 bleibt eine echte Überschrift (Ticketbetreff, Kundenname): das ist Inhalt,
+   keine Beschriftung eines Widgets. */
+#stadtnetzcrm-root .sc-section h2,
+#stadtnetzcrm-root .sc-issue-heading {
+  margin-bottom: 7px;
+  color: var(--sc-ink);
   font-size: 15px;
   font-weight: 650;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.2px;
   line-height: 1.28;
 }
 
-#stadtnetzcrm-root .sc-section h3 {
-  margin-bottom: 7px;
-  font-size: 12px;
-  font-weight: 650;
-}
-
 #stadtnetzcrm-root .sc-section h4 {
-  font-size: 11.5px;
-  font-weight: 650;
+  margin-bottom: 5px;
+  color: var(--sc-ink);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* Die Erklärtexte standen in derselben Größe wie der Inhalt und lasen sich
@@ -348,16 +483,20 @@ html, body {
 #stadtnetzcrm-root .sc-section-intro,
 #stadtnetzcrm-root .sc-rule-copy,
 #stadtnetzcrm-root .sc-input-hint,
-#stadtnetzcrm-root .sc-check-label small {
-  font-size: 11px;
-  line-height: 1.42;
-  opacity: 0.86;
+#stadtnetzcrm-root .sc-check-label small,
+#stadtnetzcrm-root .sc-guide-next-hint,
+#stadtnetzcrm-root .sc-palette-hint {
+  color: var(--sc-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
 }
 
 #stadtnetzcrm-root .sc-ticket-key {
+  color: var(--sc-blue);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 650;
   letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
 #stadtnetzcrm-root .sc-badge-row {
@@ -368,8 +507,9 @@ html, body {
  *
  * Der stärkste Grund, warum das Fenster unruhig aussah: fast jeder Inhalt saß
  * in einem gerahmten Kasten, der wiederum in einem gerahmten Abschnitt saß –
- * stellenweise drei Rahmen ineinander. Innerhalb eines Abschnitts trennen ab
- * jetzt Haarlinien, keine Rahmen.
+ * stellenweise drei Rahmen ineinander. Jetzt gilt die CRM-Regel: eine Karte,
+ * darin nur noch Trennlinien (--separator) oder eine neutrale Füllfläche, aber
+ * kein zweiter Rahmen.
  */
 
 #stadtnetzcrm-root .sc-ticket-grid {
@@ -385,8 +525,8 @@ html, body {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 0;
-  border-top: 1px solid var(--hud-hairline);
+  padding: 7px 0;
+  border-top: 1px solid var(--hud-separator);
   background: none;
 }
 
@@ -396,21 +536,30 @@ html, body {
 
 #stadtnetzcrm-root .sc-ticket-row span {
   flex: none;
-  font-size: 11px;
+  color: var(--sc-muted);
+  font-size: 11.5px;
 }
 
 #stadtnetzcrm-root .sc-ticket-row strong {
   margin-top: 0;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 550;
   text-align: right;
 }
 
+/* Der Gedankenstrich für „steht nicht im Ticket" ist keine Angabe – er darf
+   nicht so aussehen wie eine. */
+#stadtnetzcrm-root .sc-ticket-row strong.is-empty {
+  color: var(--hud-ink-3);
+  font-weight: 400;
+}
+
 #stadtnetzcrm-root .sc-objection-card,
-#stadtnetzcrm-root .sc-template-card {
-  padding: 9px 0 2px;
+#stadtnetzcrm-root .sc-template-card,
+#stadtnetzcrm-root .sc-prep-objection {
+  padding: 10px 0 3px;
   border: 0;
-  border-top: 1px solid var(--hud-hairline);
+  border-top: 1px solid var(--hud-separator);
   border-radius: 0;
   background: none;
 }
@@ -432,7 +581,7 @@ html, body {
    Abschnitt. Als Liste mit Haarlinie liest sich die Abfolge besser. */
 #stadtnetzcrm-root .sc-call-phase {
   border: 0;
-  border-top: 1px solid var(--hud-hairline);
+  border-top: 1px solid var(--hud-separator);
   border-radius: 0;
   background: none;
 }
@@ -443,7 +592,7 @@ html, body {
 
 #stadtnetzcrm-root .sc-call-phase summary {
   padding: 8px 0;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 #stadtnetzcrm-root .sc-call-phase[open] summary {
@@ -452,7 +601,7 @@ html, body {
 
 #stadtnetzcrm-root .sc-call-phase > p {
   padding: 0 0 2px;
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.5;
 }
 
@@ -460,136 +609,400 @@ html, body {
   gap: 0;
 }
 
+/* Gruppierungen, die eine eigene Fläche brauchen (E-Mail-Vorlage, Editor,
+   Auskunftsergebnis), bekommen die neutrale Füllung des CRM statt eines
+   zweiten Rahmens. */
+#stadtnetzcrm-root .sc-email-template-card,
+#stadtnetzcrm-root .sc-email-editor,
+#stadtnetzcrm-root .sc-lookup-card,
+#stadtnetzcrm-root .sc-prepcust-block {
+  border: 0;
+  border-radius: var(--hud-r-lg);
+  background: var(--hud-fill);
+  color: var(--sc-ink);
+}
+
+/* Das Abhak-Kästchen ist ein Bedienelement, keine Fläche: weiße Box mit
+   kräftigerer Kante, im Grün des CRM, sobald es gesetzt ist. */
+#stadtnetzcrm-root .sc-checklist-box {
+  border: 1.5px solid var(--hud-border-strong);
+  border-radius: 5px;
+  background: #fff;
+  color: #fff;
+}
+
+#stadtnetzcrm-root .sc-checklist-box.is-checked {
+  border-color: #34c759;
+  background: #34c759;
+}
+
+/* --- Gesprächsleitfaden ----------------------------------------------------
+ *
+ * Der Schritt-Leitfaden (sc-guide*) hat in content.css bislang GAR KEINE
+ * Regeln – die Schrittzahlen erschienen dadurch als nackte Knöpfe mit
+ * Standardrahmen, und Zähler und Erledigt-Zahl klebten ohne Abstand aneinander
+ * („Schritt 1 von 6 0 erledigt"). Hier steht die Fassung fürs Overlay; für das
+ * Panel in der Jira-Seite fehlt sie weiterhin und gehört nach content.css.
+ */
+
+#stadtnetzcrm-root .sc-guide-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+#stadtnetzcrm-root .sc-guide-count,
+#stadtnetzcrm-root .sc-guide-done {
+  color: var(--sc-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Die Schrittreihe: kleine Kacheln im Füllton statt gerahmter Kästchen. Auf
+   einen Blick sichtbar, wie weit das Gespräch ist – erledigt in Grün, der
+   laufende Schritt in der Markenfarbe. */
+#stadtnetzcrm-root .sc-guide-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+#stadtnetzcrm-root .sc-guide-pip {
+  min-width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: var(--hud-fill);
+  color: var(--sc-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition: background var(--hud-dur) var(--hud-ease), color var(--hud-dur) var(--hud-ease);
+}
+
+#stadtnetzcrm-root .sc-guide-pip:hover {
+  background: var(--hud-fill-strong);
+  color: var(--sc-ink);
+}
+
+#stadtnetzcrm-root .sc-guide-pip.is-done {
+  background: rgba(52, 199, 89, 0.16);
+  color: var(--sc-success);
+}
+
+#stadtnetzcrm-root .sc-guide-pip.is-current {
+  background: var(--sc-blue);
+  color: #fff;
+}
+
+/* Der laufende Schritt ist das Einzige, was im Gespräch wirklich gelesen wird –
+   er bekommt die ruhige Füllfläche, damit er sich vom Beiwerk der Karte löst. */
+#stadtnetzcrm-root .sc-guide-current {
+  padding: 11px 12px;
+  border-radius: var(--hud-r-lg);
+  background: var(--hud-fill);
+}
+
+#stadtnetzcrm-root .sc-guide-current h4 {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-guide-current p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+#stadtnetzcrm-root .sc-guide-current.is-done h4 {
+  color: var(--sc-muted);
+  text-decoration: line-through;
+}
+
+#stadtnetzcrm-root .sc-guide-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+/* Der Zurück-Pfeil ist ein Nebenweg – als quadratischer Knopf im Gewicht der
+   Sekundärknöpfe, nicht als dritte Knopfsorte. */
+#stadtnetzcrm-root .sc-guide-back {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--hud-border-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--sc-muted);
+  font-size: 13px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03);
+}
+
+#stadtnetzcrm-root .sc-guide-back:hover:not(:disabled) {
+  border-color: var(--hud-ink-3);
+  background: #fafbfd;
+  color: var(--sc-ink);
+}
+
+#stadtnetzcrm-root .sc-guide-back:disabled {
+  opacity: 0.4;
+}
+
+#stadtnetzcrm-root .sc-guide-next {
+  flex: 1;
+}
+
+#stadtnetzcrm-root .sc-guide-next-hint {
+  margin: 9px 0 0;
+}
+
+#stadtnetzcrm-root .sc-guide-toggle {
+  margin-top: 4px;
+  padding-left: 0;
+}
+
 /* --- Marken, Knöpfe, Felder ------------------------------------------------
  *
- * In content.css sind das feste helle Farbwerte (#fff, #e9edf2, …), die der
- * Dunkelblock dort nur teilweise einfängt. Auf Glas müssen sie durchscheinend
- * sein, sonst kleben helle Flecken im Fenster.
+ * In content.css sind das feste Jira-Werte (#fff, #e9edf2, #44546f …). Hier
+ * stehen an ihrer Stelle die Bauteile des CRM: .badge, .btn/.btn-primary,
+ * .field input. Wo es geht, stehen Farben als var(--sc-*): wer sich ein eigenes
+ * Schema einfärbt, sieht seine Akzente auch in den Marken.
  */
 
 #stadtnetzcrm-root .sc-badge,
 #stadtnetzcrm-root .sc-local-label,
 #stadtnetzcrm-root .sc-triage-chip,
 #stadtnetzcrm-root .sc-check > span:first-child {
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.07);
-  color: #c3cddb;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--hud-fill);
+  color: var(--sc-muted);
   font-size: 10.5px;
   font-weight: 600;
+  letter-spacing: 0.1px;
 }
 
-#stadtnetzcrm-root .sc-badge {
-  padding: 2px 7px;
-}
-
+/* Das Häkchen-Zeichen in den Prüfzeilen bleibt rund – es ist ein Zeichen, keine
+   Marke mit Text. */
 #stadtnetzcrm-root .sc-check > span:first-child {
+  display: inline-grid;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  place-items: center;
   border-radius: 50%;
 }
 
-#stadtnetzcrm-root .sc-badge--status.is-open { background: rgba(90, 162, 255, 0.16); color: #9cc6ff; }
-#stadtnetzcrm-root .sc-badge--status.is-progress { background: rgba(90, 162, 255, 0.16); color: #9cc6ff; }
-#stadtnetzcrm-root .sc-badge--status.is-waiting { background: rgba(240, 180, 95, 0.16); color: #f0c07a; }
-#stadtnetzcrm-root .sc-badge--status.is-done { background: rgba(95, 211, 154, 0.16); color: #7fdcae; }
-#stadtnetzcrm-root .sc-badge--priority.is-high { background: rgba(255, 143, 128, 0.16); color: #ff9f92; }
-#stadtnetzcrm-root .sc-badge--priority.is-medium { background: rgba(240, 180, 95, 0.16); color: #f0c07a; }
-#stadtnetzcrm-root .sc-badge--stale { background: rgba(240, 180, 95, 0.16); color: #f0c07a; }
+#stadtnetzcrm-root .sc-badge--status.is-open,
+#stadtnetzcrm-root .sc-badge--status.is-progress { background: rgba(0, 102, 179, 0.1); color: var(--sc-blue-dark); }
+#stadtnetzcrm-root .sc-badge--status.is-waiting { background: var(--sc-amber-soft); color: var(--sc-amber); }
+#stadtnetzcrm-root .sc-badge--status.is-done { background: rgba(52, 199, 89, 0.14); color: var(--sc-success); }
+#stadtnetzcrm-root .sc-badge--priority.is-high { background: rgba(255, 59, 48, 0.13); color: var(--sc-danger); }
+#stadtnetzcrm-root .sc-badge--priority.is-medium { background: var(--sc-amber-soft); color: var(--sc-amber); }
+#stadtnetzcrm-root .sc-badge--stale { background: var(--sc-amber-soft); color: var(--sc-amber); }
 
-#stadtnetzcrm-root .sc-check--ok > span:first-child { background: rgba(95, 211, 154, 0.16); color: var(--sc-success); }
-#stadtnetzcrm-root .sc-check--warning > span:first-child { background: rgba(240, 180, 95, 0.16); color: var(--sc-warning); }
-#stadtnetzcrm-root .sc-check--blocker > span:first-child { background: rgba(255, 143, 128, 0.16); color: var(--sc-danger); }
+/* Der Anruftyp, für den eine Vorbereitung geschrieben wurde, soll sich von
+   „lokale KI" daneben abheben – das ist die inhaltlich entscheidende Angabe.
+   In content.css ist er dafür ein gerahmtes Rechteck im Akzentton; im CRM gibt
+   es keine gerahmten Marken, dort trägt die getönte Fläche die Bedeutung. */
+#stadtnetzcrm-root .sc-prep-type {
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sc-amber-soft);
+  color: var(--sc-amber);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
 
+#stadtnetzcrm-root .sc-check--ok > span:first-child { background: rgba(52, 199, 89, 0.14); color: var(--sc-success); }
+#stadtnetzcrm-root .sc-check--warning > span:first-child { background: var(--sc-amber-soft); color: var(--sc-warning); }
+#stadtnetzcrm-root .sc-check--blocker > span:first-child { background: rgba(255, 59, 48, 0.13); color: var(--sc-danger); }
+
+/* Knöpfe: .btn des CRM (weiß, feine Kante, Radius 8, 1 px Schatten) und
+   .btn-primary (flaches Markenblau ohne Kante). Der frühere Zustand hatte vier
+   verschiedene Knopfgewichte in einer Zeile stehen. */
 #stadtnetzcrm-root .sc-primary-button,
 #stadtnetzcrm-root .sc-secondary-button,
 #stadtnetzcrm-root .sc-tool-button,
+#stadtnetzcrm-root .sc-outcome-button,
 #stadtnetzcrm-root .sc-chip {
+  padding: 7px 13px;
   border-radius: 8px;
-  font-size: 11.5px;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background var(--hud-dur) var(--hud-ease), border-color var(--hud-dur) var(--hud-ease),
+    color var(--hud-dur) var(--hud-ease), box-shadow var(--hud-dur) var(--hud-ease);
 }
 
 #stadtnetzcrm-root .sc-primary-button {
-  min-height: 30px;
-  border-color: transparent;
-  background: #2f7de0;
+  min-height: 32px;
+  border: 0;
+  background: var(--sc-blue);
   color: #fff;
-  font-weight: 650;
+  font-weight: 550;
+  box-shadow: 0 1px 2px rgba(0, 102, 179, 0.2);
 }
 
-#stadtnetzcrm-root .sc-primary-button:hover {
-  border-color: transparent;
-  background: #3d8cf0;
+#stadtnetzcrm-root .sc-primary-button:hover:not(:disabled) {
+  background: var(--sc-blue);
+  filter: brightness(1.06);
+  box-shadow: 0 2px 8px rgba(0, 102, 179, 0.3);
 }
 
 #stadtnetzcrm-root .sc-primary-button:disabled {
   border-color: transparent;
-  background: rgba(47, 125, 224, 0.35);
-  color: rgba(255, 255, 255, 0.6);
+  background: var(--sc-blue);
+  color: #fff;
+  opacity: 0.4;
 }
 
 #stadtnetzcrm-root .sc-secondary-button,
 #stadtnetzcrm-root .sc-tool-button,
+#stadtnetzcrm-root .sc-outcome-button,
 #stadtnetzcrm-root .sc-chip {
-  border-color: var(--hud-edge);
-  background: var(--hud-raise);
+  border: 1px solid var(--hud-border-strong);
+  background: #fff;
   color: var(--sc-ink);
-  font-weight: 600;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03);
 }
 
-#stadtnetzcrm-root .sc-secondary-button:hover,
+#stadtnetzcrm-root .sc-secondary-button:hover:not(:disabled),
 #stadtnetzcrm-root .sc-tool-button:hover:not(:disabled),
-#stadtnetzcrm-root .sc-chip:hover {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: var(--hud-raise-hover);
+#stadtnetzcrm-root .sc-outcome-button:hover:not(:disabled),
+#stadtnetzcrm-root .sc-chip:hover:not(:disabled) {
+  border-color: var(--hud-ink-3);
+  background: #fafbfd;
   color: var(--sc-ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.02);
 }
 
 #stadtnetzcrm-root .sc-chip {
+  padding: 5px 11px;
   border-radius: 999px;
+  font-size: 11.5px;
 }
 
 #stadtnetzcrm-root .sc-chip.is-active {
-  border-color: rgba(90, 162, 255, 0.5);
-  background: var(--hud-accent-soft);
-  color: #cadfff;
+  border-color: transparent;
+  background: rgba(0, 102, 179, 0.1);
+  color: var(--sc-blue-dark);
+  font-weight: 600;
 }
 
 #stadtnetzcrm-root .sc-danger-button {
-  border-color: rgba(255, 143, 128, 0.4);
+  border-color: rgba(255, 59, 48, 0.32);
+  background: #fff;
   color: var(--sc-danger);
 }
 
 #stadtnetzcrm-root .sc-danger-button:hover {
-  border-color: rgba(255, 143, 128, 0.6);
-  background: rgba(255, 143, 128, 0.12);
+  border-color: rgba(255, 59, 48, 0.5);
+  background: rgba(255, 59, 48, 0.06);
   color: var(--sc-danger);
 }
 
+/* Flache Textknöpfe (kopieren, „alle Schritte zeigen") – der .btn-ghost des
+   CRM: keine Kante, keine Fläche, erst beim Überfahren eine. */
+#stadtnetzcrm-root .sc-text-button,
+#stadtnetzcrm-root .sc-link-button {
+  /* Waagerecht knapp gehalten: diese Knöpfe stehen oft am Anfang einer Zeile
+     oder hinter einem Satz – mit großzügiger Innenkante sähen sie dort
+     eingerückt aus statt bündig. */
+  padding: 5px 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sc-blue);
+  font-size: 12px;
+  font-weight: 550;
+  transition: background var(--hud-dur) var(--hud-ease);
+}
+
+#stadtnetzcrm-root .sc-text-button:hover,
+#stadtnetzcrm-root .sc-link-button:hover {
+  background: var(--hud-fill);
+  color: var(--sc-blue-dark);
+}
+
+/* Ein Tastaturfokus muss man sehen können – im CRM ist das überall derselbe
+   blaue Ring. */
+#stadtnetzcrm-root button:focus-visible,
+#stadtnetzcrm-root [role="tab"]:focus-visible,
+.hud-notes button:focus-visible {
+  outline: none;
+  box-shadow: var(--hud-focus);
+}
+
+/* Felder: .field input des CRM – weiße Fläche, kräftigere Kante als eine
+   Trennlinie, Radius 9, blauer Fokusring. Vorher standen hier fast schwarze
+   Flächen mit fast weißem Platzhaltertext (Rest der dunklen Fassung): auf dem
+   hellen Glas ein schwarzer Klotz mit unlesbarem Hinweis. */
 #stadtnetzcrm-root .sc-text-input,
 #stadtnetzcrm-root .sc-ai-result,
 #stadtnetzcrm-root .sc-comment-draft,
 #stadtnetzcrm-root .sc-email-body,
 #stadtnetzcrm-root .sc-note-input {
-  border-color: var(--hud-edge);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--hud-border-strong);
+  border-radius: var(--hud-r-md);
+  background: #fff;
   color: var(--sc-ink);
+  font-size: 12.5px;
 }
 
-#stadtnetzcrm-root .sc-text-input::placeholder {
-  color: rgba(238, 242, 248, 0.38);
+#stadtnetzcrm-root .sc-text-input::placeholder,
+#stadtnetzcrm-root .sc-comment-draft::placeholder,
+#stadtnetzcrm-root .sc-note-input::placeholder {
+  color: var(--hud-ink-3);
 }
 
-#stadtnetzcrm-root .sc-text-input:focus {
+#stadtnetzcrm-root .sc-text-input:focus,
+#stadtnetzcrm-root .sc-comment-draft:focus,
+#stadtnetzcrm-root .sc-email-body:focus,
+#stadtnetzcrm-root .sc-note-input:focus {
   border-color: var(--sc-blue);
-  box-shadow: 0 0 0 3px rgba(90, 162, 255, 0.18);
+  outline: none;
+  box-shadow: 0 0 0 3.5px rgba(0, 102, 179, 0.18);
 }
 
+/* Ein KI-Ergebnis ist kein Eingabefeld, sondern gesetzter Text – es bekommt die
+   ruhige Füllfläche statt der Feldkante. */
+#stadtnetzcrm-root .sc-ai-result {
+  border-color: transparent;
+  background: var(--hud-fill);
+  line-height: 1.5;
+}
+
+/* Beschriftungen über einem Feld: dieselbe Form wie die Widget-Überschrift. */
 #stadtnetzcrm-root .sc-input-label,
-#stadtnetzcrm-root .sc-eyebrow {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
+#stadtnetzcrm-root .sc-eyebrow,
+#stadtnetzcrm-root .sc-outcome-label {
+  color: var(--sc-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.7px;
   text-transform: uppercase;
+}
+
+/* Eine Feldbeschriftung, die direkt auf eine Reihe Häkchen folgt, fängt eine
+   neue Gruppe an – ohne Abstand klebte „Deckkraft" am letzten Erklärtext. */
+#stadtnetzcrm-root .sc-check-label + .sc-input-label {
+  display: block;
+  margin-top: 16px;
 }
 
 /* Der Hinweis steht im Markup INNERHALB des .sc-input-label (nicht daneben) und
@@ -606,101 +1019,78 @@ html, body {
   accent-color: var(--sc-blue);
 }
 
-/* Der KI-Hinweisstreifen liegt direkt über dem ersten Abschnitt – gleiche
-   Form, damit es nicht nach einer fremden Ebene aussieht. */
-#stadtnetzcrm-root .sc-ai-banner {
-  margin: 8px 10px 0;
-  border-color: var(--hud-hairline);
-  border-radius: 12px;
-  background: var(--hud-raise);
+/* Der KI-Hinweisstreifen liegt direkt über dem ersten Abschnitt – gleiche Form
+   wie eine Karte, damit es nicht nach einer fremden Ebene aussieht. */
+#stadtnetzcrm-root .sc-ai-banner,
+#stadtnetzcrm-root .sc-bridge-banner {
+  margin: 9px 11px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hud-card-border);
+  border-radius: var(--hud-r-card);
+  background: var(--hud-card);
+  color: var(--sc-muted);
   font-size: 11.5px;
 }
 
-#stadtnetzcrm-root .sc-ai-card {
-  border-color: rgba(90, 162, 255, 0.28);
-  background: rgba(90, 162, 255, 0.07);
+/* Eine Warnung bleibt eine Warnung, hört aber auf zu schreien: getönte Fläche
+   in der Warnfarbe des CRM, Text in der lesbaren dunklen Variante (die helle
+   Amber-Schrift der dunklen Fassung war auf hellem Grund kaum zu entziffern). */
+#stadtnetzcrm-root .sc-ai-banner.is-warn {
+  border-color: rgba(255, 149, 0, 0.28);
+  background: var(--sc-amber-soft);
+  color: var(--sc-amber);
 }
 
-/* --- Reste aus dem hellen Blatt -------------------------------------------
+#stadtnetzcrm-root .sc-ai-banner.is-warn > span:first-child {
+  width: 16px;
+  height: 16px;
+  background: rgba(255, 149, 0, 0.22);
+  color: var(--sc-amber);
+  font-size: 11px;
+}
+
+/* Die KI-Abschnitte waren blau getönte Karten neben neutralen – zwei
+   Kartensorten ohne Bedeutungsunterschied. Dass dort eine lokale KI arbeitet,
+   sagt schon die Marke „lokale KI" in der Überschriftszeile; die Karte selbst
+   ist dieselbe wie jede andere. */
+#stadtnetzcrm-root .sc-ai-card {
+  border-color: var(--hud-card-border);
+  background: var(--hud-card);
+}
+
+#stadtnetzcrm-root .sc-ai-summary {
+  border-color: transparent;
+  background: var(--hud-fill);
+}
+
+/* --- Reste aus dem Jira-Blatt ---------------------------------------------
  *
- * content.css schreibt an etlichen Stellen feste helle Werte (#fff als Fläche,
- * #44546f als gedämpfte Schrift). Sein Dunkelblock fängt davon nur einen Teil
- * ein – der Rest fiel im Overlay als weißer Fleck bzw. als fast unlesbares
- * Dunkelblau auf dunklem Grund auf. Hier stehen die, die im Overlay wirklich
- * vorkommen.
+ * content.css schreibt an etlichen Stellen feste Werte (#fff als Fläche,
+ * #44546f als gedämpfte Schrift) – gedacht für eine undurchsichtige Karte in
+ * einer hellen Seite. Im Overlay sind das Flecken in einem fremden Blau bzw.
+ * Flächen, die die Durchsicht zumauern. Hier stehen die, die im Overlay
+ * wirklich vorkommen; bei neuen Widgets hier nachziehen.
  */
 
-/* Gedämpfte Schrift, die dort als festes Dunkelblau steht. */
 #stadtnetzcrm-root .sc-last-info,
 #stadtnetzcrm-root .sc-ai-message,
 #stadtnetzcrm-root .sc-check,
 #stadtnetzcrm-root .sc-quickrule p,
 #stadtnetzcrm-root .sc-call-phase p,
 #stadtnetzcrm-root .sc-calltype-source,
-#stadtnetzcrm-root .sc-queue-chip {
+#stadtnetzcrm-root .sc-queue-chip,
+#stadtnetzcrm-root .sc-callback-meta,
+#stadtnetzcrm-root .sc-callback-reason,
+#stadtnetzcrm-root .sc-prepcust-call-meta,
+#stadtnetzcrm-root .sc-cockpit-hint,
+#stadtnetzcrm-root .sc-palette-item-sub,
+#stadtnetzcrm-root .sc-widget-name {
   color: var(--sc-muted);
 }
 
-/* Der Churn/Welcome-Schalter: der nicht gewählte Knopf war eine weiße Fläche
-   mitten im Fenster. Gleiche Formensprache wie die Bereichswahl oben. */
-#stadtnetzcrm-root .sc-calltype-switch {
-  border-color: var(--hud-edge);
-  border-radius: 8px;
-  background: var(--hud-raise);
-}
-
-#stadtnetzcrm-root .sc-calltype-toggle {
-  padding: 4px 12px;
-  background: transparent;
-  color: var(--sc-muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  transition: background 140ms ease, color 140ms ease;
-}
-
-#stadtnetzcrm-root .sc-calltype-toggle:hover {
-  background: var(--hud-raise-hover);
-  color: var(--sc-ink);
-}
-
-#stadtnetzcrm-root .sc-calltype-toggle.is-active {
-  background: var(--hud-accent-soft);
-  color: #cadfff;
-}
-
-/* Der KI-Warnstreifen war ein satter Amber-Block, der ein Drittel des Fensters
-   belegte – für einen Hinweis, der als Satz in der Karte darunter ohnehin noch
-   einmal steht. Bleibt eine Warnung, hört aber auf zu schreien. */
-#stadtnetzcrm-root .sc-ai-banner.is-warn {
-  border-color: rgba(240, 180, 95, 0.3);
-  background: rgba(240, 180, 95, 0.09);
-  color: #e8b877;
-}
-
-#stadtnetzcrm-root .sc-ai-banner.is-warn > span:first-child {
-  width: 16px;
-  height: 16px;
-  background: rgba(240, 180, 95, 0.22);
-  color: #f0c07a;
-  font-size: 11px;
-}
-
-#stadtnetzcrm-root .sc-ai-summary {
-  border-color: rgba(90, 162, 255, 0.28);
-  background: rgba(90, 162, 255, 0.07);
-}
-
-#stadtnetzcrm-root .sc-checklist-box,
-#stadtnetzcrm-root .sc-email-template-card,
-#stadtnetzcrm-root .sc-email-editor {
-  border-color: var(--hud-edge);
-  background: var(--hud-raise);
-  color: var(--sc-ink);
-}
-
 #stadtnetzcrm-root .sc-queue-chip {
-  border-color: var(--hud-hairline);
-  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--hud-card-border);
+  background: var(--hud-fill);
 }
 
 #stadtnetzcrm-root .sc-queue-chip b {
@@ -708,24 +1098,34 @@ html, body {
 }
 
 #stadtnetzcrm-root .sc-queue-chip.has-waiting {
-  border-color: rgba(240, 180, 95, 0.35);
-  background: rgba(240, 180, 95, 0.12);
-  color: #f0c07a;
+  border-color: rgba(255, 149, 0, 0.3);
+  background: var(--sc-amber-soft);
+  color: var(--sc-amber);
 }
 
 #stadtnetzcrm-root .sc-cockpit-mismatch {
-  background: rgba(255, 143, 128, 0.12);
+  background: rgba(255, 59, 48, 0.1);
+  color: var(--sc-danger);
 }
 
 #stadtnetzcrm-root .sc-cockpit-mini-queue.has-waiting {
-  background: rgba(255, 143, 128, 0.14);
+  background: var(--sc-amber-soft);
+  color: var(--sc-amber);
+}
+
+/* Die Werkzeugleiste der Widget-Anpassung liegt auf einer Karte – ohne eigene
+   Fläche wäre sie ein Rahmen im Rahmen. */
+#stadtnetzcrm-root .sc-widget-bar,
+#stadtnetzcrm-root .sc-widget-hidden-tray {
+  border: 0;
+  border-radius: var(--hud-r-lg);
+  background: var(--hud-fill);
 }
 
 /* --- Bildlaufleiste -------------------------------------------------------
  *
- * Die Standardleiste von macOS ist auf dunklem Glas ein heller Balken am Rand.
- * Schmal und zurückhaltend, sonst zieht sie mehr Blick auf sich als der
- * Inhalt.
+ * Schmal und zurückhaltend, sonst zieht sie mehr Blick auf sich als der Inhalt.
+ * Auf hellem Glas ist der Griff eine dunkle Spur, nicht eine helle.
  */
 
 #stadtnetzcrm-root .sc-panel-content::-webkit-scrollbar,
@@ -742,13 +1142,13 @@ html, body {
 .hud-notes-list::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(60, 60, 67, 0.22);
   background-clip: content-box;
 }
 
 #stadtnetzcrm-root .sc-panel-content::-webkit-scrollbar-thumb:hover,
 .hud-notes-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(60, 60, 67, 0.38);
   background-clip: content-box;
 }
 
@@ -766,46 +1166,55 @@ html, body {
   /* Fester Farbwert statt --sc-line: der Anfasser liegt außerhalb des
      Panel-Wurzelelements, dort ist die Variable nicht definiert – und eine
      nicht auflösbare Variable macht die ganze Regel ungültig (unsichtbarer
-     Anfasser). */
+     Anfasser). Auf hellem Glas müssen die Striche dunkel sein. */
   background:
-    linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, 0.55) 50%, rgba(255, 255, 255, 0.55) 62%, transparent 62%,
-      transparent 72%, rgba(255, 255, 255, 0.55) 72%, rgba(255, 255, 255, 0.55) 84%, transparent 84%);
-  border-bottom-right-radius: 14px;
+    linear-gradient(135deg, transparent 50%, rgba(60, 60, 67, 0.5) 50%, rgba(60, 60, 67, 0.5) 62%, transparent 62%,
+      transparent 72%, rgba(60, 60, 67, 0.5) 72%, rgba(60, 60, 67, 0.5) 84%, transparent 84%);
+  border-bottom-right-radius: 16px;
   cursor: nwse-resize;
-  opacity: 0.4;
-  transition: opacity 140ms ease;
+  opacity: 0.35;
+  transition: opacity var(--hud-dur) ease;
 }
 
-.hud-resize:hover { opacity: 0.9; }
+.hud-resize:hover { opacity: 0.8; }
 
 /* --- Hinweis ohne Chrome -------------------------------------------------- */
 
-/* Sitzt im Panel (als Banner unter dem Kopf), nicht als eigener Streifen über
+/* Sitzt im Panel (als Streifen unter dem Kopf), nicht als eigene Ebene über
    allem – ein Overlay hat keine zweite Ebene, die es sich leisten könnte.
    Bewusst schmal: derselbe Satz steht ohnehin noch einmal in der Karte
    „Gesprächsvorbereitung" darunter, und ein fetter Block hat vorher ein
    Drittel des Fensters für eine Randnotiz belegt. */
 .hud-offline {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--hud-hairline);
-  background: rgba(240, 180, 95, 0.1);
-  color: #f0c07a;
-  font-size: 11px;
+  /* Zwei Zeilen: die Feststellung, darunter die gekürzte Begründung. Auf einer
+     Zeile brach der Satz mitten im Wort ab („… kommen a…"), und -webkit-line-clamp
+     über den ganzen Streifen scheitert hier an der Innenkante: geschnitten wird
+     am Rahmen, nicht am Text, sodass eine dritte Zeile halbhoch durchblitzt.
+     Zwei getrennte Zeilen mit je einer eigenen Kürzung sind schlicht robuster. */
+  display: block;
+  padding: 7px 13px;
+  border-bottom: 1px solid rgba(255, 149, 0, 0.25);
+  background: rgba(255, 149, 0, 0.14);
+  color: #aa5f00;
+  font-size: 11.5px;
   line-height: 1.4;
 }
 
 .hud-offline strong {
-  flex: none;
-  font-size: 11px;
-  font-weight: 650;
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
 }
 
+/* Der zweite Halbsatz ist die Begründung – gedämpft, aber lesbar. Vorher stand
+   er in einem so blassen Amber, dass er auf der hellen Fläche verschwand.
+   Zwei Zeilen statt einer: in 420 px Breite brach die eine Zeile mitten im Wort
+   ab („… kommen a…"), und ein angefangener Satz ist keine Kürzung, sondern ein
+   Rätsel. Bei drei Zeilen wäre es wieder der Block, der hier nicht hingehört. */
 .hud-offline span {
+  display: block;
   overflow: hidden;
-  color: rgba(240, 192, 122, 0.72);
+  color: rgba(138, 83, 0, 0.78);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -824,8 +1233,8 @@ html, body {
 }
 
 #stadtnetzcrm-root .hud-version {
+  color: var(--hud-ink-3);
   margin-top: 10px;
-  opacity: 0.55;
 }
 
 /* --- Notizen -------------------------------------------------------------- */
@@ -836,28 +1245,29 @@ html, body {
  * Die Farbvariablen setzt content.css am Wurzelelement des Panels; der
  * Notizbereich liegt daneben (er darf nicht hinein, ui.js ersetzt dort bei
  * jedem Zeichnen den gesamten Inhalt). Deshalb bekommt er hier seine eigene
- * Kopie derselben Palette. Seit das Overlay immer dunkel ist, ist es genau
- * eine Kopie statt zweier – der frühere Hell/Dunkel-Block entfällt. Ein
- * persönlich eingefärbtes Theme aus den Einstellungen erreicht ihn weiterhin
- * nicht; das wäre erst mit Variablen am Dokument statt am Wurzelelement zu
- * haben. */
+ * Kopie derselben Palette – sonst steht hier der Jira-Satz, und beim letzten
+ * Wechsel der Grundfassung blieb genau diese Kopie auf den alten Werten
+ * stehen: fast weiße Schrift auf hellem Glas, also gar nichts zu lesen.
+ * Ein persönlich eingefärbtes Theme aus den Einstellungen erreicht ihn
+ * weiterhin nicht; das wäre erst mit Variablen am Dokument statt am
+ * Wurzelelement zu haben. */
 .hud-notes {
-  --sc-ink: #eef2f8;
-  --sc-muted: #98a5b8;
-  --sc-line: rgba(255, 255, 255, 0.09);
-  --sc-blue: #5aa2ff;
-  --sc-blue-dark: #85bcff;
-  --sc-success: #5fd39a;
-  --sc-danger: #ff8f80;
+  --sc-ink: #1d1d1f;
+  --sc-muted: #5e5e63;
+  --sc-line: rgba(60, 60, 67, 0.1);
+  --sc-blue: #0066b3;
+  --sc-blue-dark: #004a85;
+  --sc-success: #157a3a;
+  --sc-danger: #b8261d;
   position: fixed;
   z-index: 19500;
   inset: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 14px;
-  background: var(--hud-glass, rgba(17, 20, 27, 0.94));
-  backdrop-filter: blur(30px) saturate(150%);
-  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  border-radius: 16px;
+  background: rgba(244, 245, 249, 0.94);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
   color: var(--sc-ink);
   font-size: 13px;
 }
@@ -869,16 +1279,17 @@ html, body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--sc-line);
+  padding: 10px 13px;
+  border-bottom: 1px solid rgba(60, 60, 67, 0.08);
+  background: rgba(248, 249, 252, 0.72);
 }
 
-.hud-notes-head strong { font-size: 12px; font-weight: 650; }
+.hud-notes-head strong { font-size: 13px; font-weight: 650; letter-spacing: -0.02em; }
 
 .hud-notes-context {
   overflow: hidden;
   color: var(--sc-muted);
-  font-size: 11px;
+  font-size: 11.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -886,31 +1297,37 @@ html, body {
 .hud-notes-editor {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--sc-line);
+  gap: 7px;
+  padding: 11px 13px;
+  border-bottom: 1px solid rgba(60, 60, 67, 0.08);
+}
+
+.hud-notes-editor textarea,
+.hud-notes-row input[type="text"] {
+  padding: 9px 11px;
+  border: 1px solid rgba(60, 60, 67, 0.18);
+  border-radius: 9px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
 }
 
 .hud-notes-editor textarea {
   min-height: 84px;
-  padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.22);
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
   resize: vertical;
 }
 
-.hud-notes-editor textarea::placeholder {
-  color: rgba(238, 242, 248, 0.38);
+.hud-notes-editor textarea::placeholder,
+.hud-notes-row input[type="text"]::placeholder {
+  color: #8e8e93;
 }
 
-.hud-notes-editor textarea:focus {
+.hud-notes-editor textarea:focus,
+.hud-notes-row input[type="text"]:focus {
   border-color: var(--sc-blue);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(90, 162, 255, 0.18);
+  box-shadow: 0 0 0 3.5px rgba(0, 102, 179, 0.18);
 }
 
 .hud-notes-row {
@@ -922,22 +1339,12 @@ html, body {
 .hud-notes-row input[type="text"] {
   min-width: 0;
   flex: 1;
-  padding: 6px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.22);
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-}
-
-.hud-notes-row input[type="text"]::placeholder {
-  color: rgba(238, 242, 248, 0.38);
+  padding: 7px 10px;
 }
 
 .hud-notes-hint {
   color: var(--sc-muted);
-  font-size: 11px;
+  font-size: 11.5px;
   line-height: 1.4;
 }
 
@@ -947,12 +1354,18 @@ html, body {
 .hud-notes-list {
   overflow-y: auto;
   flex: 1;
-  padding: 4px 12px 16px;
+  padding: 4px 13px 16px;
 }
 
+/* Eine Notiz ist im CRM eine Karte, keine Zeile in einer Liste. */
 .hud-note {
-  padding: 9px 0;
-  border-bottom: 1px solid var(--sc-line);
+  margin-top: 9px;
+  padding: 11px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 18px rgba(0, 0, 0, 0.04);
 }
 
 .hud-note-meta {
@@ -961,12 +1374,12 @@ html, body {
   justify-content: space-between;
   gap: 8px;
   color: var(--sc-muted);
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .hud-note-text {
-  margin-top: 3px;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: 12.5px;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -974,39 +1387,47 @@ html, body {
 .hud-note-actions {
   display: flex;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .hud-empty {
-  padding: 18px 0;
+  padding: 22px 0;
   color: var(--sc-muted);
   text-align: center;
 }
 
-/* Kleine Schaltflächen im Notizbereich – bewusst dieselbe Formensprache wie
-   die Chips im Panel, damit es nicht nach zwei Programmen aussieht. */
+/* Kleine Schaltflächen im Notizbereich – dieselben Knöpfe wie im Panel, damit
+   es nicht nach zwei Programmen aussieht. */
 .hud-chip {
-  padding: 5px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.045);
+  padding: 6px 12px;
+  border: 1px solid rgba(60, 60, 67, 0.18);
+  border-radius: 8px;
+  background: #fff;
   color: var(--sc-ink);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  transition: background 140ms ease, border-color 140ms ease;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03);
+  transition: background var(--hud-dur, 0.18s) ease, border-color var(--hud-dur, 0.18s) ease;
 }
 
 .hud-chip:hover {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.085);
+  border-color: #8e8e93;
+  background: #fafbfd;
 }
 
-.hud-chip--primary { border-color: transparent; background: #2f7de0; color: #fff; }
-.hud-chip--primary:hover { border-color: transparent; background: #3d8cf0; }
-.hud-chip--primary:disabled { border-color: transparent; background: rgba(47, 125, 224, 0.35); color: rgba(255, 255, 255, 0.6); cursor: default; }
-.hud-chip--danger { color: var(--sc-danger); }
+.hud-chip--primary {
+  border-color: transparent;
+  background: var(--sc-blue);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 102, 179, 0.2);
+}
+
+.hud-chip--primary:hover { border-color: transparent; background: var(--sc-blue); filter: brightness(1.06); }
+.hud-chip--primary:disabled { border-color: transparent; background: var(--sc-blue); opacity: 0.4; cursor: default; }
+.hud-chip--danger { border-color: rgba(255, 59, 48, 0.32); color: var(--sc-danger); }
+.hud-chip--danger:hover { border-color: rgba(255, 59, 48, 0.5); background: rgba(255, 59, 48, 0.06); }
 
 /* --- Call-Cockpit --------------------------------------------------------- */
 
@@ -1017,34 +1438,56 @@ html, body {
 #stadtnetzcrm-root .sc-cockpit {
   position: fixed !important;
   z-index: 10002;
-  top: 6px !important;
-  right: 6px !important;
+  top: 7px !important;
+  right: 7px !important;
   bottom: auto !important;
-  left: 6px !important;
+  left: 7px !important;
   width: auto !important;
   max-width: none !important;
-  max-height: calc(100vh - 12px);
-  border-color: var(--hud-edge);
-  border-radius: 12px;
-  background: var(--hud-glass);
-  backdrop-filter: blur(30px) saturate(150%);
-  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  max-height: calc(100vh - 14px);
+  border: 1px solid var(--hud-border-strong);
+  border-radius: var(--hud-r-window);
+  background: rgba(244, 245, 249, 0.94);
+  backdrop-filter: var(--hud-blur);
+  -webkit-backdrop-filter: var(--hud-blur);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.13), 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+
+#stadtnetzcrm-root .sc-cockpit-header {
+  border-bottom: 1px solid var(--hud-separator);
+  background: var(--hud-bar);
 }
 
 /* --- Befehlspalette ------------------------------------------------------- */
 
 #sc-jira-palette { z-index: 20001; }
 
+#stadtnetzcrm-root .sc-palette {
+  border: 1px solid var(--hud-border-strong);
+  border-radius: var(--hud-r-window);
+  background: rgba(248, 249, 252, 0.96);
+  backdrop-filter: var(--hud-blur);
+  -webkit-backdrop-filter: var(--hud-blur);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.13), 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+
+#stadtnetzcrm-root .sc-palette-backdrop {
+  background: rgba(29, 29, 31, 0.18);
+}
+
 /* --- Startbild -------------------------------------------------------------
  *
  * Liegt über allem, bis das Panel steht (siehe boot.js). Es hat die Form des
- * Fensters – gleiche Rundung, gleiche Kante, gleiches Glas –, damit der Start
- * nicht als fremde Zwischenseite wirkt, sondern als dieselbe Fläche, die gleich
- * das Cockpit trägt.
+ * Fensters – gleiche Rundung, gleiche Kante, gleiches Material –, damit der
+ * Start nicht als fremde Zwischenseite wirkt, sondern als dieselbe Fläche, die
+ * gleich das Cockpit trägt. Gebaut ist es wie die Anmeldekarte des CRM:
+ * Markenkachel, Wortmarke, eine Zeile Auskunft.
  *
  * Die Farbwerte stehen hier ausgeschrieben statt als Variablen: das Startbild
  * liegt außerhalb von #stadtnetzcrm-root und existiert schon, bevor ui.js
- * dessen Palette anlegt.
+ * dessen Palette anlegt. (Genau deshalb blieb es beim letzten Wechsel der
+ * Grundfassung als einzige Fläche dunkel stehen – die App startete schwarz und
+ * sprang dann auf ein helles Panel.)
  */
 
 .hud-boot {
@@ -1057,11 +1500,11 @@ html, body {
   justify-content: center;
   gap: 14px;
   padding: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
-  background: rgba(17, 20, 27, 0.94);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  color: #eef2f8;
+  border: 1px solid rgba(60, 60, 67, 0.18);
+  border-radius: 16px;
+  background: rgba(237, 239, 244, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  color: #1d1d1f;
   text-align: center;
   /* Auch das Startbild lässt sich schon verschieben: das Fenster hat keinen
      Rahmen, und wer es beim Start woanders haben will, soll nicht warten
@@ -1075,22 +1518,24 @@ html, body {
   pointer-events: none;
 }
 
+/* Die Markenkachel der CRM-Anmeldung: gefülltes Markenblau, weißes Zeichen. */
 .hud-boot-mark {
   display: grid;
   width: 56px;
   height: 56px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 0;
   border-radius: 16px;
-  background: rgba(90, 162, 255, 0.14);
-  color: #5aa2ff;
+  background: #0066b3;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 102, 179, 0.2), 0 6px 18px rgba(0, 0, 0, 0.05);
 }
 
 .hud-boot-name {
   margin: 0;
-  font-size: 13px;
-  font-weight: 650;
-  letter-spacing: 0.2px;
+  font-size: 15.5px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
 }
 
 /* Ein Balken ohne Prozentzahl: wie lange der Abgleich mit Chrome dauert, weiß
@@ -1100,7 +1545,7 @@ html, body {
   height: 3px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(60, 60, 67, 0.12);
 }
 
 .hud-boot-bar > span {
@@ -1108,7 +1553,7 @@ html, body {
   width: 42%;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(90, 162, 255, 0.25), #5aa2ff);
+  background: #0066b3;
   animation: hud-boot-slide 1150ms ease-in-out infinite;
 }
 
@@ -1121,28 +1566,30 @@ html, body {
   margin: 0;
   min-height: 17px;
   max-width: 260px;
-  color: #98a5b8;
-  font-size: 12px;
+  color: #5e5e63;
+  font-size: 12.5px;
 }
 
 /* Hängt der Start (Chrome-Abgleich, Panelaufbau), tritt an die Stelle des
    Balkens ein Weg nach vorn – ein Overlay ohne Titelleiste hat sonst keinen. */
 .hud-boot.is-error .hud-boot-bar { display: none; }
-.hud-boot.is-error .hud-boot-step { color: #ff8f80; }
+.hud-boot.is-error .hud-boot-step { color: #b8261d; }
 
 .hud-boot-retry {
-  padding: 6px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.045);
-  color: #eef2f8;
+  padding: 7px 14px;
+  border: 1px solid rgba(60, 60, 67, 0.18);
+  border-radius: 8px;
+  background: #fff;
+  color: #1d1d1f;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03);
   -webkit-app-region: no-drag;
 }
 
-.hud-boot-retry:hover { background: rgba(255, 255, 255, 0.085); }
+.hud-boot-retry:hover { border-color: #8e8e93; background: #fafbfd; }
 .hud-boot-retry[hidden] { display: none; }
 
 /* Der Weg zurück, wenn das Overlay einmal weg ist. Er steht hier, weil das
@@ -1151,23 +1598,23 @@ html, body {
    Auskunft schon vor sich hat. */
 .hud-boot-hint {
   margin: 0;
-  color: #6f7d92;
-  font-size: 11px;
+  color: #8e8e93;
+  font-size: 11.5px;
 }
 
 .hud-boot-hint kbd {
-  padding: 2px 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 2px 7px;
+  border: 1px solid rgba(60, 60, 67, 0.18);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #98a5b8;
+  background: #fff;
+  color: #5e5e63;
   font-family: inherit;
   font-size: 11px;
 }
 
 .hud-boot-version {
   margin: 0;
-  color: rgba(152, 165, 184, 0.45);
+  color: #aeaeb2;
   font-size: 10.5px;
 }
 

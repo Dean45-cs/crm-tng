@@ -8,8 +8,10 @@
         content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src https://*.supabase.co;">
   <title>Stadtnetz CRM Copilot</title>
 
-  <!-- Unverändert dieselben Styles wie im Jira-Tab. Die Anpassungen fürs
-       eigene Fenster stehen ausschließlich in hud.css. -->
+  <!-- Erst die Schrift (auch das Mitteilungsfenster lädt sie), dann unverändert
+       dieselben Styles wie im Jira-Tab. Die Anpassungen fürs eigene Fenster
+       stehen ausschließlich in hud.css. -->
+  <link rel="stylesheet" href="fonts.css">
   <link rel="stylesheet" href="../../extension/styles/content.css">
   <link rel="stylesheet" href="hud.css">
 </head>

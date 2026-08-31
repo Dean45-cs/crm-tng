@@ -636,14 +636,20 @@ function installEditMenu() {
 app.on("second-instance", showWindow);
 
 app.whenReady().then(async () => {
-  // Das Overlay ist immer dunkel – auch auf einem Rechner, der gerade im hellen
-  // Modus läuft. Ein durchscheinend dunkles Panel legt sich über beliebige
-  // fremde Fenster, ohne sie zu überstrahlen; ein helles wäre über einem
-  // dunklen Schreibtisch ein Scheinwerfer. Damit greift in renderer/ zugleich
-  // der Dunkel-Block aus extension/styles/content.css, auf dem hud.css
-  // aufsetzt – ohne das blieben dort helle Reste stehen (fest verdrahtete
-  // Weißwerte, die nur der Dunkel-Block einfängt).
-  nativeTheme.themeSource = "dark";
+  // Das Overlay ist immer hell – auch auf einem Rechner, der gerade im dunklen
+  // Modus läuft. Der Grund ist nicht Geschmack, sondern Wiedererkennung: die
+  // Auskunft soll aussehen wie das CRM, und dessen Werkseinstellung ist hell
+  // (siehe den Kopf von renderer/hud.css, wo das Designsystem aus src/index.css
+  // aufs Panel übersetzt ist). Der Systemfarbe zu folgen hieße, mal wie das CRM
+  // und mal wie etwas anderes auszusehen; der Theme-Wahl des CRM zu folgen wäre
+  // das Richtige, ist aber noch nicht verdrahtet.
+  //
+  // Technisch hängt daran mehr als die Optik: nur so greift in renderer/ der
+  // Hell-Block aus extension/styles/content.css, auf dem hud.css aufsetzt –
+  // sonst blieben dort Reste des Dunkelblocks stehen. Wer sich in den
+  // Einstellungen ein eigenes Theme einfärbt, überschreibt die Farbrollen
+  // weiterhin über theme.js per Inline-Stil.
+  nativeTheme.themeSource = "light";
 
   // Windows ordnet Fenster und Meldungen über diese Kennung einer Anwendung
   // zu. Ohne sie stünde an einer System-Meldung „Electron" statt des

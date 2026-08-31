@@ -129,6 +129,20 @@
         scope: "panel"
       },
       {
+        id: "guideNext",
+        label: "Leitfaden: nächster Schritt",
+        hint: "Führt den Gesprächsleitfaden einen Schritt weiter und hakt den aktuellen ab. Greift nicht, während im Notizfeld getippt wird.",
+        default: "Mod+Shift+ArrowRight",
+        scope: "panel"
+      },
+      {
+        id: "guidePrev",
+        label: "Leitfaden: Schritt zurück",
+        hint: "Einen Schritt im Gesprächsleitfaden zurück. Greift nicht, während im Notizfeld getippt wird.",
+        default: "Mod+Shift+ArrowLeft",
+        scope: "panel"
+      },
+      {
         id: "notes",
         label: "Notizen",
         hint: "Notizblock der Auskunft auf- und zuklappen.",
@@ -389,6 +403,17 @@
         { id: "wrong-number", label: "Falsche Nummer", followUp: false, opensPanel: false, outboundOnly: true, seed: "Hinterlegte Rufnummer ist nicht korrekt bzw. gehört nicht zum Kunden. Aktuelle Kontaktdaten müssen ermittelt werden." },
         { id: "no-interest", label: "Kein Interesse / später", followUp: false, opensPanel: false, disposition: "kein-interesse", seed: "Kunde wünscht aktuell keine weitere Besprechung des Anliegens. Begründung: [ergänzen]." }
       ],
+      // Lesbare Namen der Dispositionen aus Migration 021. Werden für die
+      // Anruf-Vorgeschichte in der Vorbereitung gebraucht: dort stehen die
+      // rohen Werte aus der Spalte calls.disposition, nicht die Labels der
+      // outcomes-Liste oben (mehrere Ergebnisse teilen sich eine Disposition).
+      dispositionLabels: {
+        gehalten: "gehalten",
+        gekuendigt: "gekündigt",
+        rueckruf: "Rückruf",
+        "kein-interesse": "kein Interesse",
+        sonstige: "sonstige"
+      },
       // Abstand bis zum nächsten Versuch, gestaffelt nach Anzahl der bisherigen
       // Versuche: 2 Stunden, 1 Tag, 3 Tage. Danach ist Telefonieren erkennbar
       // nicht der richtige Kanal mehr – die Liste rät dann zur Schriftform.
@@ -503,6 +528,73 @@
       dupe: "Dupe",
       bvw: "BVW",
       courtesy: "Courtesy"
+    },
+    // Kurzbrief je Call-Typ für die KI-Gesprächsvorbereitung (local-ai.js
+    // prepareCall). Der Leitfaden unten (callGuides) ist für den Menschen im
+    // Gespräch geschrieben — zu lang und zu wörtlich für einen Prompt. Hier
+    // steht in drei Feldern, was die Vorbereitung wissen muss: warum angerufen
+    // wird, was dabei herauskommen soll, und was dabei verboten ist.
+    //
+    // Ohne diesen Block kannte die Vorbereitung nur das Ticket und bereitete
+    // JEDEN Anruf als allgemeines Sachstandsgespräch vor — auch einen Welcome-
+    // oder Bauverweigerer-Call, bei dem der Bearbeiter etwas völlig anderes
+    // erreichen will. Die Regeln sind bewusst dieselben Grenzen wie im
+    // Leitfaden: was am Telefon nicht entgegengenommen werden darf, darf die
+    // KI dem Bearbeiter auch nicht als Gesprächspunkt vorschlagen.
+    callPrepBriefs: {
+      churn: {
+        anlass: "Für den Kunden liegt eine Kündigung oder ein Widerruf vor.",
+        ziel: "Rückgewinnung: den Grund hinter der Kündigung verstehen und ein Angebot machen, das genau diesen Grund entkräftet.",
+        regeln: [
+          "Kündigung und Widerruf werden nicht telefonisch entgegengenommen (Textform, § 56 TKG). Vor jedem Verweis auf das Formular steht der Winbackversuch.",
+          "Trenne Vorwand von Einwand: erst den Grund verstehen und zusammenfassen, dann behandeln.",
+          "Einen Fraud-Verdacht nie als Gesprächspunkt formulieren — der wird nur dokumentiert."
+        ]
+      },
+      welcome: {
+        anlass: "Der Kunde hat vor Kurzem einen Glasfaseranschluss beauftragt, meist über den Haustürvertrieb. Der Anruf erfolgt kurz nach Abschluss.",
+        ziel: "Den Auftrag verifizieren, die Beratungsqualität prüfen und Kaufreue früh erkennen, bevor sie zum Widerruf wird.",
+        regeln: [
+          "Der Kunde hat NICHT gekündigt — behandle ihn nicht so und sprich Kündigung nicht von dir aus an.",
+          "Auftragsdaten (Adresse, Tarif) bestätigen lassen, nicht behaupten.",
+          "Ein Widerruf wird nicht telefonisch entgegengenommen; ein Halteangebot (Dealcloser) steht nur nach Rücksprache zur Verfügung."
+        ]
+      },
+      prl: {
+        anlass: "Zugesandte Unterlagen kamen als Postrückläufer zurück — die hinterlegte Anschrift stimmt vermutlich nicht.",
+        ziel: "Die Adress- und Kontaktdaten gemeinsam korrigieren: Anschlussadresse und Postanschrift getrennt, dazu Rufnummer und E-Mail.",
+        regeln: [
+          "Als Service formulieren, nie als Vorwurf („Ihre Adresse war falsch“ ist verboten).",
+          "Namenszusatz, c/o und Wohnungslage im Mehrfamilienhaus gehören zur Adresse dazu.",
+          "Ist ein Irrläufer erreicht worden: keine Vertragsdaten nennen, Gespräch beenden."
+        ]
+      },
+      dupe: {
+        anlass: "Zu einer als Einfamilienhaus geführten Adresse liegen mehrere Bestellungen vor, oder es bestehen zwei Verträge.",
+        ziel: "Den Gebäudetyp über die Zahl der Haushalte klären und trennen, ob eine echte Dublette vorliegt oder mehrere Anschlüsse berechtigt sind.",
+        regeln: [
+          "Nicht unterstellen, der Kunde habe versehentlich doppelt bestellt — das ist die offene Frage des Gesprächs.",
+          "Die entscheidende Frage ist die Zahl der Wohneinheiten im Haus; alles Weitere hängt daran."
+        ]
+      },
+      bvw: {
+        anlass: "Der Tiefbaupartner meldet, dass der Ausbau beim Kunden nicht wie geplant durchgeführt werden kann (Bauverweigerung).",
+        ziel: "Die Ursache der Verweigerung verstehen und einen Weg finden, den Ausbau doch zu ermöglichen.",
+        regeln: [
+          "Der mögliche Schadensersatz (§ 156 TKG, mindestens 24 Monatsentgelte) wird sachlich und im Konjunktiv genannt, einmalig und nie als Druckmittel.",
+          "Die Kernfrage lautet, was den Ausbau ermöglichen würde — nicht, warum der Kunde ihn ablehnt.",
+          "Zwischen Eigentümer, Mieter, Hausverwaltung und WEG unterscheiden: die Zuständigkeit entscheidet über die Lösung."
+        ]
+      },
+      courtesy: {
+        anlass: "Der Anschluss wurde bereitgestellt und die Hardware zugestellt. Der Anruf begleitet die Inbetriebnahme.",
+        ziel: "Prüfen, ob Installation und Aktivierung geklappt haben, offene Probleme aufnehmen und die HomeID erheben.",
+        regeln: [
+          "Erst die Anschluss-ID bestätigen lassen, dann inhaltlich über den Anschluss sprechen.",
+          "Fehlende oder falsche Hardware und Technikprobleme werden dokumentiert und weitergegeben, nicht am Telefon gelöst.",
+          "Der Kunde hat kein Problem gemeldet — der Anruf ist Service, keine Störungsannahme."
+        ]
+      }
     },
     callGuides: {
       churn: [
@@ -843,6 +935,46 @@
           title: "„Es funktioniert immer noch nicht.“",
           text: "„Ich kümmere mich persönlich darum — ein Kollege wird sich noch einmal melden. Soll er Sie unter derselben Nummer erreichen?“ Nummer dokumentieren, Ticket an KB, realistischen Zeitrahmen nennen."
         }
+      ]
+    },
+
+    // Notiz-Bausteine fürs Mitschreiben (Tab „Gespräch"). Ein Klick hängt eine
+    // Zeile mit Uhrzeit an das Notizfeld — im Gespräch ist Tippen die teuerste
+    // Bewegung, und eine Zeile mit Uhrzeit ist außerdem der bessere Rohstoff für
+    // die interne Notiz als ein hingeworfenes Stichwort.
+    //
+    // `common` gilt für jeden Call-Typ, die übrigen Schlüssel sind Call-Typen
+    // aus callGuides und werden angehängt. Der Text wird bewusst als ganzer Satz
+    // formuliert: er landet unverändert in der Notiz und wird von der lokalen KI
+    // weiterverarbeitet.
+    noteChips: {
+      common: [
+        { id: "legitimiert", label: "Legitimiert", text: "Identität bestätigt (Geburtsdatum bzw. Kunden-/Auftragsnummer)." },
+        { id: "erreicht", label: "Richtige Person", text: "Vertragsnehmer selbst erreicht." },
+        { id: "dritte", label: "Dritte am Apparat", text: "Nicht der Vertragsnehmer am Apparat — keine Auskunft erteilt, Rückrufbitte hinterlassen." },
+        { id: "preis", label: "Preis-Einwand", text: "Einwand Preis: " },
+        { id: "technik", label: "Technik-Problem", text: "Technisches Problem geschildert: " },
+        { id: "bauzeit", label: "Bauzeit", text: "Thema Bauzeit/Termin: " },
+        { id: "wettbewerb", label: "Wettbewerb", text: "Vergleich mit Wettbewerber: " },
+        { id: "rueckruf", label: "Rückruf vereinbart", text: "Rückruf vereinbart für " },
+        { id: "unterlagen", label: "Unterlagen zugesagt", text: "Zusendung der Unterlagen per E-Mail zugesagt." },
+        { id: "daten", label: "Daten geändert", text: "Kontaktdaten aktualisiert: " },
+        { id: "keine-zeit", label: "Gerade keine Zeit", text: "Kunde hat aktuell keine Zeit — neuer Anlauf vereinbart." }
+      ],
+      churn: [
+        { id: "grund", label: "Kündigungsgrund", text: "Genannter Kündigungsgrund: " },
+        { id: "angebot", label: "Angebot gemacht", text: "Winback-Angebot unterbreitet: " },
+        { id: "haelt-fest", label: "Hält an Kündigung fest", text: "Kunde hält an der Kündigung fest." },
+        { id: "bleibt", label: "Bleibt", text: "Kunde bleibt — Kündigung wird zurückgezogen." },
+        { id: "formular", label: "Auf Formular verwiesen", text: "Auf das Kündigungs-/Widerrufsformular verwiesen, Link zugesagt." },
+        { id: "fraud", label: "Fraud-Verdacht", text: "Auffälligkeit zur Vertragsentstehung dokumentiert (Partnerprüfung in der Nachbearbeitung)." }
+      ],
+      welcome: [
+        { id: "auftrag-ok", label: "Auftrag bestätigt", text: "Auftrag inhaltlich bestätigt (Adresse und Tarif stimmen)." },
+        { id: "kaufreue", label: "Kaufreue", text: "Anzeichen von Kaufreue: " },
+        { id: "note", label: "Beratungsnote", text: "Beratungsnote: " },
+        { id: "widerruf", label: "Widerrufsabsicht", text: "Widerrufsabsicht geäußert — auf das Formular verwiesen, Link zugesagt." },
+        { id: "abgleich", label: "Daten abgeglichen", text: "Anschrift, Rufnummer und E-Mail abgeglichen und bestätigt." }
       ]
     }
   };

@@ -13,13 +13,19 @@
   --tng-blue-100: #d0e3f3;
   --tng-cyan: #00a3e0;
   --tng-cyan-light: #4dbfe9;
-  /* Corporate: dezenter, fast einfarbiger Marken-Verlauf statt Blau→Cyan-Show */
-  --tng-gradient: linear-gradient(180deg, #0070c0 0%, #005fa3 100%);
-  --tng-gradient-soft: linear-gradient(135deg, rgba(0, 102, 179, 0.08), rgba(0, 163, 224, 0.08));
+  /* Corporate: kein Deko-Verlauf mehr — die Markenfläche ist schlicht die
+     Akzentfarbe. Bleibt als linear-gradient (über var(--tng-blue), nicht als
+     Hex) formuliert, damit der Wert background-fähig bleibt und das persönliche
+     Farbschema (src/lib/palette.ts setzt --tng-gradient per Inline-Style mit
+     eigenem Verlauf) sauber überschreiben kann. */
+  --tng-gradient: linear-gradient(180deg, var(--tng-blue) 0%, var(--tng-blue) 100%);
+  /* Tint-Washes nur noch als Hauch (Stärke etwa halbiert) */
+  --tng-gradient-soft: linear-gradient(135deg, rgba(0, 102, 179, 0.04), rgba(0, 163, 224, 0.04));
 
-  /* Apple-style neutrals (light mode) */
-  --bg-app: #f2f3f7;
-  --bg-canvas: #f7f8fb;
+  /* Apple-style neutrals (light mode) — App-Grund einen Tick dunkler/neutraler
+     als die Karten, damit sich weiße Flächen ruhig, aber klar abheben. */
+  --bg-app: #edeff4;
+  --bg-canvas: #f4f5f9;
   --bg-card: #ffffff;
   --bg-card-hover: #fafbfd;
   --bg-elevated: rgba(255, 255, 255, 0.78);
@@ -46,26 +52,30 @@
   --purple: #a855f7;
   --purple-bg: rgba(168, 85, 247, 0.14);
 
+  /* Vereinheitlichte Radius-Skala: Karten und Widgets teilen sich 14px,
+     --r-xl bleibt 16px, --r-2xl ist die echte größere Stufe für Modals/Panels. */
   --r-xs: 6px;
   --r-sm: 9px;
   --r-md: 12px;
-  --r-lg: 16px;
+  --r-lg: 14px;
   --r-xl: 16px;
-  --r-2xl: 18px;
+  --r-2xl: 20px;
 
+  /* Schatten ruhiger: kürzere Offsets/Blurs, leicht gesenkte Alphas —
+     Flächen wirken „gelegt" statt „schwebend". */
   --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.03);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.02);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
-  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.04);
-  --shadow-xl: 0 24px 60px rgba(0, 0, 0, 0.14), 0 8px 20px rgba(0, 0, 0, 0.06);
-  --shadow-tng: 0 2px 8px rgba(0, 102, 179, 0.2);
+  --shadow-md: 0 3px 10px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 10px 24px rgba(0, 0, 0, 0.08), 0 3px 8px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.13), 0 6px 16px rgba(0, 0, 0, 0.06);
+  --shadow-tng: 0 1px 3px rgba(0, 102, 179, 0.14);
 
   /* Apple-Widget Material */
   --widget-bg: #ffffff;
-  --widget-bg-tint: linear-gradient(135deg, rgba(0, 102, 179, 0.03), rgba(0, 163, 224, 0.02));
+  --widget-bg-tint: linear-gradient(135deg, rgba(0, 102, 179, 0.015), rgba(0, 163, 224, 0.01));
   --widget-border: rgba(0, 0, 0, 0.06);
-  --widget-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.04);
-  --widget-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.05), 0 14px 32px rgba(0, 0, 0, 0.06);
+  --widget-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 18px rgba(0, 0, 0, 0.04);
+  --widget-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.05), 0 10px 26px rgba(0, 0, 0, 0.06);
   --widget-radius: 14px;
 
   /* Motion — shared easing curves & durations für ein einheitliches Gefühl.
@@ -119,13 +129,14 @@
 
   --tng-blue-50: rgba(0, 102, 179, 0.14);
   --tng-blue-100: rgba(0, 102, 179, 0.22);
-  --tng-gradient-soft: linear-gradient(135deg, rgba(0, 102, 179, 0.18), rgba(0, 163, 224, 0.18));
+  --tng-gradient-soft: linear-gradient(135deg, rgba(0, 102, 179, 0.10), rgba(0, 163, 224, 0.10));
 
   --widget-bg: rgba(36, 36, 40, 0.86);
-  --widget-bg-tint: linear-gradient(135deg, rgba(0, 102, 179, 0.10), rgba(0, 163, 224, 0.06));
+  --widget-bg-tint: linear-gradient(135deg, rgba(0, 102, 179, 0.06), rgba(0, 163, 224, 0.04));
   --widget-border: rgba(255, 255, 255, 0.08);
-  --widget-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.35);
-  --widget-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.35), 0 18px 38px rgba(0, 0, 0, 0.45);
+  /* Dark-Mode-Spiegel der beruhigten Light-Schatten */
+  --widget-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 22px rgba(0, 0, 0, 0.34);
+  --widget-shadow-hover: 0 2px 5px rgba(0, 0, 0, 0.34), 0 14px 30px rgba(0, 0, 0, 0.42);
 }
 
 * { box-sizing: border-box; }
@@ -903,7 +914,7 @@ th.schedule-agent {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--tng-blue), var(--tng-blue-light));
+  background: var(--tng-blue);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
@@ -2422,7 +2433,7 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
   transform: translateY(-1px);
 }
 .leaderboard-row.is-me {
-  background: linear-gradient(135deg, rgba(0, 102, 179, 0.07), rgba(0, 163, 224, 0.04));
+  background: linear-gradient(135deg, rgba(0, 102, 179, 0.035), rgba(0, 163, 224, 0.02));
   border-color: rgba(0, 102, 179, 0.28);
 }
 /* Rang ohne Farb-Chip: ruhige Ziffer, Top 3 nur dezent metallisch getönt */
@@ -3298,9 +3309,9 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
 }
 /* Der Farbton der Meldungsart sitzt als schmale Kante am Symbol — die Fläche
    selbst bleibt neutral, sonst wird aus der Mitteilung ein Warnschild. */
-.push-banner.tone-success .push-banner-icon { background: linear-gradient(180deg, #34c759, #28a745); }
-.push-banner.tone-warn .push-banner-icon { background: linear-gradient(180deg, #ff9f0a, #f08000); }
-.push-banner.tone-danger .push-banner-icon { background: linear-gradient(180deg, #ff453a, #e0332a); }
+.push-banner.tone-success .push-banner-icon { background: var(--green); }
+.push-banner.tone-warn .push-banner-icon { background: var(--orange); }
+.push-banner.tone-danger .push-banner-icon { background: var(--red); }
 .push-banner-text {
   flex: 1;
   min-width: 0;
@@ -3617,10 +3628,10 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
   justify-content: center;
   color: #fff;
 }
-.timeline-dot-contract { background: linear-gradient(135deg, var(--tng-blue), var(--tng-blue-light)); }
-.timeline-dot-tariff { background: linear-gradient(135deg, #ff9500, #ff7a00); }
-.timeline-dot-note { background: linear-gradient(135deg, #a855f7, #8b5cf6); }
-.timeline-dot-call { background: linear-gradient(135deg, #34c759, #22a548); }
+.timeline-dot-contract { background: var(--tng-blue); }
+.timeline-dot-tariff { background: var(--orange); }
+.timeline-dot-note { background: var(--purple); }
+.timeline-dot-call { background: var(--green); }
 .timeline-body {
   flex: 1;
   min-width: 0;
@@ -3700,7 +3711,7 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
   width: 32px;
   height: 32px;
   border-radius: 9px;
-  background: linear-gradient(135deg, var(--tng-blue), var(--tng-blue-light));
+  background: var(--tng-blue);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
@@ -3764,7 +3775,7 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
 .agent-target-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--tng-blue), var(--tng-blue-light));
+  background: var(--tng-blue);
 }
 .agent-target-pct {
   font-size: 12px;
@@ -4686,7 +4697,7 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
   min-height: 3px;
 }
 .report-chart-bar.current {
-  background: linear-gradient(180deg, #0080d0, #0066b3);
+  background: var(--tng-blue);
 }
 .report-chart-label {
   font-size: 10.5px;
@@ -4789,7 +4800,7 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
   justify-content: space-between;
   align-items: center;
   padding: 16px 18px;
-  background: linear-gradient(135deg, rgba(0, 102, 179, 0.06), rgba(0, 163, 224, 0.04));
+  background: linear-gradient(135deg, rgba(0, 102, 179, 0.03), rgba(0, 163, 224, 0.02));
   border: 1.5px solid rgba(0, 102, 179, 0.18);
   border-radius: 10px;
   margin-bottom: 24px;
@@ -4961,7 +4972,7 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
 .my-shift-fill {
   height: 100%;
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--tng-blue), var(--tng-blue-light));
+  background: var(--tng-blue);
   transition: width 0.4s ease;
 }
 /* Die Jetzt-Marke sitzt genau auf der Kante des gefüllten Teils. */
@@ -5599,7 +5610,7 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
   font-size: 14px;
   font-weight: 700;
   color: #fff;
-  background: linear-gradient(135deg, var(--tng-blue), var(--tng-blue-light));
+  background: var(--tng-blue);
   border: 2px solid var(--bg-card);
   margin-top: 2px;
 }
@@ -6707,11 +6718,11 @@ table.crm-table tbody tr:hover td:first-child {
   border-left: 3px solid var(--orange);
 }
 
-/* Chef-submitted lead: faint blue background */
+/* Chef-submitted lead: faint blue background (nur Hauch, Stärke halbiert) */
 .lead-card.from-chef {
   background: linear-gradient(
     135deg,
-    rgba(0, 102, 179, 0.05) 0%,
+    rgba(0, 102, 179, 0.03) 0%,
     var(--bg-card) 60%
   );
 }
@@ -8623,18 +8634,18 @@ table.crm-table tbody tr:hover td:first-child {
   letter-spacing: -0.02em;
 }
 
-/* Titelleiste: feiner Verlaufs-Hauch statt flacher Fläche */
+/* Titelleiste: feiner Licht-Hauch über dem Glas-Effekt (abgeschwächt) */
 .titlebar {
   background-image: linear-gradient(
     to bottom,
-    rgba(255, 255, 255, 0.35),
+    rgba(255, 255, 255, 0.22),
     rgba(255, 255, 255, 0)
   );
 }
 :root[data-theme='dark'] .titlebar {
   background-image: linear-gradient(
     to bottom,
-    rgba(255, 255, 255, 0.045),
+    rgba(255, 255, 255, 0.03),
     rgba(255, 255, 255, 0)
   );
 }

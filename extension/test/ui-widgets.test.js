@@ -75,7 +75,8 @@ async function run() {
   {
     const { env, KEYS } = await mountWith();
     env.click("toggle-customize");
-    // Standardreihenfolge prep: ticket-context, call-prep, netzauskunft.
+    // Standardreihenfolge prep: ticket-context, customer-context, summary,
+    // call-prep, netzauskunft.
     env.click("widget-move", { tab: "prep", widget: "netzauskunft", dir: "up" });
     const order = env.storage[KEYS.layout].tabs.prep.order;
     // JSON-Vergleich statt deepStrictEqual: das Array stammt aus dem
@@ -83,7 +84,7 @@ async function run() {
     // Prototyp-Vergleich fehl.
     assert.strictEqual(
       JSON.stringify(order),
-      JSON.stringify(["ticket-context", "netzauskunft", "call-prep"]),
+      JSON.stringify(["ticket-context", "customer-context", "summary", "netzauskunft", "call-prep"]),
       "netzauskunft rückt einen Platz nach oben"
     );
   }

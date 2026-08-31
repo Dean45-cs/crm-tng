@@ -99,8 +99,16 @@
     // Effektiver Typ via activeCallType(): override ?? shift.callType ?? "churn".
     shift: { loaded: false, callType: null, campaignId: null, campaignName: null, shiftType: null },
     callTypeOverride: null,
-    // Abgehakte Welcome-Checklisten-Schritte (nur lokal, pro Sitzung).
+    // Abgehakte Leitfaden-Schritte (nur lokal, pro Sitzung), Schlüssel
+    // "<callType>:<index>". Früher nur für die Welcome-Checkliste — der
+    // Leitfaden ist inzwischen für jeden Call-Typ ein Schrittwerk, deshalb
+    // gilt das Abhaken überall.
     checkedPhases: {},
+    // Gesprächsleitfaden als Schrittwerk: welcher Schritt je Call-Typ gerade
+    // dran ist. `showAll` klappt die alte Gesamtliste auf (zum Nachschlagen
+    // außerhalb des Gesprächsflusses). Beides bewusst nur im Arbeitsspeicher:
+    // ein neues Gespräch fängt vorne an (siehe handleActiveCallChange).
+    guide: { step: {}, showAll: false },
     // Eigene Rückrufliste (Wiedervorlage). Getrennt von timios Anrufliste:
     // hier stehen nur selbst vereinbarte Rückrufe.
     callbacks: [],
@@ -116,6 +124,12 @@
     // Zuletzt nachgeschlagene Kundenakte, geschrieben von timio-content.js bei
     // einem Anruf (siehe CONFIG.storageKeys.customerCard).
     customerCard: null,
+    // Kundenakte + Anruf-Vorgeschichte für den Vorbereitungs-Tab. Bewusst
+    // getrennt von customerCard oben: die kommt vom timio-Cockpit und gilt für
+    // einen LAUFENDEN Anruf. Hier wird VOR dem Wählen zur Kundennummer des
+    // Tickets nachgeschlagen — das ist ein anderer Zeitpunkt und eine andere
+    // Nummer. `number` ist zugleich der Schlüssel gegen Doppel-Lookups.
+    prepCustomer: { number: "", status: "idle", card: null, calls: [], error: "" },
     // Netz-Auskunft (aktive Dashboard-Abfrage). `result` wird aus
     // storageKeys.lookupResult gespiegelt (vom Worker/lookup.js geschrieben),
     // `confirm` hält die ausstehende Bestätigung { kind, customerNumber } – die
@@ -154,6 +168,10 @@
       callNotes: "",
       // Aus den Stichpunkten formulierte interne Notiz (lokale KI, draftCallNote).
       callDraft: { status: "idle", text: "" },
+      // Ticket-Zusammenfassung in vier Punkten (Anliegen, Stand, Ergebnis,
+      // nächster Schritt). Läuft automatisch beim Öffnen eines Tickets und
+      // landet als aiSummary im timio-Cockpit.
+      summary: { status: "idle", text: "" },
       // Gesprächsvorbereitung für ausgehende Anrufe: Ziel, Punkte, Fragen,
       // Einwände. Läuft automatisch vorab, damit sie fertig ist, bevor timio wählt.
       callPrep: { status: "idle", data: null }
@@ -328,13 +346,16 @@
       priority: known(t.priority) ? t.priority : "",
       customerReference: known(t.customerReference) ? t.customerReference : "",
       customerName: known(t.customerName) ? t.customerName : "",
+      // KI-Zusammenfassung fürs timio-Cockpit: während des Gesprächs hat der
+      // Bearbeiter keine Zeit, erst das ganze Ticket zu lesen.
+      aiSummary: state.ai.summary.status === "ok" ? (state.ai.summary.text || "") : "",
       // Anrufziel und Gesprächspunkte wandern mit ins timio-Cockpit: bei
       // ausgehenden Anrufen sitzt der Bearbeiter dort und hat keine Zeit,
       // erst nach Jira zu wechseln.
       aiCallPrep: state.ai.callPrep.status === "ok" ? (state.ai.callPrep.data || null) : null,
       updatedAt: Date.now()
     };
-    const signature = JSON.stringify([payload.key, payload.summary, payload.status, payload.priority, payload.customerReference, payload.aiCallPrep]);
+    const signature = JSON.stringify([payload.key, payload.summary, payload.status, payload.priority, payload.customerReference, payload.aiSummary, payload.aiCallPrep]);
     if (signature === lastTicketContextSignature) return;
     lastTicketContextSignature = signature;
     safeLocalSet({ [CONFIG.storageKeys.ticketContext]: payload });
@@ -560,8 +581,14 @@
   // Update).
   function handleActiveCallChange(newValue) {
     const previousStatus = state.activeCall && state.activeCall.status;
+    const previousId = callIdOf(state.activeCall);
     state.activeCall = newValue || null;
     const status = state.activeCall && state.activeCall.status;
+    // Ein anderes Gespräch heißt: Leitfaden von vorn. Ohne das stünde man beim
+    // nächsten Kunden mitten in Schritt 5 eines fremden Gesprächs — der
+    // Fortschritt ist die Aussage des Schrittwerks und darf nicht überhängen.
+    const nextId = callIdOf(state.activeCall);
+    if (nextId && nextId !== previousId) resetGuide();
 
     if (status === "ringing" || status === "connected") {
       window.clearTimeout(cockpitEndedTimer);
@@ -577,6 +604,10 @@
       scheduleCockpitEndedHide();
     }
     render();
+    // lookupCustomerNumber() nimmt die Nummer des laufenden Anrufs vor die des
+    // Tickets. Ohne Nachladen stünde im Widget die neue Kundennummer über der
+    // Akte des vorigen Kunden.
+    maybePrepCustomer();
   }
 
   // ---------------------------------------------------------------------------
@@ -664,6 +695,28 @@
       </div>`;
   }
 
+  // Der aktuelle Leitfaden-Schritt auch im schwebenden Cockpit. Es ist die
+  // Fläche, die während des Gesprächs sichtbar bleibt, wenn das Panel
+  // zugeklappt oder von timio verdeckt ist — bisher stand dort alles außer der
+  // Antwort auf die eigentliche Frage: „was sage ich als Nächstes?".
+  function renderCockpitGuide() {
+    const phases = activeCallPhases();
+    if (!phases.length) return "";
+    const current = guideStep();
+    const phase = phases[current];
+    if (!phase) return "";
+    const isLast = current >= phases.length - 1;
+    return `
+      <div class="sc-cockpit-guide">
+        <div class="sc-cockpit-guide-head">
+          <span>Schritt ${current + 1}/${phases.length}</span>
+          <strong>${escapeHtml(phase.title)}</strong>
+        </div>
+        <p>${escapeHtml(phase.prompt)}</p>
+        <button class="sc-text-button" type="button" data-action="guide-next">${isLast ? "Abhaken" : "Erledigt & weiter →"}</button>
+      </div>`;
+  }
+
   // Ein Klick von der Kundennummer zur Jira-Trefferliste. Die Extension kann
   // Jira nicht durchsuchen, aber sie kann eine Suche öffnen – im
   // Outbound-Modus der schnellste Weg zum passenden Ticket.
@@ -695,6 +748,7 @@
       return `<p class="sc-cockpit-mismatch">⚠ Offenes Ticket ${escapeHtml(state.ticket.key)} gehört zu Kundenreferenz ${escapeHtml(state.ticket.customerReference)} – Anrufer hat Kundennummer ${escapeHtml(call.customerNumber)}. Richtiges Ticket öffnen!</p>`;
     }
     const t = state.ticket;
+    const summaryText = state.ai.summary.status === "ok" && state.ai.summary.text ? state.ai.summary.text : "";
     const warnings = rules.ticketWarnings(t);
     return `
       <div class="sc-cockpit-ticket">
@@ -706,6 +760,9 @@
           <span class="sc-badge sc-badge--status ${statusClass(t.status)}">${escapeHtml(t.status)}</span>
           <span class="sc-badge sc-badge--priority ${priorityClass(t.priority)}">${escapeHtml(t.priority)}</span>
         </div>
+        ${summaryText
+          ? `<div class="sc-ai-result sc-cockpit-summary">${escapeHtml(summaryText)}</div>`
+          : `<p class="sc-cockpit-hint">Noch keine KI-Zusammenfassung für dieses Ticket erstellt.</p>`}
         ${warnings.length ? renderChecks(warnings.map((text) => ({ level: "warning", text })), "") : ""}
       </div>`;
   }
@@ -783,7 +840,7 @@
     ].filter(Boolean).join(" · ");
     // Ausgehend zuerst das, was zählt: "was will ich von dieser Person"
     // (Vorbereitung), dann der Ticket-Abgleich, dann Ergebnis und Abschluss.
-    const blocks = `${renderCockpitPrep()}${renderCockpitTicket(call)}${renderOutcomeBar(call, "sc-cockpit-outcome")}${renderCloseoutPanel(call)}`;
+    const blocks = `${renderCockpitPrep()}${renderCockpitGuide()}${renderCockpitTicket(call)}${renderOutcomeBar(call, "sc-cockpit-outcome")}${renderCloseoutPanel(call)}`;
 
     return `
       <div class="sc-cockpit ${status.className}" data-role="cockpit" role="status" style="${cockpitPositionStyle()}">
@@ -890,6 +947,10 @@
       if (bannerNode) bannerNode.textContent = text;
       const overlayNode = el("overlay-call-timer");
       if (overlayNode) overlayNode.textContent = text;
+      // Der Kontextkopf im Tab „Gespräch" hat einen eigenen Platz für die
+      // Dauer – dieselbe Zahl, ohne dass dafür neu gerendert werden muss.
+      const headNode = el("call-head-timer");
+      if (headNode) headNode.textContent = text;
     }
   }
 
@@ -1062,11 +1123,17 @@
       </li>`).join("")}</ul>`;
   }
 
+  // Ein Feld ohne Wert bleibt sichtbar, bekommt aber einen Gedankenstrich:
+  // „Kunden-ID / Referenz —" ist eine Aussage (auf diesem Ticket steht keine),
+  // eine Zeile mit leerer rechter Hälfte sah dagegen nach einem Fehler aus.
   function ticketRow(label, value) {
+    const text = String(value == null ? "" : value).trim();
     return `
       <div class="sc-ticket-row">
         <span>${escapeHtml(label)}</span>
-        <strong title="${escapeHtml(value)}">${escapeHtml(value)}</strong>
+        ${text
+          ? `<strong title="${escapeHtml(text)}">${escapeHtml(text)}</strong>`
+          : `<strong class="is-empty" aria-label="nicht angegeben">—</strong>`}
       </div>`;
   }
 
@@ -1338,9 +1405,219 @@
       </section>`;
   }
 
+  // --- Kunde & Vorgeschichte (Vorbereitungs-Tab) -----------------------------
+  //
+  // Beantwortet die Frage, die vor dem Wählen zuerst kommt: Mit wem habe ich es
+  // zu tun, und ist hier schon jemand drangewesen? Beides stand bisher nur im
+  // Call-Cockpit — also erst, wenn das Gespräch bereits läuft und es zum Lesen
+  // zu spät ist.
+  //
+  // Zwei Quellen mit unterschiedlicher Verfügbarkeit: die Kundenakte und die
+  // Anrufhistorie brauchen eine CRM-Anmeldung, der offene Rückruf liegt lokal.
+  // Deshalb wird der Rückruf immer gezeigt, auch ohne Anmeldung — ein „schon
+  // zweimal vergeblich versucht" ist die wichtigste Zeile im ganzen Widget.
+
+  /** Offener Rückruf zum offenen Ticket bzw. zur erkannten Kundennummer. */
+  function prepCallbackEntry() {
+    const items = pruneCallbacks(state.callbacks, Date.now()).filter((item) => !item.done);
+    if (!items.length) return null;
+    const key = state.ticket && known(state.ticket.key) ? state.ticket.key : "";
+    if (key) {
+      const byTicket = items.find((item) => item.ticketKey === key);
+      if (byTicket) return byTicket;
+    }
+    const number = lookupCustomerNumber();
+    if (!number) return null;
+    return items.find((item) => (item.customerReference || "").trim() === number) || null;
+  }
+
+  /** "28.08., 14:32" – Datum und Uhrzeit eines vergangenen Anrufs. */
+  function formatCallStamp(iso) {
+    const ms = Date.parse(iso || "");
+    if (!Number.isFinite(ms)) return "";
+    return new Date(ms).toLocaleString("de-DE", {
+      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
+    });
+  }
+
+  /** "4:12" – Gesprächsdauer in Minuten:Sekunden. */
+  function formatCallDuration(seconds) {
+    const total = Math.max(0, Number(seconds) || 0);
+    if (!total) return "";
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")} Min.`;
+  }
+
+  function renderPrepCallHistory() {
+    const pc = state.prepCustomer;
+    if (!pc.calls.length) return "";
+    const labels = (CONFIG.outbound && CONFIG.outbound.dispositionLabels) || {};
+    const rows = pc.calls.map((call) => {
+      const meta = [
+        formatCallDuration(call.durationS),
+        call.disposition ? (labels[call.disposition] || call.disposition) : ""
+      ].filter(Boolean).join(" · ");
+      return `
+        <li class="sc-prepcust-call">
+          <span class="sc-prepcust-call-when">${escapeHtml(formatCallStamp(call.startedAt))}</span>
+          ${meta ? `<span class="sc-prepcust-call-meta">${escapeHtml(meta)}</span>` : ""}
+        </li>`;
+    }).join("");
+    return `
+      <div class="sc-prepcust-block">
+        <span class="sc-eyebrow">Zuletzt telefoniert</span>
+        <ul class="sc-prepcust-calls">${rows}</ul>
+      </div>`;
+  }
+
+  function renderPrepCallbackHint(entry) {
+    if (!entry) return "";
+    const overdue = typeof entry.dueAt === "number" && entry.dueAt <= Date.now();
+    const meta = [
+      entry.attempts ? `${entry.attempts}. Versuch` : "",
+      entry.lastOutcome,
+      entry.reason
+    ].filter(Boolean).join(" · ");
+    return `
+      <div class="sc-prepcust-callback ${overdue ? "is-due" : ""}">
+        <strong>${overdue ? "Rückruf ist fällig" : `Rückruf ${escapeHtml(formatDueLabel(entry.dueAt))}`}</strong>
+        ${meta ? `<p>${escapeHtml(meta)}</p>` : ""}
+      </div>`;
+  }
+
+  function renderPrepCustomerBody(number) {
+    const pc = state.prepCustomer;
+    // Ohne Kundennummer bleibt der Rumpf leer, statt das zu melden: die
+    // Netz-Auskunft im selben Tab sagt bereits „keine Kundennummer erkannt",
+    // und zweimal dieselbe Absage ist ein Kasten zu viel. Bleibt auch der
+    // Rückruf aus, verschwindet das Widget ganz (renderCustomerContextWidget).
+    if (!number) return "";
+    if (pc.status === "loading") {
+      return `<div class="sc-inline-loading"><span class="sc-spinner"></span>Kundenakte wird geladen …</div>`;
+    }
+    if (pc.status === "not-configured") return "";
+    if (pc.status === "not-logged-in") {
+      return `<p class="sc-ai-message">Für Akte und Vorgeschichte fehlt die CRM-Anmeldung. <button class="sc-text-button" type="button" data-action="toggle-settings">In den Einstellungen anmelden</button></p>`;
+    }
+    if (pc.status === "not-found") {
+      return `<p class="sc-ai-message">Kundennummer ${escapeHtml(number)} ist im CRM noch nicht bekannt – dieser Anruf ist der erste dokumentierte Kontakt.</p>`;
+    }
+    if (pc.status === "error") {
+      return `<p class="sc-ai-message">Kundenakte gerade nicht abrufbar${pc.error ? ` (${escapeHtml(pc.error)})` : ""}. <button class="sc-text-button" type="button" data-action="reload-prep-customer">Erneut versuchen</button></p>`;
+    }
+    if (pc.status !== "ok" || !pc.card) return "";
+
+    const d = pc.card;
+    const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    const counts = [
+      count(d.contractCount, "Vertrag", "Verträge"),
+      count(d.tariffChangeCount, "Wechsel", "Wechsel"),
+      count(d.noteCount, "Notiz", "Notizen"),
+      d.leadCount ? count(d.leadCount, "Lead", "Leads") : ""
+    ].filter(Boolean).join(" · ");
+    const dates = [
+      d.firstSeenAt ? `Kunde seit ${formatDateDE(d.firstSeenAt)}` : "",
+      // Der letzte Kontakt liefert die Antwort auf "haben wir uns kürzlich
+      // gehört?" und stand bisher in keiner Ansicht, obwohl customer_card ihn
+      // seit jeher mitliefert.
+      d.lastContactAt ? `zuletzt ${formatDateDE(d.lastContactAt)}` : ""
+    ].filter(Boolean).join(" · ");
+
+    return `
+      <div class="sc-prepcust-head">
+        <strong>${escapeHtml(d.name || "Unbenannt")}</strong>
+        ${d.phone ? `<span class="sc-prepcust-phone">${escapeHtml(d.phone)}</span>` : ""}
+      </div>
+      <p class="sc-prepcust-counts">${escapeHtml(counts)}</p>
+      ${dates ? `<p class="sc-prepcust-dates">${escapeHtml(dates)}</p>` : ""}
+      ${d.jiraTicket && d.jiraTicket !== (state.ticket && state.ticket.key)
+        ? `<a class="sc-text-button" href="${escapeHtml(jiraTicketUrl(d.jiraTicket))}" target="_blank" rel="noopener">Letztes Ticket ${escapeHtml(d.jiraTicket)} öffnen</a>`
+        : ""}
+      ${renderPrepCallHistory()}`;
+  }
+
+  function renderCustomerContextWidget() {
+    const number = lookupCustomerNumber();
+    const callback = prepCallbackEntry();
+    const body = renderPrepCustomerBody(number);
+    // Ganz ohne Inhalt gar nicht erst erscheinen: ein leerer Rahmen im
+    // Vorbereitungs-Tab kostet Platz und sagt nichts.
+    if (!body && !callback) return "";
+    return `
+      <section class="sc-section sc-prepcust" aria-label="Kunde und Vorgeschichte">
+        <div class="sc-section-title-row">
+          <h3>Kunde &amp; Vorgeschichte</h3>
+          ${number ? `<span class="sc-local-label">${escapeHtml(number)}</span>` : ""}
+        </div>
+        ${renderPrepCallbackHint(callback)}
+        ${body}
+      </section>`;
+  }
+
   // ---------------------------------------------------------------------------
   // Tab: Call-Hilfe
   // ---------------------------------------------------------------------------
+
+  // Bausteine fürs Mitschreiben: gemeinsame zuerst, dann die des Call-Typs.
+  // Ein Klick hängt eine Zeile mit Uhrzeit an — im Gespräch ist Tippen die
+  // teuerste Bewegung.
+  function activeNoteChips() {
+    const chips = CONFIG.noteChips || {};
+    const common = Array.isArray(chips.common) ? chips.common : [];
+    const perType = Array.isArray(chips[activeCallType()]) ? chips[activeCallType()] : [];
+    return common.concat(perType);
+  }
+
+  function noteChipById(id) {
+    return activeNoteChips().find((chip) => chip.id === id) || null;
+  }
+
+  /** "14:32" – die Uhrzeit, unter der die Zeile in der Notiz steht. */
+  function noteClock() {
+    return new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  /**
+   * Baustein an die Gesprächsnotiz anhängen.
+   *
+   * Erst aus dem DOM einlesen (sonst ginge verloren, was seit dem letzten
+   * Rendern getippt wurde), dann anhängen. Bewusst OHNE die automatische
+   * KI-Umwandlung anzustoßen: die Bausteine sind das Gerüst, die KI läuft
+   * danach auf Zuruf — sonst rechnete sie bei jedem Klick neu.
+   */
+  function appendNoteChip(id) {
+    const chip = noteChipById(id);
+    if (!chip) return;
+    syncInputsFromDom();
+    const line = `[${noteClock()}] ${chip.text}`;
+    const existing = state.ai.callNotes.replace(/\s+$/, "");
+    state.ai.callNotes = existing ? `${existing}\n${line}` : line;
+    render();
+    // Endet der Baustein offen ("Einwand Preis: "), gehört der Cursor genau
+    // dorthin – dann tippt man den Rest weiter, ohne erst zu klicken.
+    if (/[:\s]$/.test(chip.text)) focusNotesEnd();
+    else toast(`Notiert: ${chip.label}`);
+  }
+
+  function focusNotesEnd() {
+    const node = el("call-notes");
+    if (!node) return;
+    node.focus();
+    if (typeof node.setSelectionRange === "function") {
+      const end = String(node.value || "").length;
+      node.setSelectionRange(end, end);
+    }
+  }
+
+  /** Letzte Zeile zurücknehmen – der Weg zurück nach einem Fehlklick. */
+  function removeLastNoteLine() {
+    syncInputsFromDom();
+    const lines = state.ai.callNotes.split("\n");
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    if (!lines.length) { toast("Die Notiz ist schon leer."); return; }
+    lines.pop();
+    state.ai.callNotes = lines.join("\n");
+    render();
+  }
 
   function renderCallDraft() {
     const cd = state.ai.callDraft;
@@ -1354,15 +1631,25 @@
         </div>`;
     }
     const disabled = !aiActionable() || anyBusy();
+    const chips = activeNoteChips();
+    const chipRow = chips.length
+      ? `<div class="sc-note-chips">${chips.map((chip) =>
+          `<button class="sc-note-chip" type="button" data-action="note-chip" data-chip="${escapeHtml(chip.id)}" title="${escapeHtml(chip.text)}">${escapeHtml(chip.label)}</button>`
+        ).join("")}</div>`
+      : "";
     return `
       <section class="sc-section sc-ai-card">
         <div class="sc-section-title-row">
-          <h3>Notizen → interne Notiz</h3>
+          <h3>Mitschreiben</h3>
           <span class="sc-local-label">lokale KI</span>
         </div>
-        <p class="sc-section-intro">Tippe während des Gesprächs Stichworte. Nach einer Tipppause macht die lokale KI daraus eine saubere interne Notiz für den CRM-Abschluss.</p>
+        <p class="sc-section-intro">Klicken statt tippen: jeder Baustein hängt eine Zeile mit Uhrzeit an. Nach einer Tipppause macht die lokale KI daraus eine saubere interne Notiz für den Abschluss.</p>
+        ${chipRow}
         <textarea class="sc-comment-draft sc-note-input" data-role="call-notes" placeholder="Stichworte aus dem Gespräch …">${escapeHtml(state.ai.callNotes)}</textarea>
-        <button class="sc-primary-button" type="button" data-action="clean-call-notes" ${disabled ? "disabled" : ""}>${running ? "KI arbeitet …" : "In interne Notiz umwandeln"}</button>
+        <div class="sc-inline-actions">
+          <button class="sc-primary-button" type="button" data-action="clean-call-notes" ${disabled ? "disabled" : ""}>${running ? "KI arbeitet …" : "In interne Notiz umwandeln"}</button>
+          <button class="sc-text-button" type="button" data-action="note-undo">Letzte Zeile zurück</button>
+        </div>
         ${body}
       </section>`;
   }
@@ -1388,6 +1675,93 @@
   function activeObjectionCards() {
     const cards = CONFIG.objectionCards || {};
     return cards[activeCallType()] || [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Gesprächsleitfaden als Schrittwerk
+  //
+  // Früher lagen alle Phasen als zugeklappte Aufklapp-Abschnitte untereinander:
+  // wer im Gespräch ist, liest keine Liste und klappt nichts auf. Jetzt ist
+  // immer GENAU EIN Schritt groß und offen, der Rest steht als Fortschrittsleiste
+  // darüber. Der Zustand ist bewusst je Call-Typ getrennt — ein Wechsel des
+  // Typs (Kampagne/Override) springt nicht mitten in einen fremden Leitfaden.
+  // ---------------------------------------------------------------------------
+
+  function phaseKey(type, index) {
+    return `${type}:${index}`;
+  }
+
+  /** Aktueller Schritt des laufenden Call-Typs, immer im gültigen Bereich. */
+  function guideStep() {
+    const total = activeCallPhases().length;
+    if (!total) return 0;
+    const raw = state.guide.step[activeCallType()] || 0;
+    return Math.min(Math.max(0, raw), total - 1);
+  }
+
+  function setGuideStep(index) {
+    const total = activeCallPhases().length;
+    if (!total) return;
+    state.guide.step[activeCallType()] = Math.min(Math.max(0, index), total - 1);
+  }
+
+  function isPhaseDone(index) {
+    return Boolean(state.checkedPhases[phaseKey(activeCallType(), index)]);
+  }
+
+  function guideDoneCount() {
+    return activeCallPhases().filter((_, i) => isPhaseDone(i)).length;
+  }
+
+  /**
+   * Einen Schritt weiter oder zurück. `markDone` hakt den verlassenen Schritt
+   * ab — das ist der Normalfall („Erledigt & weiter"), damit Fortschritt ohne
+   * einen zweiten Klick entsteht. Am Ende der Liste wird nur noch abgehakt,
+   * nicht umgebrochen: ein Sprung zurück auf Schritt 1 mitten im Gespräch wäre
+   * schlimmer als ein stehender letzter Schritt.
+   */
+  function advanceGuide(delta, markDone) {
+    const phases = activeCallPhases();
+    if (!phases.length) return;
+    const current = guideStep();
+    if (markDone && delta > 0) state.checkedPhases[phaseKey(activeCallType(), current)] = true;
+    setGuideStep(current + delta);
+  }
+
+  /** Neues Gespräch: Leitfaden von vorn, nichts abgehakt. */
+  function resetGuide() {
+    state.guide.step = {};
+    state.guide.showAll = false;
+    state.checkedPhases = {};
+  }
+
+  // --- Ticket-Zusammenfassung (lokale KI) -------------------------------------
+
+  function renderSummary() {
+    const s = state.ai.summary;
+    const running = busyOn("summary");
+    const hasText = s.status === "ok" && s.text;
+
+    let body;
+    if (hasText || running) {
+      body = `<div class="sc-ai-result" data-role="summary-out">${escapeHtml(s.text)}</div>`;
+    } else if (s.status === "error" || (state.ai.caps && !aiUsable())) {
+      body = `<p class="sc-ai-message">${escapeHtml(aiUnavailableMessage(s.status === "error" ? S.ERROR : state.ai.caps.status))}</p>`;
+    } else {
+      body = `<p class="sc-ai-message">Vier klare Punkte: Anliegen, Stand, Kundenergebnis und nächster Schritt – aus Beschreibung und sichtbaren Kommentaren.</p>`;
+    }
+
+    const canRun = aiActionable() && !anyBusy();
+    return `
+      <section class="sc-section sc-ai-card">
+        <div class="sc-section-title-row">
+          <h3>Ticket-Zusammenfassung</h3>
+          ${staleBadge(s)}
+          <span class="sc-local-label">lokale KI</span>
+        </div>
+        ${body}
+        <button class="sc-primary-button" type="button" data-action="generate-summary" ${canRun ? "" : "disabled"}>${regenerateLabel(s, running, hasText, "Zusammenfassung erstellen", "Zusammenfassung erneuern")}</button>
+      </section>`;
   }
 
   // --- Gesprächsvorbereitung (lokale KI) -------------------------------------
@@ -1420,14 +1794,22 @@
     } else if (prep.status === "error" || (state.ai.caps && !aiUsable())) {
       body = `<p class="sc-ai-message">${escapeHtml(aiUnavailableMessage(prep.status === "error" ? S.ERROR : state.ai.caps.status))}</p>`;
     } else {
-      body = `<p class="sc-ai-message">Aus dem Ticket entstehen Anrufziel, Gesprächspunkte, offene Fragen und die zu erwartenden Einwände – damit du beim Verbinden sofort sprechfähig bist.</p>`;
+      const brief = (CONFIG.callPrepBriefs || {})[activeCallType()];
+      body = `<p class="sc-ai-message">Aus dem Ticket entstehen Anrufziel, Gesprächspunkte, offene Fragen und die zu erwartenden Einwände – damit du beim Verbinden sofort sprechfähig bist.${
+        brief && brief.ziel ? ` Ausgerichtet auf den eingestellten Anruftyp: ${escapeHtml(brief.ziel)}` : ""
+      }</p>`;
     }
     const hasResult = prep.status === "ok" && Boolean(prep.data);
     const canRun = aiActionable() && !anyBusy();
+    // Für welchen Anlass die Vorbereitung geschrieben ist. Sie liest sich je
+    // nach Anruftyp völlig anders (local-ai.js callTypeContext) — ohne diese
+    // Zeile wäre nicht erkennbar, ob gerade der richtige Typ eingestellt ist.
+    const typeLabel = (CONFIG.callTypeLabels || {})[activeCallType()] || "";
     return `
       <section class="sc-section sc-ai-card">
         <div class="sc-section-title-row">
           <h3>Gesprächsvorbereitung</h3>
+          ${typeLabel ? `<span class="sc-prep-type">${escapeHtml(typeLabel)}</span>` : ""}
           ${staleBadge(prep)}
           <span class="sc-local-label">lokale KI</span>
         </div>
@@ -1963,15 +2345,72 @@
       </span>`;
   }
 
+  // Ein Schritt der Fortschrittsleiste: erledigt (✓), gerade dran oder noch
+  // offen. Anklickbar, damit man auch springen kann — Gespräche laufen nicht
+  // immer in der gedachten Reihenfolge.
+  function renderGuideRail(phases, current) {
+    return phases.map((phase, index) => {
+      const done = isPhaseDone(index);
+      const cls = `sc-guide-pip ${done ? "is-done" : ""} ${index === current ? "is-current" : ""}`;
+      return `<button class="${cls}" type="button" data-action="guide-step" data-phase-index="${index}"
+        title="${escapeHtml(phase.title)}" aria-label="${escapeHtml(phase.title)}" aria-current="${index === current}">${done ? "✓" : index + 1}</button>`;
+    }).join("");
+  }
+
+  // Die alte Gesamtliste — jetzt eingeklappt hinter „Alle Schritte". Zum
+  // Nachschlagen zwischen zwei Gesprächen bleibt sie der schnellere Weg.
+  function renderGuideAll(phases) {
+    return `
+      <div class="sc-call-list">
+        ${phases.map((phase, index) => {
+          const done = isPhaseDone(index);
+          return `
+            <details class="sc-call-phase ${done ? "is-done" : ""}">
+              <summary>${escapeHtml(phase.title)}</summary>
+              <p>${escapeHtml(phase.prompt)}</p>
+              <button class="sc-text-button" type="button" data-action="guide-step" data-phase-index="${index}">Hier weitermachen</button>
+            </details>`;
+        }).join("")}
+      </div>`;
+  }
+
   function renderCallGuide() {
     const phases = activeCallPhases();
     const cards = activeObjectionCards();
-    const type = activeCallType();
-    const isChecklist = phases.some((p) => p.checklist);
     const noteTemplate =
       "Angerufen: [Kundenname]\nAnlass: [Warum habe ich angerufen?]\nBesprochen: [Wichtigste Punkte]\nErgebnis: [Was wurde geklärt / zugesagt?]\nNächster Schritt: [Wer macht was bis wann?]";
-    // Bei Welcome-Calls Fortschrittsanzeige der Checkliste.
-    const checkedCount = phases.filter((_, i) => state.checkedPhases[`${type}:${i}`]).length;
+
+    const current = guideStep();
+    const phase = phases[current];
+    const done = guideDoneCount();
+    const isLast = current >= phases.length - 1;
+    const next = phases[current + 1];
+    const nextKey = shared.hotkeyLabel(hotkey("guideNext"));
+    const prevKey = shared.hotkeyLabel(hotkey("guidePrev"));
+
+    const stepper = phase
+      ? `
+        <div class="sc-guide">
+          <div class="sc-guide-head">
+            <span class="sc-guide-count">Schritt ${current + 1} von ${phases.length}</span>
+            <span class="sc-guide-done">${done} erledigt</span>
+          </div>
+          <div class="sc-guide-rail">${renderGuideRail(phases, current)}</div>
+          <article class="sc-guide-current ${isPhaseDone(current) ? "is-done" : ""}">
+            <h4><button class="sc-checklist-box ${isPhaseDone(current) ? "is-checked" : ""}" type="button" data-action="toggle-phase" data-phase-index="${current}" aria-pressed="${isPhaseDone(current)}" title="Abhaken">${isPhaseDone(current) ? "✓" : ""}</button>${escapeHtml(phase.title)}</h4>
+            <p>${escapeHtml(phase.prompt)}</p>
+          </article>
+          <div class="sc-guide-actions">
+            <button class="sc-guide-back" type="button" data-action="guide-prev" ${current === 0 ? "disabled" : ""}
+              title="Ein Schritt zurück${prevKey ? ` (${escapeHtml(prevKey)})` : ""}" aria-label="Ein Schritt zurück">←</button>
+            <button class="sc-primary-button sc-guide-next" type="button" data-action="guide-next"
+              title="${isLast ? "Letzten Schritt abhaken" : "Abhaken und weiter"}${nextKey ? ` (${escapeHtml(nextKey)})` : ""}">${isLast ? "Abhaken" : "Erledigt & weiter"}</button>
+            <button class="sc-text-button sc-guide-copy" type="button" data-action="copy-call-phase" data-phase-index="${current}">Satz kopieren</button>
+          </div>
+          ${next ? `<p class="sc-guide-next-hint">Als Nächstes: ${escapeHtml(next.title)}</p>` : `<p class="sc-guide-next-hint">Letzter Schritt — danach das Ergebnis erfassen.</p>`}
+        </div>`
+      : `<p class="sc-ai-message">Für diesen Call-Typ ist kein Leitfaden hinterlegt.</p>`;
+
     return `
       <section class="sc-section">
         <div class="sc-section-title-row">
@@ -1979,21 +2418,9 @@
           <button class="sc-icon-button" type="button" data-action="copy-call-note" title="Notizvorlage kopieren" aria-label="Notizvorlage kopieren">⧉</button>
         </div>
         ${renderCallTypeBadge()}
-        ${isChecklist ? `<p class="sc-checklist-progress">${checkedCount} von ${phases.length} Punkten erledigt</p>` : ""}
-        <div class="sc-call-list">
-          ${phases.map((phase, index) => {
-            const checked = Boolean(state.checkedPhases[`${type}:${index}`]);
-            const checkbox = isChecklist
-              ? `<button class="sc-checklist-box ${checked ? "is-checked" : ""}" type="button" data-action="toggle-phase" data-phase-index="${index}" aria-pressed="${checked}" title="Abhaken">${checked ? "✓" : ""}</button>`
-              : "";
-            return `
-            <details class="sc-call-phase ${checked ? "is-done" : ""}" ${index === 0 ? "open" : ""}>
-              <summary>${checkbox}${escapeHtml(phase.title)}</summary>
-              <p>${escapeHtml(phase.prompt)}</p>
-              <button class="sc-text-button" type="button" data-action="copy-call-phase" data-phase-index="${index}">Satz kopieren</button>
-            </details>`;
-          }).join("")}
-        </div>
+        ${stepper}
+        <button class="sc-text-button sc-guide-toggle" type="button" data-action="guide-toggle-all">${state.guide.showAll ? "Alle Schritte ausblenden" : `Alle ${phases.length} Schritte zeigen`}</button>
+        ${state.guide.showAll ? renderGuideAll(phases) : ""}
       </section>
       <section class="sc-section">
         <h3>Einwandkarten</h3>
@@ -2009,29 +2436,82 @@
       </section>`;
   }
 
-  // Der aktive Anruf ist im Outbound-Betrieb der Ausgangspunkt: timio wählt
-  // selbst, also ist die erste Frage immer, wer gerade dran ist und ob das
-  // offene Ticket dazu passt. Das Abschluss-Panel liegt im eigenen Tab
-  // „Abschluss"; hier steht nur der Gesprächskontext plus Ergebnis-Leiste.
+  // ---------------------------------------------------------------------------
+  // Kontextkopf im Tab „Gespräch"
+  //
+  // Bisher stand hier eine Visitenkarte mit Name, Nummer und Ergebnisleiste –
+  // alles Weitere (Ticket-Abgleich, Kundenakte, Anrufziel) lag im schwebenden
+  // Cockpit oder in einem anderen Tab. Wer telefoniert, wechselt keine Tabs:
+  // was während des Sprechens im Blick sein muss, steht jetzt an einer Stelle
+  // und in dieser Reihenfolge – wer ist dran, passt das offene Ticket, was
+  // weiß das CRM, was will ich von dieser Person.
+  // ---------------------------------------------------------------------------
+
+  // Abgleich Anrufer ↔ offenes Ticket als eine Aussage statt als Tabelle.
+  function renderCallTicketLine(call) {
+    const match = cockpitTicketMatch(call);
+    if (match === "mismatch") {
+      return `<p class="sc-callhead-line is-mismatch">⚠ Offenes Ticket ${escapeHtml(state.ticket.key)} gehört zu Kundenreferenz ${escapeHtml(state.ticket.customerReference)} — nicht zu diesem Anrufer.</p>`;
+    }
+    if (match === "match") {
+      const t = state.ticket;
+      return `<p class="sc-callhead-line is-match">✓ ${escapeHtml(t.key)} passt: ${escapeHtml(t.summary)}</p>`;
+    }
+    return `<p class="sc-callhead-line is-unknown">Kein Ticket-Abgleich möglich — Vorgang mit passender Kundennummer öffnen.</p>`;
+  }
+
+  // Anrufziel aus der Vorbereitung: die Antwort auf „warum rufe ich an".
+  function renderCallGoalLine() {
+    const prep = state.ai.callPrep;
+    if (prep.status !== "ok" || !prep.data || !prep.data.ziel) return "";
+    return `<p class="sc-callhead-goal"><span>Ziel</span>${escapeHtml(prep.data.ziel)}</p>`;
+  }
+
+  // Ohne aktives Gespräch bleibt der Kopf stehen und sagt, worauf er wartet –
+  // sonst wäre der Tab kopflos und man wüsste nicht, welcher Vorgang geladen ist.
+  function renderCallHeadIdle() {
+    const t = state.ticket;
+    const hasTicket = t && known(t.key);
+    return `
+      <section class="sc-section sc-callhead is-idle" aria-label="Gesprächskontext">
+        <div class="sc-callhead-top">
+          <span class="sc-callhead-status">Kein Gespräch aktiv</span>
+        </div>
+        ${hasTicket
+          ? `<strong class="sc-callhead-name">${escapeHtml(known(t.customerName) ? t.customerName : t.summary)}</strong>
+             <p class="sc-callhead-meta">${escapeHtml(t.key)}${known(t.customerReference) ? ` · Kundennummer ${escapeHtml(t.customerReference)}` : ""}</p>`
+          : `<p class="sc-callhead-meta">Kein Vorgang geöffnet. Sobald timio wählt, steht hier, mit wem du sprichst.</p>`}
+        ${renderCallGoalLine()}
+      </section>`;
+  }
+
   function renderActiveCallCard() {
     const call = currentActiveCall();
-    if (!call) return "";
+    if (!call) return renderCallHeadIdle();
     const meta = shared.callStatusMeta(call.status, state.callMode);
     const nameLine = call.callerName || call.callerNumber || "Unbekannter Gesprächspartner";
+    const timer = callTimerText(call, call.connectedAt);
     const details = [
       call.callerNumber,
       call.customerNumber ? `Kundennummer ${call.customerNumber}` : "",
       call.group
     ].filter(Boolean).join(" · ");
     return `
-      <section class="sc-section sc-active-call ${meta.cls}">
-        <div class="sc-section-title-row">
-          <h3>${escapeHtml(meta.label)}</h3>
+      <section class="sc-section sc-callhead sc-active-call ${meta.cls}" aria-label="Gesprächskontext">
+        <div class="sc-callhead-top">
+          <span class="sc-callhead-status">${escapeHtml(meta.label)}</span>
+          ${timer ? `<span class="sc-callhead-timer" data-role="call-head-timer">${escapeHtml(timer)}</span>` : ""}
           <span class="sc-local-label">aus timio</span>
         </div>
-        <strong>${escapeHtml(nameLine)}</strong>
-        ${details ? `<p class="sc-callback-meta">${escapeHtml(details)}</p>` : ""}
-        ${renderCustomerSearchButton(call, "sc-secondary-button")}
+        <strong class="sc-callhead-name">${escapeHtml(nameLine)}</strong>
+        ${details ? `<p class="sc-callhead-meta">${escapeHtml(details)}</p>` : ""}
+        ${renderCallTicketLine(call)}
+        ${renderKundenakte(call)}
+        ${renderCallGoalLine()}
+        <div class="sc-inline-actions sc-callhead-actions">
+          ${renderCustomerSearchButton(call, "sc-secondary-button")}
+          <button class="sc-text-button" type="button" data-action="add-callback">Rückruf notieren</button>
+        </div>
         ${renderOutcomeBar(call)}
       </section>`;
   }
@@ -2426,13 +2906,15 @@
   const WIDGET_REGISTRY = {
     prep: [
       { id: "ticket-context", label: "Ticketkontext", render: renderTicketContextWidget },
+      { id: "customer-context", label: "Kunde & Vorgeschichte", render: renderCustomerContextWidget },
+      { id: "summary", label: "Ticket-Zusammenfassung", render: renderSummary },
       { id: "call-prep", label: "Gesprächsvorbereitung", render: renderCallPrep },
       { id: "netzauskunft", label: "Netz-Auskunft", render: renderNetzauskunft }
     ],
     talk: [
-      { id: "active-call", label: "Aktiver Anruf", render: renderActiveCallCard },
+      { id: "active-call", label: "Gesprächskontext", render: renderActiveCallCard },
       { id: "call-guide", label: "Leitfaden & Einwände", render: renderCallGuide },
-      { id: "call-draft", label: "Notizen → interne Notiz", render: renderCallDraft }
+      { id: "call-draft", label: "Mitschreiben", render: renderCallDraft }
     ]
   };
 
@@ -2768,6 +3250,13 @@
     schedulePaletteSearch();
   }
 
+  // Steht der Fokus in einem Eingabefeld? Dann gehört der Tastendruck dorthin.
+  function isTypingTarget(target) {
+    if (!target) return false;
+    const tag = String(target.tagName || "").toUpperCase();
+    return tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable === true;
+  }
+
   function onGlobalKeydown(event) {
     // Nach einem Extension-Reload arbeitet die alte Instanz auf einem toten
     // Chrome-Kontext — dann die Palette gar nicht erst öffnen (der Listener
@@ -2781,6 +3270,23 @@
       event.preventDefault();
       if (state.palette && state.palette.open) closePalette(); else openPalette();
       return;
+    }
+    // Leitfaden weiterschalten, ohne zur Maus zu greifen — das ist der Punkt
+    // eines Schrittwerks. Nicht, während in einem Feld getippt wird: dort
+    // gehören dieselben Tasten der Textbearbeitung (Zeilenanfang/-ende).
+    if (!isTypingTarget(event.target)) {
+      if (shared.hotkeyMatches(event, hotkey("guideNext"))) {
+        event.preventDefault();
+        advanceGuide(1, true);
+        render();
+        return;
+      }
+      if (shared.hotkeyMatches(event, hotkey("guidePrev"))) {
+        event.preventDefault();
+        advanceGuide(-1, false);
+        render();
+        return;
+      }
     }
     if (!state.palette || !state.palette.open) return;
     if (event.key === "Escape") { event.preventDefault(); closePalette(); return; }
@@ -3026,16 +3532,33 @@
     return [churn.vertrag, churn.ursache, churn.winback, churn.dealcloser].filter(Boolean).join("|");
   }
 
-  function autoRunSatisfied(field) {
-    if (field.status === "error") return true;
-    if (field.status !== "ok" || isStale(field)) return false;
-    return (field.churnKey || "") === churnKey();
+  // Fingerabdruck des Kontexts, mit dem eine Gesprächsvorbereitung gebaut
+  // wurde: Kündigungsdaten UND Anruftyp. Der Typ gehört dazu, seit die KI ihn
+  // kennt (local-ai.js callTypeContext) – schaltet der Bearbeiter von Churn auf
+  // Welcome um, ist die zwischengespeicherte Vorbereitung für den falschen
+  // Anlass geschrieben und muss neu. Alte Cache-Einträge ohne dieses Feld
+  // ergeben "" und werden dadurch von selbst als veraltet erkannt.
+  function prepKey() {
+    return `${activeCallType()}::${churnKey()}`;
   }
 
-  // Die einzige automatisch mitlaufende KI-Aufgabe: die Gesprächsvorbereitung.
+  function autoRunSatisfied(field, prepAware) {
+    if (field.status === "error") return true;
+    if (field.status !== "ok" || isStale(field)) return false;
+    // Die Gesprächsvorbereitung hängt an Kündigungs-Kontext und Anruftyp:
+    // kommt der Kündigungsgrund erst später dazu oder wechselt der Typ, muss
+    // sie neu. Die Zusammenfassung kennt keinen solchen Kontext – für sie zählt
+    // nur der Fingerprint des Tickets (isStale oben).
+    if (!prepAware) return true;
+    return (field.prepKey || "") === prepKey();
+  }
+
+  // Die automatisch mitlaufenden KI-Aufgaben: erst die Zusammenfassung (das
+  // timio-Cockpit zeigt sie während des Gesprächs), dann die Vorbereitung –
   // timio wählt selbst, also muss sie fertig sein, bevor verbunden wird.
   const AUTO_RUN_TASKS = [
-    { isDone: () => autoRunSatisfied(state.ai.callPrep), run: generateCallPrep }
+    { isDone: () => autoRunSatisfied(state.ai.summary, false), run: generateSummary },
+    { isDone: () => autoRunSatisfied(state.ai.callPrep, true), run: generateCallPrep }
   ];
 
   // Startet die nächste offene Auto-Aufgabe, aber nur wenn das Modell bereits
@@ -3048,14 +3571,81 @@
     if (next) next.run();
   }
 
+  // ---------------------------------------------------------------------------
+  // Kundenakte + Anruf-Vorgeschichte laden (Widget "Kunde & Vorgeschichte")
+  //
+  // Nach demselben Muster wie maybeAutoRun(): wird NACH dem Rendern angestoßen,
+  // nie aus einer Render-Funktion heraus – ein Lookup, den das Zeichnen
+  // auslöst, liefe bei jedem erneuten Zeichnen wieder los.
+  //
+  // state.prepCustomer.number ist der Schlüssel: solange die erkannte
+  // Kundennummer dieselbe ist, passiert nichts mehr. Ein Ticketwechsel setzt
+  // damit von selbst einen neuen Lauf an.
+  // ---------------------------------------------------------------------------
+
+  function maybePrepCustomer() {
+    // Nicht jeder Gastgeber bringt den vollen Supabase-Client mit: das HUD
+    // reicht ui.js einen eigenen, und ein älteres Bündel kennt recentCalls
+    // nicht. Ohne diese Prüfung risse ein fehlender Aufruf das ganze Panel auf.
+    if (!supabaseClient || typeof supabaseClient.customerCard !== "function") return;
+    const number = lookupCustomerNumber();
+    if (!number) {
+      // Ticket ohne Kundennummer: alten Stand verwerfen, sonst zeigte das
+      // Widget die Akte des vorigen Kunden zu diesem Ticket.
+      if (state.prepCustomer.number) {
+        state.prepCustomer = { number: "", status: "idle", card: null, calls: [], error: "" };
+        render();
+      }
+      return;
+    }
+    if (state.prepCustomer.number === number && state.prepCustomer.status !== "idle") return;
+    loadPrepCustomer(number);
+  }
+
+  async function loadPrepCustomer(number) {
+    state.prepCustomer = { number, status: "loading", card: null, calls: [], error: "" };
+    render();
+
+    // Akte und Historie parallel: die Historie ist auch dann interessant, wenn
+    // der Kunde in der Akte (noch) nicht auftaucht. Beide Aufrufe sind
+    // best-effort — ein Netzfehler darf hier nichts weiter als dieses eine
+    // Widget kosten.
+    const [cardRes, callsRes] = await Promise.all([
+      Promise.resolve()
+        .then(() => supabaseClient.customerCard(number))
+        .catch((error) => ({ ok: false, reason: "network", error: String((error && error.message) || error) })),
+      Promise.resolve()
+        .then(() => (typeof supabaseClient.recentCalls === "function"
+          ? supabaseClient.recentCalls(number, 3)
+          : { ok: false, reason: "unsupported" }))
+        .catch(() => ({ ok: false, reason: "network" }))
+    ]);
+
+    // Zwischenzeitlicher Ticketwechsel: die Antwort gehört zu einem anderen
+    // Kunden als dem jetzt offenen und wird verworfen.
+    if (state.prepCustomer.number !== number) return;
+
+    const calls = (callsRes && callsRes.ok && callsRes.rows) || [];
+    if (cardRes && cardRes.ok) {
+      state.prepCustomer = cardRes.data
+        ? { number, status: "ok", card: cardRes.data, calls, error: "" }
+        : { number, status: "not-found", card: null, calls, error: "" };
+    } else {
+      const reason = (cardRes && cardRes.reason) || "error";
+      const status = reason === "not-configured" || reason === "not-logged-in" ? reason : "error";
+      state.prepCustomer = { number, status, card: null, calls, error: (cardRes && cardRes.error) || "" };
+    }
+    render();
+  }
+
   async function enableAi() {
     if (!ensureAi()) return;
     const signal = beginRun("enable");
     render();
     try {
       // Ein leichter Lauf stößt den Modell-Download an und zeigt Fortschritt.
-      const result = await localAi.prepareCall({ ticket: state.ticket, agent: agentForAi(), churn: churnContextForTicket() }, { signal, onDownload });
-      if (result && result.status === S.OK) cacheField("callPrep", { status: "ok", data: result.data, churnKey: churnKey() });
+      const result = await localAi.prepareCall(callPrepInput(), { signal, onDownload });
+      if (result && result.status === S.OK) cacheField("callPrep", { status: "ok", data: result.data, prepKey: prepKey() });
       state.ai.caps = await localAi.capabilities();
     } catch (error) {
       if (!isAbort(error)) state.ai.caps = await safeCaps();
@@ -3109,6 +3699,32 @@
     }
   }
 
+  // Ticket-Zusammenfassung. Läuft automatisch beim Öffnen eines Tickets mit:
+  // das timio-Cockpit und das Call-Cockpit zeigen sie während des Gesprächs,
+  // ohne dass jemand erst einen Knopf drücken muss.
+  async function generateSummary() {
+    if (!(await ensureAiUsable())) return;
+    const previous = state.ai.summary;
+    const signal = beginRun("summary");
+    state.ai.summary = { status: "loading", text: "" };
+    render();
+    try {
+      const result = await localAi.summarize(state.ticket, {
+        signal,
+        onDownload,
+        onChunk: (acc) => { const out = el("summary-out"); if (out) out.textContent = acc; }
+      });
+      if (result.status === S.OK) cacheField("summary", { status: "ok", text: result.text });
+      else state.ai.summary = { status: "error", text: "" };
+    } catch (error) {
+      state.ai.summary = isAbort(error) ? previous : { status: "error", text: "" };
+    } finally {
+      endRun(signal);
+      render();
+      maybeAutoRun();
+    }
+  }
+
   // Gesprächsvorbereitung für ausgehende Anrufe. Wird im Outbound-Modus
   // automatisch mitgezogen, damit sie fertig ist, bevor timio wählt – nach dem
   // Verbinden bleibt dafür keine Zeit mehr.
@@ -3131,6 +3747,19 @@
     return null;
   }
 
+  // Alles, was die lokale KI für die Vorbereitung braucht – an einer Stelle,
+  // damit der reguläre Lauf und der Aufwärm-Lauf beim Modell-Download nicht
+  // auseinanderlaufen können.
+  function callPrepInput() {
+    return {
+      ticket: state.ticket,
+      agent: agentForAi(),
+      churn: churnContextForTicket(),
+      callType: activeCallType(),
+      campaignName: (state.shift && state.shift.campaignName) || ""
+    };
+  }
+
   async function generateCallPrep() {
     if (!(await ensureAiUsable())) return;
     const previous = state.ai.callPrep;
@@ -3138,11 +3767,11 @@
     state.ai.callPrep = { status: "loading", data: null };
     render();
     try {
-      const churn = churnContextForTicket();
-      const result = await localAi.prepareCall({ ticket: state.ticket, agent: agentForAi(), churn }, { signal, onDownload });
-      // churnKey mitspeichern: so ist erkennbar, ob die Vorbereitung den
-      // Kündigungsgrund schon kannte oder noch von vorher stammt.
-      if (result.status === S.OK) cacheField("callPrep", { status: "ok", data: result.data, churnKey: churnKey() });
+      const result = await localAi.prepareCall(callPrepInput(), { signal, onDownload });
+      // prepKey mitspeichern: so ist erkennbar, ob die Vorbereitung den
+      // Kündigungsgrund und den aktuellen Anruftyp schon kannte oder noch von
+      // vorher stammt.
+      if (result.status === S.OK) cacheField("callPrep", { status: "ok", data: result.data, prepKey: prepKey() });
       else state.ai.callPrep = { status: "error", data: null };
     } catch (error) {
       state.ai.callPrep = isAbort(error) ? previous : { status: "error", data: null };
@@ -3229,6 +3858,8 @@
     if (res.ok) {
       state.supabaseSession = res.session;
       state.supabaseAuth = { name: "", pin: "", busy: false, error: "" };
+      // Der Lookup ist ohne Sitzung abgelehnt worden; jetzt darf er wieder.
+      state.prepCustomer = { number: "", status: "idle", card: null, calls: [], error: "" };
       toast(`Angemeldet als ${res.session.displayName || name}.`);
     } else {
       state.supabaseAuth.busy = false;
@@ -3243,6 +3874,9 @@
   function handleSupabaseLogout() {
     if (supabaseClient) supabaseClient.logout();
     state.supabaseSession = null;
+    // Kundendaten gehören zur Sitzung – mit ihr verschwinden sie auch aus der
+    // Ansicht, statt bis zum nächsten Ticketwechsel stehen zu bleiben.
+    state.prepCustomer = { number: "", status: "idle", card: null, calls: [], error: "" };
     toast("Von Supabase abgemeldet.");
     render();
   }
@@ -3505,6 +4139,10 @@
       case "widget-hide": hideWidget(control.dataset.tab, control.dataset.widget); return;
       case "widget-show": showWidget(control.dataset.tab, control.dataset.widget); return;
       case "reset-layout": resetLayout(); return;
+      case "reload-prep-customer":
+        state.prepCustomer = { number: "", status: "idle", card: null, calls: [], error: "" };
+        maybePrepCustomer();
+        return;
       case "supabase-login": await handleSupabaseLogin(); return;
       case "supabase-logout": handleSupabaseLogout(); return;
       case "enable-ai": enableAi(); return;
@@ -3525,16 +4163,33 @@
         const fromShift = (state.shift && state.shift.callType) || "churn";
         state.callTypeOverride = next === fromShift ? null : next;
         render();
+        // Der Typ steckt im Prompt der Gesprächsvorbereitung (prepKey), also
+        // ist die bisherige jetzt für den falschen Anlass geschrieben.
+        // maybeAutoRun() erkennt das über autoRunSatisfied() und baut sie neu –
+        // ohne dass der Bearbeiter daran denken muss.
+        maybeAutoRun();
         return;
       }
       case "toggle-phase": {
-        const type = activeCallType();
-        const key = `${type}:${Number(control.dataset.phaseIndex)}`;
+        const key = phaseKey(activeCallType(), Number(control.dataset.phaseIndex));
         state.checkedPhases[key] = !state.checkedPhases[key];
         render();
         return;
       }
+      case "guide-next": advanceGuide(1, true); render(); return;
+      case "guide-prev": advanceGuide(-1, false); render(); return;
+      case "guide-step":
+        setGuideStep(Number(control.dataset.phaseIndex));
+        // Ein Sprung aus der Gesamtliste heraus soll den Schritt auch zeigen –
+        // sonst passierte sichtbar nichts, weil die Liste den Kopf verdeckt.
+        state.guide.showAll = false;
+        render();
+        return;
+      case "guide-toggle-all": state.guide.showAll = !state.guide.showAll; render(); return;
+      case "note-chip": appendNoteChip(control.dataset.chip); return;
+      case "note-undo": removeLastNoteLine(); return;
       case "search-customer": openCustomerSearch(control.dataset.customer); return;
+      case "generate-summary": generateSummary(); return;
       case "generate-call-prep": generateCallPrep(); return;
       case "copy-call-prep": copyText(callPrepAsText(), "Gesprächsvorbereitung kopiert."); return;
       case "call-outcome": applyOutcome(control.dataset.outcome); return;
@@ -3650,6 +4305,7 @@
   // (oder mit "idle", falls noch nichts generiert wurde).
   function hydrateAiFromCache(ticket) {
     const entry = aiCache.getEntry(ticket.key);
+    state.ai.summary = (entry && entry.summary) || { status: "idle", text: "" };
     state.ai.callPrep = (entry && entry.callPrep) || { status: "idle", data: null };
   }
 
@@ -3676,6 +4332,7 @@
     publishTicketContext();
     render();
     maybeAutoRun();
+    maybePrepCustomer();
   }
 
   async function mount() {
@@ -3763,6 +4420,7 @@
 
     loadCapabilities();
     loadShift();
+    maybePrepCustomer();
     // Farbschema stillschweigend nachziehen, falls die Übernahme an ist. Kein
     // await: der Panel-Aufbau darf nicht auf das Netz warten — bis die Antwort
     // da ist, gilt der zwischengespeicherte Stand von oben.

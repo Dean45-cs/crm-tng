@@ -1,10 +1,11 @@
 "use strict";
 
 // Test für die KI-Schicht (src/local-ai.js) im Outbound-Betrieb. Geprüft werden
-// die beiden verbliebenen Funktionen und ihr Prompt-Engineering:
-// (1) prepareCall – Kontext-Priorisierung (neueste Kommentare überleben das
-//     Budget), deterministischer topK=1 und strukturierte JSON-Rückgabe,
-// (2) draftCallNote – Few-Shot-Beispiel im Prompt und mehr Varianz (topK ≠ 1).
+// die drei Funktionen und ihr Prompt-Engineering:
+// (1) summarize – Vier-Punkte-Struktur und Kontext-Priorisierung (neueste
+//     Kommentare überleben das Budget),
+// (2) prepareCall – deterministischer topK=1 und strukturierte JSON-Rückgabe,
+// (3) draftCallNote – Few-Shot-Beispiel im Prompt und mehr Varianz (topK ≠ 1).
 // Ein Fake-LanguageModel fängt den an das Modell übergebenen Prompt/Optionen ab.
 //
 // Ausführen mit: node test/local-ai.test.js
@@ -103,12 +104,77 @@ async function run() {
     assert.ok(createdOptions.every((o) => o.topK !== 1), "Notiz-Entwurf läuft NICHT mit topK=1 (mehr Varianz erlaubt)");
   }
 
-  // 5) capabilities meldet Verfügbarkeit ohne Companion-API-Flags.
+  // 5) summarize fordert die vier festen Punkte an, streamt die Antwort und
+  //    läuft deterministisch (topK=1).
+  {
+    const { localAi, captured, createdOptions } = setup();
+    const chunks = [];
+    const result = await localAi.summarize(ticketWithManyComments(2), { onChunk: (acc) => chunks.push(acc) });
+    assert.strictEqual(result.status, "ok", "summarize-Status ok");
+    assert.ok(result.text.includes("Teilantwort"), "summarize liefert den Modelltext zurück");
+    assert.ok(chunks.length > 0, "Teilergebnisse werden an onChunk gestreamt");
+    const prompt = captured.join("\n");
+    ["Anliegen:", "Bisheriger Stand:", "Kundenergebnis/Zusage:", "Nächster Schritt:"].forEach((label) => {
+      assert.ok(prompt.includes(label), `der Prompt fordert das Label "${label}"`);
+    });
+    assert.ok(createdOptions.some((o) => o.topK === 1), "Zusammenfassung läuft mit topK=1");
+  }
+
+  // 6) capabilities meldet Verfügbarkeit ohne Companion-API-Flags.
   {
     const { localAi } = setup();
     const caps = await localAi.capabilities();
     assert.strictEqual(caps.usable, true, "capabilities meldet nutzbar");
     assert.ok(!("hasRewriter" in caps), "keine Companion-API-Flags mehr");
+  }
+
+  // 7) Der Anruftyp steht im Prompt und richtet die Vorbereitung aus. Ohne ihn
+  //    bereitete die KI jede Kampagne als allgemeines Sachstandsgespräch vor.
+  {
+    const { localAi, captured } = setup(PREP_JSON);
+    await localAi.prepareCall({
+      ticket: ticketWithManyComments(2),
+      callType: "welcome",
+      campaignName: "Welcome KW35"
+    });
+    const prompt = captured.join("\n");
+    assert.ok(prompt.includes("ANRUFTYP"), "der Anruftyp steht als eigener Block im Prompt");
+    assert.ok(prompt.includes("Welcome KW35"), "die Kampagne der Schicht wird mitgegeben");
+    assert.ok(prompt.includes("Der Kunde hat NICHT gekündigt"), "die Welcome-Regeln stehen im Prompt");
+    assert.ok(!prompt.includes("(Sachstand, Zusagen, Änderungen)"), "die Punkte werden am Anruftyp ausgerichtet, nicht am Sachstand");
+  }
+
+  // 8) Ohne Anruftyp bleibt der Prompt unverändert wie vorher — der Block ist
+  //    additiv, ein Aufruf ohne callType darf nicht schlechter werden.
+  {
+    const { localAi, captured } = setup(PREP_JSON);
+    await localAi.prepareCall({ ticket: ticketWithManyComments(2) });
+    const prompt = captured.join("\n");
+    assert.ok(!prompt.includes("ANRUFTYP"), "ohne callType gibt es keinen Anruftyp-Block");
+    assert.ok(prompt.includes("(Sachstand, Zusagen, Änderungen)"), "ohne Anruftyp gilt weiter die alte Punkte-Anweisung");
+  }
+
+  // 9) Eine belegte Kündigung schlägt den Anruftyp: auch ein Welcome-Anlass
+  //    wird dann als Rückgewinnung vorbereitet.
+  {
+    const { localAi, captured } = setup(PREP_JSON);
+    await localAi.prepareCall({
+      ticket: ticketWithManyComments(2),
+      callType: "welcome",
+      churn: { ursache: "Preis zu hoch", vertrag: "V-1" }
+    });
+    const prompt = captured.join("\n");
+    assert.ok(prompt.includes("ANRUFTYP"), "der Anruftyp steht trotzdem im Prompt");
+    assert.ok(prompt.includes("RÜCKGEWINNUNGSGESPRÄCH"), "die Kündigung übersteuert ihn");
+    assert.ok(prompt.includes("Das geht dem Anruftyp oben vor"), "und die Rangfolge ist ausdrücklich benannt");
+  }
+
+  // 10) Unbekannter Call-Typ (Kampagne ohne Brief): kein Block, kein Absturz.
+  {
+    const { localAi, captured } = setup(PREP_JSON);
+    const result = await localAi.prepareCall({ ticket: ticketWithManyComments(2), callType: "gibtsnicht" });
+    assert.strictEqual(result.status, "ok", "unbekannter Typ bricht die Vorbereitung nicht ab");
+    assert.ok(!captured.join("\n").includes("ANRUFTYP"), "und erzeugt keinen leeren Anruftyp-Block");
   }
 
   console.log("local-ai.test.js: alle Szenarien bestanden.");

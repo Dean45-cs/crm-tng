@@ -406,6 +406,73 @@
     }
   }
 
+  // Bisherige Anrufe zu einer Kundennummer – die Vorgeschichte, die in der
+  // Vorbereitung fehlt: wurde der Kunde diese Woche schon (vergeblich)
+  // angerufen, und wie ging es aus? Die RLS-Regel auf calls ist bewusst
+  // "read all" (018_calls.sql), also erscheinen auch Versuche von Kolleginnen
+  // und Kollegen — genau die will man vor dem Wählen sehen.
+  //
+  // Nur beendete Anrufe (ended_at not null): der eigene, gerade laufende Anruf
+  // gehört nicht in die eigene Vorgeschichte. Der Index idx_calls_customer
+  // deckt den Filter ab.
+  async function recentCalls(customerNumber, limit) {
+    const number = String(customerNumber == null ? "" : customerNumber).trim();
+    if (!number) return { ok: false, reason: "error", error: "Keine Kundennummer." };
+
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    const max = Math.min(Math.max(1, Number(limit) || 5), 20);
+    const query = [
+      `customer_number=eq.${encodeURIComponent(number)}`,
+      "ended_at=not.is.null",
+      "select=id,started_at,duration_s,direction,disposition,outcome,jira_ticket",
+      "order=started_at.desc",
+      `limit=${max}`
+    ].join("&");
+
+    try {
+      const res = await fetch(`${config.url}/rest/v1/calls?${query}`, {
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${session.accessToken}`
+        }
+      });
+
+      if (res.status === 401) {
+        clearSession();
+        return { ok: false, reason: "not-logged-in" };
+      }
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
+      }
+
+      const rows = await res.json().catch(() => null);
+      return { ok: true, rows: Array.isArray(rows) ? rows.map(parseCallRow).filter(Boolean) : [] };
+    } catch (error) {
+      return { ok: false, reason: "network", error: String((error && error.message) || error) };
+    }
+  }
+
+  // Eine calls-Zeile in die Form, die die Oberfläche anzeigt. Rein, ohne fetch —
+  // direkt testbar.
+  function parseCallRow(row) {
+    if (!row || typeof row !== "object") return null;
+    return {
+      id: row.id || "",
+      startedAt: row.started_at || "",
+      durationS: Number(row.duration_s) || 0,
+      direction: row.direction || "",
+      disposition: row.disposition || "",
+      outcome: row.outcome || "",
+      jiraTicket: row.jira_ticket || ""
+    };
+  }
+
   // Anruf-Start (Stufe 2, KONZEPT-INTEGRATION.md): wird von timio-content.js
   // aufgerufen, sobald ein Anruf sichtbar wird (klingelt/verbindet). agent_id
   // wird explizit aus der Session gesetzt (gleiche Konvention wie
@@ -1128,6 +1195,8 @@
     logout,
     ensureFreshSession,
     customerCard,
+    recentCalls,
+    parseCallRow,
     startCall,
     endCall,
     patchCallDisposition,

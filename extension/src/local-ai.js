@@ -25,10 +25,11 @@
   };
 
   // Zugriff auf den globalen On-Device-Konstruktor. Der Outbound-Modus braucht
-  // nur noch die Prompt API (LanguageModel) – für die Gesprächsvorbereitung und
-  // die interne Abschluss-Notiz. Die spezialisierten Companion-APIs
-  // (Summarizer/Rewriter/Proofreader/Translator) gehörten zu den entfallenen
-  // Support-Funktionen (E-Mail/Kommentar/Übersetzung) und werden nicht mehr genutzt.
+  // nur noch die Prompt API (LanguageModel) – für die Ticket-Zusammenfassung,
+  // die Gesprächsvorbereitung und die interne Abschluss-Notiz. Die
+  // spezialisierten Companion-APIs (Summarizer/Rewriter/Proofreader/Translator)
+  // gehörten zu den entfallenen Support-Funktionen (E-Mail/Kommentar/
+  // Übersetzung) und werden nicht mehr genutzt.
   const globals = {
     prompt: () => globalThis.LanguageModel
   };
@@ -323,10 +324,60 @@
     };
   }
 
+  // Streamende Ticket-Zusammenfassung in vier festen Punkten. Läuft automatisch,
+  // sobald ein Ticket geöffnet ist: das timio-Cockpit und das Call-Cockpit zeigen
+  // sie während des Gesprächs (aiSummary im veröffentlichten Ticket-Kontext).
+  async function summarize(ticket, opts = {}) {
+    const status = await promptAvailability();
+    if (!isUsable(status) && !mayTryAnyway(status)) return { status };
+
+    let session;
+    try {
+      session = await createPromptSession({ ...opts, temperature: analysisTemp(), topK: 1 });
+      const promptText = [
+        "Fasse dieses Jira-Ticket für die interne Bearbeitung zusammen.",
+        "Antworte mit genau vier Zeilen, jeweils beginnend mit dem Label:",
+        "Anliegen: …",
+        "Bisheriger Stand: …",
+        "Kundenergebnis/Zusage: …",
+        "Nächster Schritt: …",
+        "Ist ein Punkt nicht dokumentiert, schreibe 'Nicht dokumentiert'.",
+        "",
+        fenced("TICKETDATEN", ticketContext(ticket))
+      ].join("\n");
+      const text = await runStreaming(session, promptText, opts.onChunk, opts.signal);
+      return { status: STATUS.OK, text };
+    } finally {
+      if (session && typeof session.destroy === "function") session.destroy();
+    }
+  }
+
   // Vorbereitung eines ausgehenden Anrufs. Anders als eingehend gibt es keine
   // Vorlaufzeit – timio wählt selbst aus seiner Anrufliste. Deshalb läuft das
   // hier vorab und deterministisch (topK 1), damit beim Verbinden ohne Warten
   // dasteht, was zu besprechen ist.
+  // Art des Anrufs als Prompt-Block. Der Bearbeiter arbeitet Kampagnen ab
+  // (Churn, Welcome, PRL, Dupe, BVW, Courtesy) — und was in der Vorbereitung
+  // stehen muss, hängt vollständig daran: bei einem Welcome-Call ist ein
+  // Halteangebot Unsinn, bei einem Bauverweigerer geht es gar nicht um den
+  // Vertrag. Ohne diesen Block sah die KI nur das Ticket und schrieb für jeden
+  // Typ dieselbe Sachstands-Vorbereitung.
+  function callTypeContext(callType, campaignName) {
+    const briefs = (app.CONFIG && app.CONFIG.callPrepBriefs) || {};
+    const brief = briefs[callType];
+    if (!brief) return "";
+    const labels = (app.CONFIG && app.CONFIG.callTypeLabels) || {};
+    const lines = [`Art des Anrufs: ${labels[callType] || callType}`];
+    if (campaignName) lines.push(`Kampagne der Schicht: ${clip(campaignName, 80)}`);
+    if (brief.anlass) lines.push(`Anlass: ${brief.anlass}`);
+    if (brief.ziel) lines.push(`Was dieser Anruf erreichen soll: ${brief.ziel}`);
+    if (Array.isArray(brief.regeln) && brief.regeln.length) {
+      lines.push("Verbindliche Regeln für diesen Anruftyp:");
+      brief.regeln.forEach((rule) => lines.push(`- ${rule}`));
+    }
+    return lines.join("\n");
+  }
+
   // Kündigungsdaten aus der Churnliste (GFIZ) als Prompt-Block. Sie sind für ein
   // Rückgewinnungsgespräch der eigentliche Kern: sie sagen, WARUM gekündigt
   // wurde und was dem Kunden schon angeboten wurde – beides steht so in keinem
@@ -344,7 +395,7 @@
   }
 
   async function prepareCall(input, opts = {}) {
-    const { ticket, agent, churn } = input || {};
+    const { ticket, agent, churn, callType, campaignName } = input || {};
     const status = await promptAvailability();
     if (!isUsable(status) && !mayTryAnyway(status)) return { status };
 
@@ -371,20 +422,29 @@
     };
 
     const churnBlock = churnContext(churn);
+    const typeBlock = callTypeContext(callType, campaignName);
     const promptText = [
       "Bereite ein ausgehendes Telefonat mit dem Kunden zu diesem Ticket vor.",
       "Der Bearbeiter ruft den Kunden an – nicht umgekehrt. Er muss also selbst erklären, warum er anruft.",
-      // Steht der Kunde auf der Kündiger-Liste, ist das Gespräch kein
-      // Sachstands-Anruf mehr, sondern eine Rückgewinnung. Das ändert Ziel,
-      // Punkte und die zu erwartenden Einwände grundlegend.
+      // Der Anruftyp steht VOR den Ticketdaten und vor allen Formatregeln: er
+      // bestimmt, wozu das Ticket überhaupt gelesen wird. Ein Ticket ohne
+      // diesen Rahmen liest sich für die KI immer wie ein Sachstandsanliegen.
+      typeBlock ? "Richte Ziel, Punkte, Fragen und Einwände an diesem Anruftyp aus – nicht am allgemeinen Sachstand des Tickets:" : "",
+      typeBlock ? fenced("ANRUFTYP", typeBlock) : "",
+      // Eine belegte Kündigung schlägt den Anruftyp: steht der Kunde auf der
+      // Kündiger-Liste, ist das Gespräch keine Sachstandsauskunft mehr, sondern
+      // eine Rückgewinnung – auch wenn die Kampagne Welcome oder Courtesy heißt.
+      // Das ändert Ziel, Punkte und die zu erwartenden Einwände grundlegend.
       churnBlock
-        ? "WICHTIG: Der Kunde hat gekündigt und steht auf der Kündiger-Liste. Dies ist ein RÜCKGEWINNUNGSGESPRÄCH (Winback). Benenne im Ziel ausdrücklich den Kündigungsgrund und was ihn entkräften könnte."
+        ? "WICHTIG: Der Kunde hat gekündigt und steht auf der Kündiger-Liste. Das geht dem Anruftyp oben vor – dies ist ein RÜCKGEWINNUNGSGESPRÄCH (Winback). Benenne im Ziel ausdrücklich den Kündigungsgrund und was ihn entkräften könnte."
         : "",
       churnBlock
         ? "Gab es bereits ein Halteangebot, darf es nicht einfach wiederholt werden – schlage etwas vor, das darüber hinausgeht oder besser zum Kündigungsgrund passt."
         : "",
       "ziel: in einem Satz, was mit diesem Anruf konkret erreicht werden soll.",
-      "punkte: 2 bis 3 Stichpunkte, die der Bearbeiter aktiv ansprechen muss (Sachstand, Zusagen, Änderungen).",
+      typeBlock
+        ? "punkte: 2 bis 3 Stichpunkte, die der Bearbeiter aktiv ansprechen muss, damit der Anruf sein oben genanntes Ziel erreicht."
+        : "punkte: 2 bis 3 Stichpunkte, die der Bearbeiter aktiv ansprechen muss (Sachstand, Zusagen, Änderungen).",
       "fragen: 1 bis 3 Fragen, die im Ticket offen sind und nur der Kunde beantworten kann.",
       "einwaende: bis zu 2 realistisch zu erwartende Einwände mit jeweils einer kurzen, sachlichen Antwort.",
       "Ist eine Information nicht belegt, formuliere sie als Frage statt als Behauptung.",
@@ -445,6 +505,7 @@
   app.localAi = {
     STATUS,
     capabilities,
+    summarize,
     prepareCall,
     draftCallNote
   };
