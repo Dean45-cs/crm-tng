@@ -35,6 +35,12 @@
       // hergibt (schon von einem anderen Programm belegt).
       hotkeys: {},
       hotkeyErrors: {}
+    },
+    // Stand der Telefonanlage (siehe phoneState() in main/main.js).
+    phone: {
+      received: 0, lastReceivedAt: 0, calls: 0, recognized: 0, lastCallAt: 0, lastTestAt: 0,
+      url: "", protocolRegistered: false, packaged: true, telHandler: "", platform: "",
+      direction: "outbound"
     }
   };
 
@@ -61,6 +67,19 @@
   // steht dann auch, wenn die Taste schon belegt ist).
   function setGlobalHotkey(id, binding) {
     window.hud.command("set-hotkey", { id, binding });
+  }
+
+  // „vor 3 min" statt eines Zeitstempels: die Frage an dieser Stelle lautet
+  // nicht „wann", sondern „gerade eben oder noch nie".
+  function agoLabel(timestamp) {
+    if (!timestamp) return "";
+    const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+    if (seconds < 60) return "gerade eben";
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `vor ${minutes} min`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `vor ${hours} h`;
+    return `vor ${Math.round(hours / 24)} Tagen`;
   }
 
   function opacityPercent() {
@@ -135,6 +154,86 @@
         </div>
         <p class="sc-input-hint">Ausgeblendet läuft die Auskunft weiter und meldet fällige Rückrufe. Zurück holen sie: ${toggle ? `<strong>${escapeHtml(toggle)}</strong>, ` : ""}das Symbol in der Menü-/Infoleiste, ein Klick auf das Symbol der Erweiterung in Chrome oder die Sprechblase „Auskunft“ unten rechts im Jira-Tab. Beendet heißt: bis zum nächsten Start keine Anrufanzeige und keine Erinnerungen.</p>
         ${state.version ? `<p class="sc-input-hint hud-version">Stadtnetz CRM Copilot ${escapeHtml(state.version)}</p>` : ""}
+      </section>
+      ${phoneSettings()}`;
+  }
+
+  // Die Einrichtungskarte der Telefonanlage.
+  //
+  // Sie steht hier und nicht im Panel, weil es sie nur auf dem Schreibtisch
+  // gibt — in Chrome kommt kein Anruf über ein URL-Schema an.
+  //
+  // Ihr eigentlicher Zweck ist nicht das Einrichten, sondern das Nachsehen:
+  // Wer die Adresse einmal in myApps eingetragen hat, sieht sie nie wieder an.
+  // Bleiben die Anrufe eines Tages aus, ist ohne diese Karte nicht zu
+  // unterscheiden, ob die Anlage nichts meldet, ob das Schema nicht mehr
+  // registriert ist oder ob schlicht niemand anruft.
+  function phoneSettings() {
+    const p = state.phone;
+    const mac = p.platform === "darwin";
+    // Unter macOS bekommt FaceTime tel:-Adressen ab Werk. Dann wählt der Knopf
+    // ins Leere, und niemand käme von selbst auf die Ursache.
+    const telOk = !mac || /myapps/i.test(p.telHandler || "");
+
+    const received = p.received
+      ? `${p.received} Meldung${p.received === 1 ? "" : "en"} angenommen, zuletzt ${agoLabel(p.lastReceivedAt)}`
+      : "Noch nie etwas empfangen.";
+    const calls = p.calls
+      ? `Daraus ${p.calls} Gespräch${p.calls === 1 ? "" : "e"}, Kunde erkannt bei ${p.recognized} davon.`
+      : "";
+    // Der Testanruf steht bewusst in einer eigenen Zeile und nicht in der
+    // Zählung: sonst stünde dort, es seien Anrufe angekommen, obwohl die App
+    // nur bei sich selbst geklopft hat.
+    const test = p.lastTestAt ? `Testanruf ${agoLabel(p.lastTestAt)}.` : "";
+    // Zwei Zahlen, die auseinanderklaffen können: kommt etwas an, wird aber
+    // kein Gespräch daraus, liegt es nicht an myApps.
+    const stuck = p.received > 0 && p.calls === 0
+      ? `<p class="sc-input-hint sc-hint-warn">Es kommen Meldungen an, aber im Panel entsteht kein Gespräch. Dann liegt es nicht an myApps.</p>`
+      : "";
+    const unrecognized = p.calls > 2 && p.recognized === 0
+      ? `<p class="sc-input-hint sc-hint-warn">Bei keinem Gespräch war ein Kunde erkennbar. Steht <code>name=$d</code> in der Adresse?</p>`
+      : "";
+
+    return `
+      <section class="sc-section">
+        <div class="sc-section-title-row">
+          <h3>Telefonanlage (myApps)</h3>
+          <span class="sc-local-label">nur dieses Gerät</span>
+        </div>
+        <p class="sc-section-intro">myApps meldet jeden Anruf an die Auskunft, indem es eine Adresse öffnet. Einzutragen in myApps unter <strong>Einstellungen · Externe Anwendungen · Anwendung für eine Aktion hinzufügen</strong>. Kein Pfad auf die App – unter macOS kommen Argumente an einem App-Bundle nicht verlässlich an, eine Adresse dagegen schon.</p>
+
+        ${p.url ? `<label class="sc-input-label">Adresse (Feld „URL")
+          <input class="sc-text-input" data-role="hud-phone-url" value="${escapeHtml(p.url)}" readonly>
+          <small class="sc-input-hint"><code>$c</code> Anruf-Kennung, <code>$I</code> Rufnummer international, <code>$d</code> Displayname. <strong>$d ist der wichtigste Teil:</strong> daran hängt die Kundenerkennung – kennt die Anlage den Anrufer, steht dort „PK 182962 Daniel Ratcliffe“, und die Kundenakte ist ohne Suchen da. Feld „Parameter" leer lassen, „Autostart" nach Belieben.</small>
+        </label>` : `<p class="sc-input-hint sc-hint-warn">Die App hat keine Adresse gemeldet – vermutlich eine ältere Fassung. Lieber keine anzeigen als eine falsche, die jemand einträgt.</p>`}
+        <div class="sc-inline-actions">
+          ${p.url ? `<button class="sc-secondary-button" type="button" data-action="hud-phone-copy">Adresse kopieren</button>` : ""}
+          <button class="sc-secondary-button" type="button" data-action="hud-phone-test">Testanruf</button>
+        </div>
+
+        <ul class="sc-phone-status">
+          <li class="${p.protocolRegistered ? "is-ok" : "is-warn"}">
+            <strong>URL-Schema:</strong> ${p.protocolRegistered ? "registriert" : "nicht registriert"}
+            ${p.packaged ? "" : "<small>Aus dem Quellstand heraus trägt sich Electron ein, nicht die App – zum Ausprobieren reicht das, verlassen sollte man sich darauf erst im gepackten Paket.</small>"}
+          </li>
+          <li class="${p.received ? "is-ok" : ""}"><strong>Empfangen:</strong> ${escapeHtml(received)}${calls || test ? ` <small>${escapeHtml([calls, test].filter(Boolean).join(" "))}</small>` : ""}</li>
+          <li class="${telOk ? "is-ok" : "is-warn"}">
+            <strong>Wählen:</strong> ${p.telHandler ? `tel:-Adressen gehen an „${escapeHtml(p.telHandler)}“` : "kein Programm für tel:-Adressen gefunden"}
+            ${telOk ? "" : "<small>Damit der Anrufen-Knopf wirkt, muss myApps sie bekommen: FaceTime öffnen → Menü „FaceTime“ → „Einstellungen…“ → „Standard für Telefonate“ auf myApps. Einmalig, Apple bietet das nirgends sonst an.</small>"}
+          </li>
+        </ul>
+        ${stuck}
+        ${unrecognized}
+
+        <p class="sc-input-hint">Zwei Dinge liefert myApps nicht, und das ist keine Einstellungssache: <strong>das Gesprächsende</strong> – es gibt dort kein Ereignis dafür, deshalb beendet der Knopf „Aufgelegt“ das Gespräch – und <strong>die Richtung</strong>, weil dieselbe Adresse für ankommende wie abgehende Anrufe geöffnet wird.</p>
+
+        <label class="sc-input-label">Anrufe gelten als
+          <select class="sc-text-input" data-role="hud-phone-direction">
+            <option value="outbound" ${p.direction === "inbound" ? "" : "selected"}>ausgehend</option>
+            <option value="inbound" ${p.direction === "inbound" ? "selected" : ""}>eingehend</option>
+          </select>
+          <small class="sc-input-hint">Gilt für Anrufe, deren Richtung sonst nirgends herkommt – also für die meisten. Wer aus der Auskunft heraus wählt, gilt unabhängig davon als ausgehend; das wissen wir sicher, weil wir es ausgelöst haben. Die Angabe landet als <code>direction</code> auf jedem Anruf in der Auswertung.</small>
+        </label>
       </section>`;
   }
 
@@ -146,6 +245,12 @@
         return true;
       case "hud-hide":
         window.hud.command("hide", {});
+        return true;
+      case "hud-phone-copy":
+        app.ui.copyText(state.phone.url, "Adresse kopiert – in myApps unter „Externe Anwendungen“ einfügen.");
+        return true;
+      case "hud-phone-test":
+        window.hud.command("call-test", {});
         return true;
       case "hud-quit":
         // Beenden nimmt die Anrufanzeige und die Rückruf-Erinnerungen mit –
@@ -173,6 +278,11 @@
     if (role === "hud-auto-start") {
       state.overlay.autoStart = target.checked;
       window.hud.command("auto-start", { enabled: target.checked });
+      return true;
+    }
+    if (role === "hud-phone-direction") {
+      state.phone.direction = target.value === "inbound" ? "inbound" : "outbound";
+      window.hud.command("phone-direction", { value: state.phone.direction });
       return true;
     }
     if (role === "hud-opacity") {
@@ -209,6 +319,40 @@
     else syncOpacityLabel();
   }
 
+  function setPhone(next) {
+    if (!next || typeof next !== "object") return;
+    state.phone = { ...state.phone, ...next };
+    app.ui.rerender();
+  }
+
+  // Wählen kann nur der Hauptprozess (shell.openExternal auf eine tel:-Adresse).
+  // In Chrome gibt es diesen Gastgeber nicht, deshalb fragt das Panel hier
+  // nach, statt einen Knopf anzubieten, der dort nichts täte.
+  function canDial() {
+    return true;
+  }
+
+  function dial(number) {
+    window.hud.command("dial", { number });
+  }
+
+  /**
+   * Leer, wenn das Wählen wirken sollte – sonst der Grund, warum nicht.
+   *
+   * Unter macOS bekommt FaceTime tel:-Adressen ab Werk. Der Knopf öffnet dann
+   * FaceTime statt zu wählen, und ohne diesen Satz sucht man den Fehler in der
+   * Auskunft. Geprüft wird nur, was das System wirklich sagt
+   * (app.getApplicationNameForProtocol) – ein anderes Softphone kann durchaus
+   * gewollt sein, deshalb wird nicht verboten, sondern gesagt.
+   */
+  function dialHint() {
+    const p = state.phone;
+    if (p.platform !== "darwin") return "";
+    if (!p.telHandler) return "";
+    if (/myapps/i.test(p.telHandler)) return "";
+    return `tel:-Adressen gehen an „${p.telHandler}“, nicht an myApps (⚙ → Telefonanlage).`;
+  }
+
   function setConnected(value) {
     const next = Boolean(value);
     if (next === state.connected) return false;
@@ -229,8 +373,16 @@
     handleAction,
     handleInput,
     setOverlay,
+    setPhone,
     setConnected,
     setVersion,
+    // Wählen über die Telefonanlage – siehe dialNumber() in extension/src/ui.js.
+    canDial,
+    dial,
+    dialHint,
+    // Als was ein Anruf gilt, dessen Richtung die Anlage nicht mitliefert.
+    // Gelesen von desktop/renderer/myapps-calls.js.
+    defaultCallDirection: () => (state.phone.direction === "inbound" ? "inbound" : "outbound"),
     isConnected: () => state.connected,
     // Auch das Startbild nennt die Tastenkombination – und zwar in derselben
     // Schreibweise wie die Einstellungen (boot.js).

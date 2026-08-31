@@ -67,11 +67,21 @@
     const ticketContext = data[CONFIG.storageKeys.ticketContext];
     const ticket = app.jiraReader.hasTicket() ? app.jiraReader.read() : null;
 
-    const isLiveCall = call && call.status && call.status !== "idle";
-    const customer = (isLiveCall && card && card.customer) || (card && card.customer) || null;
+    // Die Kundenakte gilt nur für DAS Gespräch, zu dem sie nachgeschlagen
+    // wurde. Ohne diese Prüfung trüge eine Notiz im nächsten Anruf noch die
+    // Kundennummer des vorigen — und niemand sähe es ihr an.
+    //
+    // Gelesen wird `customerNumber` und `data.name`, also genau das, was
+    // geschrieben wird (timio-content.js writeCustomerCard, ui.js
+    // ensureCustomerCardForCall). Vorher stand hier `card.customer` — einen
+    // solchen Schlüssel legt niemand an, die Zuordnung aus dem Gespräch kam
+    // also nie zustande und fiel stillschweigend auf das Jira-Ticket zurück.
+    const callId = call && (call.callId || call.connectedAt || call.updatedAt);
+    const liveCall = call && call.status && call.status !== "idle";
+    const cardFitsCall = card && liveCall && (!card.callId || !callId || card.callId === callId);
 
-    state.customerNumber = (customer && (customer.customer_number || customer.customerNumber)) || "";
-    state.customerName = (customer && (customer.name || customer.customer_name)) || "";
+    state.customerNumber = (cardFitsCall && card.customerNumber) || "";
+    state.customerName = (cardFitsCall && card.data && card.data.name) || (cardFitsCall && call.callerName) || "";
 
     if (!state.customerNumber && ticket && ticket.customerReference !== app.jiraReader.UNKNOWN) {
       state.customerNumber = ticket.customerReference || "";

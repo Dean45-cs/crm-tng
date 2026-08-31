@@ -220,6 +220,97 @@
     return raw.startsWith("+") ? `+${digits}` : digits;
   }
 
+  // Rufnummer als Vergleichsschlüssel. normalizePhone() oben macht eine
+  // wählbare Nummer daraus; hier geht es um etwas anderes: zwei Schreibweisen
+  // derselben Nummer aufeinander abzubilden. "+49 7031 000000", "0049 7031
+  // 000000" und "07031 000 000" sind dieselbe Nummer — nur sieht man ihnen das
+  // nicht an.
+  //
+  // Übrig bleibt die Nummer ohne Landesvorwahl und ohne die führende Null,
+  // sonst unverändert. Bewusst NICHT auf die letzten Stellen gekürzt: das
+  // fasste 07031 000000 und 08031 000000 zu demselben Schlüssel zusammen —
+  // zwei verschiedene Anschlüsse, ein Treffer, und im Gespräch stünde die Akte
+  // des falschen Kunden auf dem Schirm. Lieber ein Treffer weniger.
+  //
+  // Die Landesvorwahl fällt nur, wenn die Nummer erkennbar international
+  // geschrieben ist (+ oder 00 davor). Sonst verlöre "0491 12345" (Leer) seine
+  // Vorwahl, weil sie zufällig mit 49 beginnt.
+  //
+  // Dieselbe Regel steht als public.phone_key() in db/migrations/027 — wer sie
+  // hier ändert, ändert sie dort mit, sonst findet die Suche nichts mehr.
+  function phoneKey(value) {
+    const raw = String(value == null ? "" : value).trim();
+    let digits = raw.replace(/\D/g, "");
+    if (!digits) return "";
+
+    const international = raw.startsWith("+") || digits.startsWith("00");
+    if (digits.startsWith("00")) digits = digits.slice(2);
+    if (international && digits.startsWith("49")) digits = digits.slice(2);
+    else if (!international && digits.startsWith("0")) digits = digits.slice(1);
+    return digits;
+  }
+
+  // Kundenkürzel, die in den Anzeigenamen vorkommen. Bekannte bekommen eine
+  // Beschriftung; unbekannte werden trotzdem durchgereicht und angezeigt,
+  // statt verschluckt zu werden — ein neues Kürzel soll auffallen, nicht
+  // verschwinden.
+  const KUNDENART_LABELS = { PK: "Privatkunde", GK: "Geschäftskunde" };
+
+  function kundenartLabel(code) {
+    const key = String(code || "").toUpperCase();
+    return KUNDENART_LABELS[key] || key;
+  }
+
+  // Kundenkürzel, Kundennummer und Name aus einer Bezeichnung lösen.
+  //
+  // Die Telefonanlage schickt als Displayname ($d) nicht bloß einen Namen,
+  // sondern die ganze Kennung des Kunden — sofern sie die Rufnummer kennt:
+  //
+  //   "PK 182962 Daniel Ratcliffe"   Kürzel, Nummer, Name
+  //
+  // Jira schreibt dieselben drei Teile in anderer Reihenfolge in das
+  // Oikonomikos-Feld ("287246 / Herr Kevin Carlsson PK", siehe
+  // jira-reader.js) — deshalb werden beide Anordnungen erkannt.
+  //
+  // Bewusst streng in einem Punkt: passt das Muster nicht, ist der ganze Text
+  // der Name und die Kundennummer bleibt leer. Eine falsch erkannte
+  // Kundennummer ist schlimmer als gar keine — sie öffnet im Gespräch die Akte
+  // eines fremden Kunden, und niemand merkt es.
+  const CUSTOMER_LABEL_LEADING = /^([A-ZÄÖÜ]{1,3})[\s.:-]+(\d{4,10})\b[\s.:-]*(.*)$/;
+  const CUSTOMER_LABEL_TRAILING = /^(\d{4,10})\b[\s.:\/-]+(.*?)[\s]+([A-ZÄÖÜ]{1,3})$/;
+
+  function parseCustomerLabel(value) {
+    const raw = String(value == null ? "" : value).trim().replace(/\s+/g, " ");
+    const empty = { kundenart: "", kundenartLabel: "", customerNumber: "", name: raw, raw };
+    if (!raw) return empty;
+
+    const leading = raw.match(CUSTOMER_LABEL_LEADING);
+    if (leading) {
+      return {
+        kundenart: leading[1].toUpperCase(),
+        kundenartLabel: kundenartLabel(leading[1]),
+        customerNumber: leading[2],
+        // Ohne Namensteil ist die Nummer alles, was es gibt — dann steht sie
+        // auch als Name da, damit das Cockpit nicht leer bleibt.
+        name: leading[3].trim() || leading[2],
+        raw
+      };
+    }
+
+    const trailing = raw.match(CUSTOMER_LABEL_TRAILING);
+    if (trailing) {
+      return {
+        kundenart: trailing[3].toUpperCase(),
+        kundenartLabel: kundenartLabel(trailing[3]),
+        customerNumber: trailing[1],
+        name: trailing[2].trim() || trailing[1],
+        raw
+      };
+    }
+
+    return empty;
+  }
+
   // Wann der nächste Versuch fällig ist, gestaffelt nach bisherigen Versuchen.
   // Nach dem letzten Staffel-Eintrag bleibt es beim größten Abstand.
   function nextRetryAt(attempts, now) {
@@ -790,6 +881,9 @@
     callModeMeta,
     isOutbound,
     normalizePhone,
+    phoneKey,
+    parseCustomerLabel,
+    kundenartLabel,
     nextRetryAt,
     pruneCallbacks,
     dueCallbacks,

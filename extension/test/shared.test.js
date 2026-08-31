@@ -125,6 +125,87 @@ function run() {
   assert.strictEqual(shared.ticketResolution("Nicht sichtbar").id, "unbekannt", "Platzhalter des Jira-Readers zählt nicht als Status");
   assert.strictEqual(shared.ticketResolution(null).id, "unbekannt");
 
+  // ---------------------------------------------------------------------------
+  // phoneKey — dieselbe Rufnummer, immer gleich geschrieben.
+  //
+  // Diese Tabelle ist zugleich die Abmachung mit der Datenbank: public.phone_key()
+  // aus db/migrations/027 muss dieselben Ergebnisse liefern. Weicht eine der
+  // beiden Seiten ab, findet die Rufnummernsuche nichts mehr — und zwar
+  // stillschweigend, weil "kein Treffer" ein gültiges Ergebnis ist.
+  // ---------------------------------------------------------------------------
+  [
+    ["+49 7031 000000", "7031000000"],
+    ["07031000000", "7031000000"],
+    ["07031 000 000", "7031000000"],
+    ["0049 7031 000000", "7031000000"],
+    ["+49 (7031) 00-00-00", "7031000000"],
+    ["+4917634573586", "17634573586"],
+    ["0176 34573586", "17634573586"],
+    ["0049-176-34573586", "17634573586"],
+    // Die Vorwahl bleibt vollständig: gekürzt auf die letzten Stellen fielen
+    // 07031 und 08031 zusammen, und im Gespräch stünde der falsche Kunde da.
+    ["08031 000000", "8031000000"],
+    // Landesvorwahl nur weg, wenn die Nummer international geschrieben ist –
+    // sonst verlöre Leer (0491) seine Vorwahl.
+    ["0491 12345", "49112345"],
+    ["+49 491 12345", "49112345"],
+    ["49 7031 000000", "497031000000"],
+    ["123", "123"],
+    ["", ""],
+    ["   ", ""],
+    ["0", ""],
+    ["00", ""],
+    ["+", ""],
+    [null, ""],
+    [undefined, ""]
+  ].forEach(([input, expected]) => {
+    assert.strictEqual(shared.phoneKey(input), expected, `phoneKey(${JSON.stringify(input)})`);
+  });
+
+  // Der Zweck in einem Satz: verschiedene Schreibweisen, ein Schlüssel.
+  assert.strictEqual(shared.phoneKey("+49 7031 000000"), shared.phoneKey("07031000000"),
+    "international und national geschrieben ist dieselbe Nummer");
+  assert.notStrictEqual(shared.phoneKey("07031 000000"), shared.phoneKey("08031 000000"),
+    "zwei Vorwahlen bleiben zwei Nummern");
+
+  // ---------------------------------------------------------------------------
+  // parseCustomerLabel — Kürzel, Kundennummer und Name aus einer Bezeichnung.
+  //
+  // Die Telefonanlage schickt sie als Displayname zusammengesetzt ("PK 182962
+  // Daniel Ratcliffe"), Jira in umgekehrter Reihenfolge. Der wichtigste Fall
+  // steht am Ende: passt das Muster nicht, wird NICHTS erfunden.
+  // ---------------------------------------------------------------------------
+  [
+    ["PK 182962 Daniel Ratcliffe", { kundenart: "PK", customerNumber: "182962", name: "Daniel Ratcliffe" }],
+    ["GK 44012 Muster GmbH", { kundenart: "GK", customerNumber: "44012", name: "Muster GmbH" }],
+    // Jira-Schreibweise (Oikonomikos-Feld, siehe jira-reader.js).
+    ["287246 / Herr Kevin Carlsson PK", { kundenart: "PK", customerNumber: "287246", name: "Herr Kevin Carlsson" }],
+    // Unbekanntes Kürzel wird durchgereicht, nicht verschluckt: ein neues soll
+    // auffallen.
+    ["XY 100200 Neue Art", { kundenart: "XY", customerNumber: "100200", name: "Neue Art" }],
+    // Mehrfache Leerzeichen und Trennzeichen.
+    ["PK  182962   Daniel  Ratcliffe", { kundenart: "PK", customerNumber: "182962", name: "Daniel Ratcliffe" }],
+    // Ohne Namensteil bleibt die Nummer als Anzeige übrig – besser als leer.
+    ["PK 182962", { kundenart: "PK", customerNumber: "182962", name: "182962" }],
+    // Und die Fälle, in denen nichts geraten werden darf:
+    ["Daniel Ratcliffe", { kundenart: "", customerNumber: "", name: "Daniel Ratcliffe" }],
+    ["182962", { kundenart: "", customerNumber: "", name: "182962" }],
+    ["+49 7031 000000", { kundenart: "", customerNumber: "", name: "+49 7031 000000" }],
+    ["Frau 12345 Müller", { kundenart: "", customerNumber: "", name: "Frau 12345 Müller" }],
+    ["PK 12 Zu kurze Nummer", { kundenart: "", customerNumber: "", name: "PK 12 Zu kurze Nummer" }],
+    ["", { kundenart: "", customerNumber: "", name: "" }]
+  ].forEach(([input, expected]) => {
+    const parsed = shared.parseCustomerLabel(input);
+    assert.strictEqual(parsed.kundenart, expected.kundenart, `Kundenart aus ${JSON.stringify(input)}`);
+    assert.strictEqual(parsed.customerNumber, expected.customerNumber, `Kundennummer aus ${JSON.stringify(input)}`);
+    assert.strictEqual(parsed.name, expected.name, `Name aus ${JSON.stringify(input)}`);
+  });
+
+  assert.strictEqual(shared.parseCustomerLabel(null).name, "", "null ist kein Name");
+  assert.strictEqual(shared.kundenartLabel("PK"), "Privatkunde");
+  assert.strictEqual(shared.kundenartLabel("GK"), "Geschäftskunde");
+  assert.strictEqual(shared.kundenartLabel("XY"), "XY", "unbekannte Kürzel werden unverändert gezeigt");
+
   // todayIso — Format YYYY-MM-DD.
   assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(shared.todayIso()), "todayIso liefert YYYY-MM-DD");
 

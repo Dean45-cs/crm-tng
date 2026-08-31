@@ -525,11 +525,170 @@ function flushPendingCalls() {
  * Nimmt eine URL an, egal woher. Holt das Fenster nach vorn: Ein Anruf ist der
  * Moment, in dem die Auskunft gebraucht wird – ausgeblendet nützt sie nichts.
  */
-function handleCallUrl(raw) {
+function handleCallUrl(raw, options) {
   const call = parseCallUrl(raw);
   if (!call) return false;
+  // Die Test-Markierung kommt ausdrücklich NICHT aus der Adresse: sonst könnte
+  // ein fremdes Programm Anrufe als Testanrufe kennzeichnen und damit an der
+  // Anrufhistorie vorbeischleusen. Sie wird hier gesetzt, und nur hier.
+  if (options && options.test) call.test = true;
   if (app.isReady()) showWindow();
+  recordCallUrl(call);
   deliverCall(call);
+  return true;
+}
+
+// --- Was die Einrichtungskarte anzeigt --------------------------------------
+//
+// Ohne Zählung ist „es kommt nichts an" nicht von „es ruft gerade niemand an"
+// zu unterscheiden — und das ist bei einer Anbindung, die man einmal einträgt
+// und danach nie wieder ansieht, der einzige Fehler, mit dem zu rechnen ist.
+//
+// Zwei Zahlen mit verschiedener Aussage: `received` zählt, was an der Tür
+// ankam, `calls` zählt, was daraus im Panel geworden ist. Klaffen sie
+// auseinander, liegt es nicht an myApps.
+
+const PHONE_STATS_DEFAULT = { received: 0, lastReceivedAt: 0, calls: 0, recognized: 0, lastCallAt: 0, lastTestAt: 0 };
+
+// Meldungen, die eintreffen, bevor es den Store gibt. Das ist kein Randfall,
+// sondern der wichtigste: ein Anruf, der die App überhaupt erst startet, kommt
+// über open-url herein, bevor app.whenReady() den Store angelegt hat. Ohne
+// dieses Zwischenlager zählte die Einrichtungskarte ausgerechnet den Anruf
+// nicht, der beweist, dass die Anbindung steht.
+let pendingPhoneEvents = [];
+
+function phoneStats() {
+  const saved = store ? store.hudGet("phoneStats", null) : null;
+  return { ...PHONE_STATS_DEFAULT, ...(saved && typeof saved === "object" ? saved : {}) };
+}
+
+function updatePhoneStats(apply) {
+  if (!store) {
+    pendingPhoneEvents = pendingPhoneEvents.concat(apply).slice(-20);
+    return;
+  }
+  const stats = phoneStats();
+  apply(stats);
+  store.hudSet("phoneStats", stats);
+  pushPhoneState();
+}
+
+function flushPhoneEvents() {
+  if (!pendingPhoneEvents.length || !store) return;
+  const queued = pendingPhoneEvents;
+  pendingPhoneEvents = [];
+  const stats = phoneStats();
+  queued.forEach((apply) => apply(stats));
+  store.hudSet("phoneStats", stats);
+  pushPhoneState();
+}
+
+function recordCallUrl(call) {
+  // Ein Testanruf zählt bewusst NICHT als empfangene Meldung: sonst stünde in
+  // der Karte, es seien Anrufe angekommen, obwohl sie nur selbst geklopft hat.
+  // Er bekommt seine eigene Zeile.
+  const now = Date.now();
+  if (call && call.test) {
+    updatePhoneStats((stats) => { stats.lastTestAt = now; });
+    return;
+  }
+  updatePhoneStats((stats) => {
+    stats.received += 1;
+    stats.lastReceivedAt = now;
+  });
+}
+
+/** Rückmeldung aus dem Panel: aus der Meldung ist ein Gespräch geworden. */
+function recordCallSeen(event) {
+  if (!event || event.type !== "call" || event.test) return;
+  const now = Date.now();
+  updatePhoneStats((stats) => {
+    stats.calls += 1;
+    if (event.recognized) stats.recognized += 1;
+    stats.lastCallAt = now;
+  });
+}
+
+/**
+ * Die Adresse, die in myApps einzutragen ist. An einer Stelle gebaut, damit
+ * die Einrichtungskarte nicht eine andere anzeigt, als call-url.js versteht.
+ */
+function callUrlTemplate() {
+  return `${CALL_PROTOCOL}://call?id=$c&nr=$I&name=$d`;
+}
+
+function testCallUrl() {
+  // Bewusst eine Kundennummer, die es nicht gibt: der Selbsttest soll zeigen,
+  // dass die Strecke steht — nicht die Akte eines echten Kunden aufreißen.
+  return `${CALL_PROTOCOL}://call?id=selbsttest-${Date.now()}&nr=%2B4970310000000&name=${encodeURIComponent("PK 000000 Testanruf")}`;
+}
+
+/**
+ * Als was ein Anruf gilt, dessen Richtung sonst nirgends herkommt.
+ *
+ * myApps liefert sie nicht (dieselbe Konfiguration für ankommend und abgehend),
+ * und aus dem Gesprächsverlauf ist sie nicht ableitbar. Sie steht deshalb hier
+ * — als Einstellung, die man sehen und ändern kann.
+ *
+ * Vorher hing das an einem Storage-Schlüssel aus der Zeit vor dem
+ * Outbound-Umbau. Den setzt seitdem niemand mehr, ein alter Wert stand aber
+ * weiter darin — und machte aus jedem Anruf einen eingehenden, ohne dass
+ * irgendwo etwas aufgelaufen wäre. Eine Einstellung, die niemand mehr ändern
+ * kann, ist keine Einstellung, sondern eine Falle.
+ */
+function phoneDirection() {
+  return store && store.hudGet("phoneDirection", "outbound") === "inbound" ? "inbound" : "outbound";
+}
+
+function setPhoneDirection(value) {
+  if (!store) return;
+  store.hudSet("phoneDirection", value === "inbound" ? "inbound" : "outbound");
+  pushPhoneState();
+}
+
+function phoneState() {
+  return {
+    ...phoneStats(),
+    direction: phoneDirection(),
+    url: callUrlTemplate(),
+    // Ist das Schema überhaupt bei uns registriert? Aus dem Quellstand heraus
+    // trägt sich Electron ein, nicht die App – dann steht hier zwar „ja", aber
+    // verlassen sollte man sich darauf erst im gepackten Paket.
+    protocolRegistered: safeCall(() => app.isDefaultProtocolClient(CALL_PROTOCOL), false),
+    packaged: app.isPackaged,
+    // Wer tel:-Adressen bekommt. Unter macOS ist das ab Werk FaceTime, und
+    // dann klingelt beim Wählen nichts in der Telefonanlage – ohne diese
+    // Anzeige wäre das ein Rätsel ohne Hinweis.
+    telHandler: safeCall(() => app.getApplicationNameForProtocol("tel://"), ""),
+    platform: process.platform
+  };
+}
+
+function safeCall(fn, fallback) {
+  try {
+    const value = fn();
+    return value === undefined || value === null ? fallback : value;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function pushPhoneState() {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send("hud:phone", phoneState());
+}
+
+/**
+ * Wählen über die Telefonanlage. Eigener Befehl statt „open-external", das
+ * absichtlich nur https?:// durchlässt — hier wird eine zweite, eng gefasste
+ * Tür aufgemacht: nur Ziffern, höchstens ein führendes Plus. Die Adresse baut
+ * der Hauptprozess selbst, damit aus dem Fenster keine beliebige URL an die
+ * Systemschale gereicht werden kann.
+ */
+function dial(number) {
+  const cleaned = String(number == null ? "" : number).replace(/[\s()\/.-]/g, "");
+  if (!/^\+?[0-9]{3,20}$/.test(cleaned)) return false;
+  shell.openExternal(`tel:${cleaned}`);
   return true;
 }
 
@@ -627,7 +786,8 @@ function registerIpc() {
       notes: store.hudGet("notes", []),
       notesDraft: store.hudGet("notesDraft", ""),
       platform: process.platform,
-      version: app.getVersion()
+      version: app.getVersion(),
+      phone: phoneState()
     };
   });
 
@@ -672,6 +832,21 @@ function registerIpc() {
         return;
       case "open-external":
         if (/^https?:\/\//i.test(args.url || "")) shell.openExternal(args.url);
+        return;
+      case "dial":
+        dial(args.number);
+        return;
+      case "call-test":
+        // Der Selbsttest der Einrichtungskarte. Geht durch dieselbe Strecke wie
+        // ein echter Anruf – ein Test, der einen eigenen Weg nimmt, prüft den
+        // Weg nicht, den es zu prüfen gilt.
+        handleCallUrl(testCallUrl(), { test: true });
+        return;
+      case "call-seen":
+        recordCallSeen(args);
+        return;
+      case "phone-direction":
+        setPhoneDirection(args.value);
         return;
       default:
         // Alles Übrige ist ein Auftrag an die Extension (z. B. timio-Tab nach
@@ -769,6 +944,9 @@ app.whenReady().then(async () => {
   if (startupCallUrl) handleCallUrl(startupCallUrl);
 
   store = new Store(app.getPath("userData"));
+  // Jetzt erst gibt es einen Ort zum Zählen – nachholen, was der Kaltstart
+  // schon gebracht hat (siehe pendingPhoneEvents).
+  flushPhoneEvents();
 
   // Beides gehört vor alles Übrige: das Verschieben startet die App neu, und
   // dann wäre jede Vorbereitung davor umsonst gewesen (und der Port doppelt

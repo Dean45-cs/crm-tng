@@ -65,12 +65,15 @@ async function run() {
 
     assert.ok(env.html().includes(escapeHtml(CONFIG.callGuides.welcome[0].title)), "nach dem Umschalten steht der Welcome-Leitfaden da");
     assert.ok(env.html().includes(escapeHtml(CONFIG.objectionCards.welcome[0].title)), "und die Welcome-Einwandkarten");
-    // Welcome rendert die Checkliste inkl. Fortschrittsanzeige.
-    assert.ok(env.html().includes("von") && env.html().includes("Punkten erledigt"), "die Checklisten-Fortschrittsanzeige ist sichtbar");
+    // Der Leitfaden zeigt seinen Fortschritt. Wortlaut seit dem Umbau auf das
+    // Schrittwerk: "Schritt 1 von 6" und daneben "0 erledigt" – vorher stand
+    // hier "N von M Punkten erledigt", und der Test hing noch daran fest.
+    assert.ok(env.html().includes("Schritt 1 von"), "die Schrittanzeige des Leitfadens ist sichtbar");
+    assert.ok(env.html().includes("0 erledigt"), "und daneben der Zähler der abgehakten Schritte");
 
     // Ein Punkt abhaken erhöht den Fortschritt.
     env.click("toggle-phase", { phaseIndex: "0" });
-    assert.ok(env.html().includes("1 von"), "ein abgehakter Punkt zählt im Fortschritt mit");
+    assert.ok(env.html().includes("1 erledigt"), "ein abgehakter Punkt zählt im Fortschritt mit");
   }
 
   // --- Kopier-Buttons greifen in den aktiven Leitfaden ---------------------

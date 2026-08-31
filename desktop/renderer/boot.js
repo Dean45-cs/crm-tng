@@ -202,6 +202,12 @@
   // Overlay-Schalter können auch außerhalb des Panels umgelegt werden
   // (Tray-Menü, systemweite Tastenkombination).
   window.hud.onOverlay((overlay) => host.setOverlay(overlay));
+  // Der Stand der Telefonanlage (Einrichtungskarte). Ältere Fassungen des
+  // Preloads kennen den Kanal nicht – dann bleibt die Karte bei dem, was der
+  // Startzustand mitgebracht hat.
+  if (typeof window.hud.onPhone === "function") {
+    window.hud.onPhone((phone) => host.setPhone(phone));
+  }
 
   // Ein neuer Anruf oder eine frisch nachgeschlagene Kundenakte ändert, wem
   // eine Notiz zugeordnet wird – der Notizbereich muss das mitbekommen.
@@ -223,6 +229,7 @@
     const initial = await window.hud.state();
 
     host.setOverlay(initial.overlay);
+    host.setPhone(initial.phone);
     host.setVersion(initial.version);
     host.setConnected(initial.connected);
     app.jiraReader.setTicket(initial.ticket);

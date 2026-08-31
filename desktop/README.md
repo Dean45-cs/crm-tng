@@ -38,8 +38,9 @@ Chrome                                   Desktop-App
 │  hud-agent.js    ─┐       │            │  shim-chrome.js            │
 │                   │       │            │  shim-jira-reader.js       │
 │ Service-Worker    │       │            │  shim-local-ai.js          │
-│  hud-bridge.js  ←─┘       │            │  notes.js  ← neu           │
-│                   │       │            │  myapps-calls.js ← neu     │
+│  hud-bridge.js  ←─┘       │            │  notes.js                  │
+│                   │       │            │  call-session.js ← neu     │
+│                   │       │            │  myapps-calls.js           │
 └──────────┬────────────────┘            └────────────┬───────────────┘
            │      WebSocket 127.0.0.1:8777            │  IPC
            └──────────────────► main/bridge.js ◄──────┘
@@ -49,7 +50,15 @@ myApps (innovaphone) ──── stadtnetzcrm://call?… ────► main/c
 
 Anrufe haben damit zwei mögliche Quellen: timio in Chrome (liest den Bildschirm)
 und myApps über das URL-Schema. Beide schreiben denselben Storage-Schlüssel,
-`activeCall` – das Panel merkt keinen Unterschied. Siehe „Anrufe aus myApps".
+`activeCall` – das Panel merkt keinen Unterschied, außer wo es einen machen
+muss (Beschriftungen, Kundenerkennung: `call.source`). Siehe „Anrufe aus
+myApps".
+
+Der Verlauf eines Gesprächs – Anfang, Auffrischen, Ende, Dauer – steht dabei in
+`call-session.js` und nicht in `myapps-calls.js`. Aus demselben Grund wie bei
+`main/call-url.js`: das ist die Stelle, an der aus einer einzelnen Meldung von
+außen eine Zeile in der Anrufhistorie wird, und die will man prüfen können,
+ohne ein Fenster zu starten (`test/call-session.test.js`).
 
 Der Kniff: **`ui.js` läuft im Fenster unverändert.** Es weiß nicht, dass es nicht
 mehr in einem Jira-Tab steckt. Ersetzt sind nur die drei Dinge, die es dort gäbe
@@ -144,18 +153,25 @@ nicht als Seite im Browser – ein Content-Script kommt da nicht heran.
 
 Stattdessen meldet myApps von sich aus. Unter **Einstellungen · Externe
 Anwendungen · Anwendung für eine Aktion hinzufügen** lässt sich eine Adresse
-hinterlegen, die bei einem Anruf-Ereignis geöffnet wird, mit Platzhaltern für
-Nummer, Name und Anruf-Kennung. Die App meldet dafür ein eigenes URL-Schema an
+hinterlegen, die bei einem Anruf geöffnet wird, mit Platzhaltern für Nummer,
+Name und Anruf-Kennung. Die App meldet dafür ein eigenes URL-Schema an
 (`stadtnetzcrm://`), nimmt die Meldung entgegen und macht daraus genau dasselbe
 Signal, das sonst timio schreibt. Alles Weitere – Call-Cockpit, Kundenakte,
 Ergebnis erfassen, Live-Anrufleiste im CRM – läuft unverändert.
+
+**Eingerichtet wird das im Panel**, nicht nach dieser Anleitung: ⚙ →
+„Telefonanlage (myApps)". Dort steht die fertige Adresse zum Kopieren, ein
+Testanruf-Knopf und – wichtiger – der Stand der Anbindung: wie viele Meldungen
+angekommen sind, wann zuletzt, und bei wie vielen davon ein Kunde erkannt
+wurde. Ohne diese Anzeige ist „es kommt nichts an" nicht von „es ruft gerade
+niemand an" zu unterscheiden.
 
 ### Was einzutragen ist
 
 | Feld | Wert |
 | --- | --- |
 | Name | `Stadtnetz CRM Copilot` |
-| Pfad | `stadtnetzcrm://call?id=$c&nr=$I&name=$d` |
+| URL | `stadtnetzcrm://call?id=$c&nr=$I&name=$d` |
 | Parameter | leer lassen – alles steht schon in der Adresse |
 | Autostart | nach Belieben |
 
@@ -164,57 +180,109 @@ App-Bundle Argumente mitzugeben; je nachdem, wie der Aufrufer startet, kommen
 sie gar nicht an. Die Adresse reicht das System dagegen sauber an die
 registrierte – auch schon laufende – App durch.
 
-Die Platzhalter kommen aus myApps (Hilfe im Dialog): `$n` Rufnummer roh, `$N`
-national, `$I` international (`+49…`), `$u` URI, `$d` Displayname, `$c`
-Conference-ID. Verwendet werden `$I` (das Format, in dem Rufnummern verglichen
-werden), `$d` und `$c`.
+Die Platzhalter kommen aus myApps: `$n` Rufnummer roh, `$N` national, `$I`
+international (`+49…`), `$u` URI, `$d` Displayname, `$c` Conference-ID.
+Verwendet werden `$I`, `$d` und `$c`.
 
-`$c` ist der wichtigste davon: eine stabile Kennung pro Gespräch. Meldet myApps
-denselben Anruf mehrfach, wird daraus keine zweite Zeile in der Historie – dafür
-sorgt der eindeutige Index aus Migration 026 (`calls.external_id`). Ohne die
-Migration funktioniert die Anbindung trotzdem, nur ohne diesen Schutz.
+### Warum `$d` der wichtigste Platzhalter ist
 
-### Zwei eigene Parameter
+Weil die Anlage den Kunden schon kennt. Erkennt sie die Rufnummer, steht im
+Displaynamen nicht bloß ein Name:
 
-Die kennt myApps nicht; sie werden von Hand in die Adresse geschrieben, wenn es
-sie braucht:
+```
+PK 182962 Daniel Ratcliffe
+└┬┘ └──┬─┘ └──────┬──────┘
+ │     │          └ Kundenname
+ │     └ Kundennummer
+ └ Kundenart (PK Privat-, GK Geschäftskunde)
+```
 
-- `dir=in` / `dir=out` – die Richtung. myApps liefert sie nicht (alle
-  Platzhalter heißen „des Anrufers"). Ohne Angabe gilt der Inbound/Outbound-
-  Schalter im Panel, genau wie bei timio. Bietet myApps getrennte Aktionen für
-  ankommende und abgehende Anrufe, legt man dort besser zwei Einträge an:
-  `…&dir=in` und `…&dir=out`.
-- `ev=ring` – der Anruf klingelt erst. Ohne Angabe gilt er als laufend.
-- `ev=end` – das Gespräch ist vorbei.
+`shared.parseCustomerLabel()` zerlegt das, und damit ist die Kundenakte da,
+bevor das erste Wort gesprochen ist – ohne Suche, ohne Zuordnen von Hand.
+Dieselben drei Teile stehen in Jira im Oikonomikos-Feld, nur in umgekehrter
+Reihenfolge (`287246 / Herr Kevin Carlsson PK`); beide Schreibweisen werden
+erkannt.
 
-### Was diese Anbindung nicht kann
+Passt das Muster nicht, ist der ganze Text der Name und die Kundennummer bleibt
+leer. **Bewusst kein Raten:** eine falsch erkannte Kundennummer öffnet im
+Gespräch die Akte eines fremden Kunden, und niemand merkt es.
 
-**Das Gesprächsende.** myApps meldet je nach eingerichteter Aktion nur den
-Anfang. Solange keine zweite Aktion fürs Auflegen eingerichtet ist (`ev=end`),
-endet ein Anruf hier erst, wenn der nächste beginnt – die Dauer in der Historie
-ist dann zu lang. Als Notbremse gilt eine Grenze von zwei Stunden, damit kein
-Anruf für immer als „läuft" in der Live-Anrufleiste des CRM stehen bleibt.
+Kennt die Anlage den Anrufer nicht, greift der Rückfall: `customer_by_phone()`
+(Migration 027) sucht die Rufnummer im Kundenstamm, in Leads und in früheren
+Anrufen. Ein Treffer wird zugeordnet, bei mehreren fragt das Cockpit, bei
+keinem steht ein Feld für die Zuordnung von Hand bereit. Ohne Migration 027
+fehlt nur dieser Rückfall – der Hauptweg über `$d` funktioniert davon
+unabhängig.
+
+`$c` ist der zweitwichtigste: eine stabile Kennung pro Gespräch. Meldet myApps
+denselben Anruf mehrfach, wird daraus keine zweite Zeile in der Historie –
+dafür sorgt der eindeutige Index aus Migration 026 (`calls.external_id`).
+
+### Was myApps nicht liefert
+
+Nachgesehen im innovaphone-Wiki (*Howto: Integrate External Apps in innovaphone
+UC clients*). Der Dialog kennt vier Felder – Name, URL, Parameter, Autostart –
+und sonst nichts. Daraus folgen zwei Grenzen, die **keine Einstellungssache**
+sind:
+
+**Das Gesprächsende.** Es gibt dort kein Ereignis dafür; ausgelöst wird beim
+Anruf, nicht beim Auflegen. Deshalb beendet der Knopf **„Aufgelegt"** im
+Cockpit das Gespräch – er ist nicht der Notausgang, sondern der reguläre Weg.
+Zusätzlich endet ein Anruf, wenn der nächste beginnt, und spätestens nach zwei
+Stunden (Sicherheitsgrenze in `renderer/call-session.js`), damit kein Anruf für
+immer als „läuft" in der Live-Anrufleiste des CRM stehen bleibt.
+
+**Die Richtung.** Ausgelöst wird „upon incoming and outgoing call" – dieselbe
+Konfiguration für beide Richtungen, kein Schalter dazwischen. Es gilt deshalb
+die Voreinstellung (im reinen Outbound-Betrieb: ausgehend) – **außer** man hat
+aus der Auskunft heraus gewählt. Dann steht die Richtung fest, weil wir das
+Gespräch selbst ausgelöst haben.
+
+Die Adresse versteht trotzdem `dir=in`/`dir=out` und `ev=ring`/`ev=end`. Sollte
+eine spätere myApps-Fassung getrennte Aktionen anbieten, wirken sie sofort;
+verlassen sollte man sich heute nicht darauf.
 
 **Anrufe außerhalb von myApps.** Vom Tischtelefon oder übers Handy sieht diese
 Anbindung nichts. Wer wirklich *alle* Anrufe braucht, kommt an den
 Verbindungsdatensätzen der Anlage nicht vorbei – dafür braucht es Zugang zur
 Anlage selbst.
 
-**Die Kundennummer.** myApps kennt sie nicht. Die Zuordnung passiert im Panel
-über die Rufnummer, wie bei einem unbekannten Anrufer in timio.
+### Wählen
+
+Umgekehrt geht es auch: „Anrufen" in der Rückrufliste und im Gesprächskopf
+öffnet eine `tel:`-Adresse, und die Anlage wählt. Der entstehende Anruf meldet
+sich Sekunden später auf demselben Weg zurück – der Kreis schließt sich.
+
+* **Windows:** funktioniert ohne Zutun; den URI-Handler bringen die myApps
+  platform services mit.
+* **macOS:** einmalig FaceTime öffnen → Menü „FaceTime" → „Einstellungen…" →
+  **„Standard für Telefonate"** auf myApps. Ohne diesen Schritt bekommt
+  FaceTime die Adresse, und der Knopf öffnet FaceTime statt zu wählen. Die
+  Einrichtungskarte zeigt an, welches Programm gerade zuständig ist, und der
+  Knopf sagt es beim Klick noch einmal.
+
+Gewählt wird im Hauptprozess (`main/main.js`, Befehl `dial`), nicht im Fenster:
+geprüft wird dort auf Ziffern und höchstens ein führendes Plus, damit aus dem
+Panel keine beliebige Adresse an die Systemschale gereicht werden kann.
 
 ### Prüfen, ob es ankommt
 
-Bei laufender App im Terminal:
+Am einfachsten über ⚙ → „Telefonanlage" → **Testanruf**. Er geht durch dieselbe
+Strecke wie ein echter Anruf – ein Test, der einen eigenen Weg nimmt, prüft den
+Weg nicht, den es zu prüfen gilt – legt aber **keine Zeile in `calls`** an.
+
+Von Hand, bei laufender App:
 
 ```
-open "stadtnetzcrm://call?id=test-1&nr=%2B4970310000000&name=Testanruf"
+open "stadtnetzcrm://call?id=test-1&nr=%2B4970310000000&name=PK%20182962%20Daniel%20Ratcliffe"
 ```
 
-Das Overlay muss nach vorn kommen und das Call-Cockpit mit „Testanruf" zeigen.
-Kommt nichts, ist meist das Schema nicht registriert: aus dem Quellstand heraus
-trägt sich Electron selbst ein, nicht die App – verlässlich ist es erst im
-gepackten Paket (`build.protocols` in `package.json`).
+Das Overlay muss nach vorn kommen und das Cockpit „Daniel Ratcliffe" mit
+„Privatkunde · 182962" zeigen – nicht den Rohstring. Kommt nichts, ist meist
+das Schema nicht registriert: aus dem Quellstand heraus trägt sich Electron
+selbst ein, nicht die App – verlässlich ist es erst im gepackten Paket
+(`build.protocols` in `package.json`). Die Einrichtungskarte sagt, was davon
+gerade gilt.
 
 ## Im Team verteilen
 

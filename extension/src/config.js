@@ -37,6 +37,18 @@
       // Seitentext nicht ableitbar, deshalb setzt sie der Bearbeiter selbst
       // über den Schalter im Panel bzw. im timio-Cockpit.
       callMode: "stadtnetzCrm.callMode",
+      // Vorgemerkter Wählvorgang: wer aus der Auskunft heraus anruft, legt
+      // hier Nummer und Kunde ab, bevor die Telefonanlage wählt. Meldet die
+      // Anlage kurz darauf ein Gespräch mit derselben Nummer, ist damit zweierlei
+      // bekannt, was sie selbst nicht liefert — die Richtung (ausgehend, wir
+      // haben es ausgelöst) und der Kunde. Bleibt lokal, wird nach dem Treffer
+      // gelöscht.
+      pendingDial: "stadtnetzCrm.pendingDial",
+      // Letztes beendetes Gespräch, solange sein Ergebnis noch erfasst werden
+      // kann. Der aktive Anruf verfällt nach CONFIG.call.staleAfterMs — ohne
+      // diesen Merkposten fiele die Zuordnung von Disposition und Abschluss
+      // fünfzehn Sekunden nach dem Auflegen ins Leere.
+      lastCall: "stadtnetzCrm.lastCall",
       // Eigene Rückruf-/Wiedervorlageliste. Bewusst getrennt von timios
       // eigener Anrufliste: hier stehen nur individuell vereinbarte Rückrufe,
       // die der Bearbeiter selbst aufgenommen hat.
@@ -193,6 +205,11 @@
       // dem sichtbaren Text. So lange bleibt der Status trotzdem "verbunden",
       // bevor er auf idle fällt.
       connectedGraceMs: 20000,
+      // So lange nach dem Auflegen bleibt ein Gespräch für die Ergebnis-
+      // Erfassung ansprechbar (Disposition, Abschluss-Panel). Deutlich länger
+      // als staleAfterMs, weil das Erfassen Minuten dauern darf — und weil ein
+      // Ergebnis, das ins Leere geschrieben wird, niemandem auffällt.
+      closeoutWindowMs: 1800000,
       // Wie lange das Call-Cockpit nach dem Auflegen noch sichtbar bleibt.
       endedOverlayMs: 12000,
       // Ausgehend länger: dort wird nach dem Auflegen noch das Gesprächs-

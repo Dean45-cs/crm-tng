@@ -1663,3 +1663,85 @@ html, body {
     opacity: 0.5;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Telefonanlage: Einrichtungskarte und Kundenzuordnung
+   ---------------------------------------------------------------------------
+   Beides gibt es nur auf dem Schreibtisch – in Chrome kommt kein Anruf über
+   ein URL-Schema an, und der Rückfall „Kunde von Hand zuordnen" greift nur bei
+   Meldungen der Anlage. Deshalb stehen die Regeln hier und nicht in
+   extension/styles/content.css.
+   --------------------------------------------------------------------------- */
+
+#stadtnetzcrm-root .sc-phone-status {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#stadtnetzcrm-root .sc-phone-status li {
+  padding: 7px 10px;
+  border-radius: var(--hud-r-md);
+  background: var(--sc-soft);
+  /* Der farbige Streifen links trägt die Aussage: eine Liste aus drei Zeilen
+     soll auf einen Blick sagen, ob etwas fehlt – ohne dass man sie liest. */
+  border-left: 3px solid var(--hud-border-strong);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--sc-ink);
+}
+
+#stadtnetzcrm-root .sc-phone-status li.is-ok { border-left-color: var(--sc-success); }
+#stadtnetzcrm-root .sc-phone-status li.is-warn {
+  border-left-color: var(--sc-warning);
+  background: var(--sc-amber-soft);
+}
+
+#stadtnetzcrm-root .sc-phone-status li small {
+  display: block;
+  margin-top: 3px;
+  color: var(--sc-muted);
+  font-size: 11px;
+}
+
+#stadtnetzcrm-root .sc-hint-warn {
+  color: var(--sc-warning);
+}
+
+/* Die Zuordnungszeile im Gesprächskopf. Sie erscheint nur, solange kein Kunde
+   feststeht – sie darf deshalb auffallen, aber nicht wie eine Warnung wirken:
+   ein unbekannter Anrufer ist der Normalfall, kein Fehler. */
+#stadtnetzcrm-root .sc-callhead-match {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--hud-r-md);
+  background: var(--sc-soft);
+  font-size: 11.5px;
+  color: var(--sc-muted);
+}
+
+#stadtnetzcrm-root .sc-callhead-match p {
+  margin: 0 0 6px;
+}
+
+#stadtnetzcrm-root .sc-callhead-match .sc-inline-actions {
+  margin: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#stadtnetzcrm-root .sc-callhead-match .sc-text-input {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+/* Nach dem Auflegen bleibt der Gesprächskopf für die Erfassung stehen. Er
+   soll dabei sichtbar nicht mehr „live" sein – sonst hielte man ein längst
+   beendetes Gespräch für laufend. */
+#stadtnetzcrm-root .sc-callhead.is-aftercall {
+  opacity: 0.92;
+  border-left: 3px solid var(--hud-border-strong);
+}

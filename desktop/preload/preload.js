@@ -51,5 +51,11 @@ contextBridge.exposeInMainWorld("hud", {
   // Ein Anruf, gemeldet von myApps über das URL-Schema (siehe main.js). Kommt
   // als { id, nr, name, uri, dir, ev, receivedAt } – alles außer receivedAt
   // kann fehlen, je nachdem, welche Platzhalter in myApps eingetragen sind.
-  onCall: subscribe("hud:call")
+  onCall: subscribe("hud:call"),
+
+  // Der Stand der Anlagen-Anbindung für die Einrichtungskarte: wie viele
+  // Meldungen angekommen sind, wann zuletzt, ob das URL-Schema registriert ist
+  // und welches Programm tel:-Adressen bekommt. Gezählt wird im Hauptprozess,
+  // damit es einen Neustart überlebt.
+  onPhone: subscribe("hud:phone")
 });

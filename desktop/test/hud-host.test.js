@@ -221,6 +221,54 @@ async function run() {
     assert.ok(env.html().includes("schon belegt"), "eine abgelehnte Taste wird gemeldet");
   }
 
+  // --- Einrichtungskarte der Telefonanlage ---------------------------------
+  //
+  // Ihr Zweck ist nicht das Einrichten, sondern das Nachsehen: bleiben die
+  // Anrufe eines Tages aus, muss hier stehen, woran es liegt. Geprüft wird
+  // deshalb vor allem, dass sie die Fälle AUSEINANDERHÄLT.
+  {
+    const { env, commands, host } = await mount();
+    env.click("toggle-settings");
+
+    assert.ok(env.html().includes("Telefonanlage (myApps)"), "die Karte steht in den Einstellungen");
+    assert.ok(env.html().includes("Noch nie etwas empfangen"), "ohne Meldungen sagt sie das auch");
+
+    // Die Adresse ist Sache des Hauptprozesses (dort steht das Schema). Meldet
+    // er keine, wird auch keine angezeigt – lieber gar keine als eine falsche,
+    // die jemand in myApps einträgt.
+    assert.ok(!env.html().includes('data-role="hud-phone-url"'), "ohne gemeldete Adresse kein leeres Feld");
+    host.setPhone({ url: "stadtnetzcrm://call?id=$c&nr=$I&name=$d" });
+    assert.ok(env.html().includes("stadtnetzcrm://call"), "gemeldet erscheint sie zum Kopieren");
+    assert.ok(env.html().includes("name=$d"), "samt dem Platzhalter, an dem die Kundenerkennung hängt");
+
+    // Der Testanruf geht durch dieselbe Strecke wie ein echter Anruf.
+    env.click("hud-phone-test");
+    assert.strictEqual(commands.pop().name, "call-test", "der Testanruf-Knopf löst ihn im Hauptprozess aus");
+
+    // Meldungen kommen an, aber es entsteht kein Gespräch: das ist der Fall,
+    // den man ohne Hinweis bei myApps suchen würde – und dort liegt er nicht.
+    host.setPhone({ received: 4, lastReceivedAt: Date.now(), calls: 0, recognized: 0, protocolRegistered: true, url: "stadtnetzcrm://call?id=$c&nr=$I&name=$d", platform: "darwin", telHandler: "myApps" });
+    assert.ok(env.html().includes("4 Meldungen angenommen"), "die Zählung steht da");
+    assert.ok(env.html().includes("liegt es nicht an myApps"), "und die Unterscheidung, wo der Fehler NICHT liegt");
+
+    // Gespräche entstehen, aber nie mit erkanntem Kunden: dann fehlt $d.
+    host.setPhone({ received: 6, lastReceivedAt: Date.now(), calls: 6, recognized: 0 });
+    assert.ok(env.html().includes("name=$d"), "der Hinweis nennt den fehlenden Platzhalter");
+
+    // macOS mit FaceTime als Standard: der Anrufen-Knopf ginge ins Leere.
+    host.setPhone({ platform: "darwin", telHandler: "FaceTime" });
+    assert.ok(env.html().includes("Standard für Telefonate"), "die einmalige macOS-Einstellung steht dabei");
+    assert.ok(host.dialHint().includes("FaceTime"), "und der Klick auf „Anrufen“ sagt es noch einmal");
+
+    host.setPhone({ platform: "darwin", telHandler: "myApps" });
+    assert.strictEqual(host.dialHint(), "", "ist es richtig eingestellt, schweigt der Hinweis");
+
+    // Wählen geht durch den Hauptprozess – der Renderer baut keine tel:-Adresse.
+    host.dial("+4970310000000");
+    assert.strictEqual(JSON.stringify(commands.pop()),
+      JSON.stringify({ name: "dial", args: { number: "+4970310000000" } }));
+  }
+
   console.log("hud-host.test.js: alle Szenarien bestanden.");
 }
 

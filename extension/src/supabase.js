@@ -406,6 +406,106 @@
     }
   }
 
+  // Kunde zu einer Rufnummer (Migration 027).
+  //
+  // Der Rückfallweg: normalerweise trägt der Displayname der Telefonanlage die
+  // Kundennummer schon mit sich ("PK 182962 Daniel Ratcliffe"). Kennt die
+  // Anlage den Anrufer nicht, bleibt nur die Nummer — dann sucht diese RPC in
+  // Kundenstamm, Leads und früheren Anrufen danach.
+  //
+  // Geliefert wird eine LISTE, keine Antwort: zu einer Nummer können mehrere
+  // Kunden gehören (Familienanschluss, Firmenzentrale). Sich in dem Fall für
+  // einen zu entscheiden wäre geraten — die Auswahl gehört dem Menschen im
+  // Gespräch, nicht dieser Funktion.
+  async function customerByPhone(phone) {
+    const number = String(phone == null ? "" : phone).trim();
+    if (!number) return { ok: false, reason: "error", error: "Keine Rufnummer." };
+
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    try {
+      const res = await fetch(`${config.url}/rest/v1/rpc/customer_by_phone`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: config.anonKey,
+          Authorization: `Bearer ${session.accessToken}`
+        },
+        body: JSON.stringify({ p_phone: number })
+      });
+
+      if (res.status === 401) {
+        clearSession();
+        return { ok: false, reason: "not-logged-in" };
+      }
+      // 404 heißt hier: die Migration ist noch nicht eingespielt. Das ist ein
+      // eigener Fall und keine erfolglose Suche — sonst hieße es im Panel „kein
+      // Treffer", und niemand käme darauf, dass die Funktion schlicht fehlt.
+      if (res.status === 404) return { ok: false, reason: "not-migrated", error: "customer_by_phone() fehlt – Migration 027 einspielen." };
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
+      }
+
+      const json = await res.json().catch(() => null);
+      const rows = Array.isArray(json) ? json : [];
+      const matches = rows.map((row) => ({
+        customerNumber: (row && row.customerNumber) || "",
+        name: (row && row.name) || "",
+        // Woher der Treffer stammt (Kundenstamm, Lead, früherer Anruf) – im
+        // Zweifel die Entscheidungshilfe für die Auswahl.
+        source: (row && row.source) || ""
+      })).filter((row) => row.customerNumber);
+      return { ok: true, matches };
+    } catch (error) {
+      return { ok: false, reason: "network", error: String((error && error.message) || error) };
+    }
+  }
+
+  // Kundennummer auf einen bereits angelegten Anruf schreiben. Nötig, weil bei
+  // unbekanntem Anrufer erst die Zeile entsteht und dann die Zuordnung — ohne
+  // dieses Nachziehen bliebe der Anruf in der Auswertung herrenlos, obwohl im
+  // Cockpit der richtige Kunde stand.
+  async function patchCallCustomer(callId, customerNumber) {
+    if (!callId) return { ok: false, reason: "error", error: "Keine Anruf-ID." };
+    const number = String(customerNumber == null ? "" : customerNumber).trim();
+    if (!number) return { ok: false, reason: "error", error: "Keine Kundennummer." };
+
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) return { ok: false, reason: "not-configured" };
+
+    const session = await ensureFreshSession();
+    if (!session) return { ok: false, reason: "not-logged-in" };
+
+    try {
+      const res = await fetch(`${config.url}/rest/v1/calls?id=eq.${encodeURIComponent(callId)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: config.anonKey,
+          Authorization: `Bearer ${session.accessToken}`
+        },
+        body: JSON.stringify({ customer_number: number })
+      });
+
+      if (res.status === 401) {
+        clearSession();
+        return { ok: false, reason: "not-logged-in" };
+      }
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        return { ok: false, reason: "error", error: (errJson && errJson.message) || `HTTP ${res.status}` };
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, reason: "network", error: String((error && error.message) || error) };
+    }
+  }
+
   // Bisherige Anrufe zu einer Kundennummer – die Vorgeschichte, die in der
   // Vorbereitung fehlt: wurde der Kunde diese Woche schon (vergeblich)
   // angerufen, und wie ging es aus? Die RLS-Regel auf calls ist bewusst
@@ -475,6 +575,29 @@
 
   // Anruf-Start (Stufe 2, KONZEPT-INTEGRATION.md): wird von timio-content.js
   // aufgerufen, sobald ein Anruf sichtbar wird (klingelt/verbindet). agent_id
+  /**
+   * Die eigene Zeile zu einer Anruf-Kennung der Telefonanlage. Nur für den
+   * Konfliktfall in startCall(): bewusst auf die eigene Sitzung eingeschränkt,
+   * damit hier nicht plötzlich der Anruf einer Kollegin weitergeführt wird —
+   * lesen dürften wir ihn (calls read all), fortschreiben nicht.
+   */
+  async function findCallByExternalId(config, session, externalId) {
+    try {
+      const query = `external_id=eq.${encodeURIComponent(externalId)}&agent_id=eq.${session.userId}&select=id&limit=1`;
+      const res = await fetch(`${config.url}/rest/v1/calls?${query}`, {
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${session.accessToken}`
+        }
+      });
+      if (!res.ok) return null;
+      const rows = await res.json().catch(() => null);
+      return (Array.isArray(rows) && rows[0] && rows[0].id) || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   // wird explizit aus der Session gesetzt (gleiche Konvention wie
   // insertContract() im CRM: der Client setzt created_by/agent_id selbst,
   // kein DB-Default) — RLS verlangt ohnehin auth.uid() = agent_id.
@@ -512,6 +635,15 @@
       if (res.status === 401) {
         clearSession();
         return { ok: false, reason: "not-logged-in" };
+      }
+      // Dieselbe Conference-ID schon einmal gemeldet: der eindeutige Index aus
+      // Migration 026 hat zugeschlagen. Das ist kein Fehler, sondern genau der
+      // Fall, für den er da ist — nur darf hier nicht aufgegeben werden. Ohne
+      // die vorhandene Zeile bliebe sie für immer ohne ended_at und ohne
+      // Disposition stehen, weil der Aufrufer keine Zeilen-ID bekäme.
+      if (res.status === 409 && externalId) {
+        const adopted = await findCallByExternalId(config, session, externalId);
+        if (adopted) return { ok: true, id: adopted, adopted: true };
       }
       if (!res.ok) {
         const errJson = await res.json().catch(() => null);
@@ -1200,11 +1332,13 @@
     logout,
     ensureFreshSession,
     customerCard,
+    customerByPhone,
     recentCalls,
     parseCallRow,
     startCall,
     endCall,
     patchCallDisposition,
+    patchCallCustomer,
     fetchCurrentShift,
     fetchUserAppearance,
     insertNote,

@@ -94,6 +94,18 @@
     // aus, als hätte er nichts getan.
     toast: { text: "", until: 0 },
     activeCall: null, // Signal von timio-content.js über chrome.storage, siehe currentActiveCall()
+    // Das zuletzt beendete Gespräch, solange sein Ergebnis noch erfasst werden
+    // kann (siehe callForCloseout()). Ein aktiver Anruf verfällt nach
+    // CONFIG.call.staleAfterMs — bei timio fiel das nie auf, weil dessen
+    // Sekundentakt den beendeten Anruf frisch hielt. Die Telefonanlage meldet
+    // dagegen einmal und schweigt: ohne diesen Merkposten fände die
+    // Ergebnis-Erfassung fünfzehn Sekunden nach dem Auflegen keine Zeile mehr,
+    // auf die sie schreiben könnte — und niemand merkte es.
+    lastCall: null,
+    // Kundenzuordnung des laufenden Anrufs, wenn die Telefonanlage sie nicht
+    // schon im Displaynamen mitgeliefert hat:
+    // { callId, phone, status: "idle"|"loading"|"none"|"ambiguous"|"error", matches: [] }
+    callCustomer: { callId: "", phone: "", status: "idle", matches: [], error: "", typed: "" },
     // Arbeitsrichtung ist im reinen Outbound-Betrieb konstant. Der Wert bleibt
     // im State, weil geteilte Helfer (shared.callStatusMeta, callModeMeta) ihn
     // erwarten; ein Richtungsschalter existiert nicht mehr.
@@ -398,6 +410,350 @@
     return state.activeCall;
   }
 
+  // Das Gespräch, auf das sich eine Erfassung bezieht — und das ist NICHT
+  // dasselbe wie „läuft gerade ein Gespräch".
+  //
+  // Nach dem Auflegen hat der Bearbeiter Minuten Zeit: Disposition klicken,
+  // Abschluss-Panel ausfüllen, speichern. currentActiveCall() ist da längst
+  // null (staleAfterMs, 15 s), und damit wäre die Zeilen-ID des Anrufs weg —
+  // die Disposition liefe ins Leere, ohne dass irgendwo etwas aufblinkt.
+  // Deshalb hält state.lastCall den Schnappschuss so lange vor, wie das
+  // Erfassen dauern darf.
+  function callForCloseout() {
+    const active = currentActiveCall();
+    if (active) return active;
+    const last = state.lastCall;
+    if (!last || !last.endedAt) return null;
+    const window = (CONFIG.call && CONFIG.call.closeoutWindowMs) || 1800000;
+    if (Date.now() - last.endedAt > window) return null;
+    return last;
+  }
+
+  // Schnappschuss beim Auflegen. Alles, was die Erfassung danach noch braucht —
+  // vor allem dbCallId, ohne die keine Disposition ihren Weg findet.
+  function rememberEndedCall(call) {
+    if (!call) return;
+    state.lastCall = {
+      ...call,
+      endedAt: Date.now()
+    };
+    safeLocalSet({ [CONFIG.storageKeys.lastCall]: state.lastCall });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Wer ruft da an?
+  //
+  // Die Telefonanlage liefert den Kunden meist frei Haus: erkennt sie die
+  // Rufnummer, steht im Displaynamen „PK 182962 Daniel Ratcliffe" — Kürzel,
+  // Kundennummer, Name. shared.parseCustomerLabel() zerlegt das schon in der
+  // Auskunft (desktop/renderer/call-session.js), hier kommt die Nummer also
+  // fertig an.
+  //
+  // Bleibt der Fall, dass die Anlage den Anrufer NICHT kennt. Dann gibt es nur
+  // die Rufnummer, und dafür sind die beiden Wege unten da: Suche in den
+  // eigenen Daten, sonst Zuordnung von Hand. Beides mündet in denselben
+  // Handgriff — assignCustomerToCall() —, damit es hinterher keine Rolle
+  // spielt, woher die Nummer kam.
+  // ---------------------------------------------------------------------------
+
+  function resetCallCustomer(callId) {
+    state.callCustomer = { callId: callId || "", phone: "", status: "idle", matches: [], error: "", typed: "" };
+  }
+
+  // Warum die getippte Nummer im State steht und nicht nur im Feld: das Panel
+  // zeichnet sich bei jeder Storage-Änderung neu, und der Herzschlag der
+  // Auskunft schreibt alle vier Sekunden. Ein Feld, das seinen Wert nur im DOM
+  // hält, wäre also mitten im Tippen regelmäßig leer — und niemand käme darauf,
+  // woran das liegt.
+
+  /**
+   * Spiegelt die Kundenakte in den gemeinsamen Storage-Schlüssel.
+   *
+   * Der ist der eigentliche Hebel: davon leben das Cockpit
+   * (renderKundenakte) UND die Kundenzuordnung der Notizen
+   * (desktop/renderer/notes.js). In der Auskunft war er bisher immer leer,
+   * weil ihn nur timio-content.js geschrieben hat — die Akte blieb dort also
+   * selbst dann unsichtbar, wenn die Kundennummer längst bekannt war.
+   *
+   * Bewusst KEIN eigener Abruf: geladen wird die Akte ohnehin schon für die
+   * Vorbereitungs-Kachel (loadPrepCustomer), und deren Statusnamen sind
+   * dieselben, die renderKundenakte erwartet. Ein zweiter Abruf derselben
+   * Daten wäre nicht falsch, nur überflüssig — und irgendwann stünden zwei
+   * verschiedene Stände desselben Kunden nebeneinander.
+   *
+   * Nur für Anrufe aus der Telefonanlage: bei timio schreibt das
+   * Content-Script denselben Schlüssel, und zwei Schreiber auf einem Schlüssel
+   * überschreiben sich gegenseitig.
+   */
+  function ensureCustomerCardForCall(call) {
+    if (!call || call.source !== "myapps") return;
+    const number = String(call.customerNumber || "").trim();
+    if (!number) return;
+
+    const prep = state.prepCustomer;
+    const matches = prep && prep.number === number;
+    const status = matches && prep.status !== "idle" ? prep.status : "loading";
+    const next = {
+      callId: callIdOf(call),
+      customerNumber: number,
+      status,
+      data: (matches && prep.card) || null,
+      error: (matches && prep.error) || "",
+      updatedAt: Date.now()
+    };
+
+    const before = state.customerCard;
+    if (before && before.callId === next.callId && before.customerNumber === number && before.status === status) return;
+    state.customerCard = next;
+    safeLocalSet({ [CONFIG.storageKeys.customerCard]: next });
+  }
+
+  /**
+   * Rückfall: die Anlage kannte den Anrufer nicht, es gibt nur die Rufnummer.
+   * Gesucht wird in den eigenen Daten (Kundenstamm, Leads, frühere Anrufe) —
+   * siehe public.customer_by_phone(), Migration 027.
+   *
+   * Genau ein Lauf je Anruf, dieselbe Regel wie maybeLookupCustomer() in
+   * timio-content.js: eine Suche, die sich bei jedem Render wiederholt, fällt
+   * erst auf, wenn die Datenbank ächzt.
+   */
+  function maybeResolveCallCustomer(call) {
+    if (!supabaseClient || typeof supabaseClient.customerByPhone !== "function") return;
+    if (!call || call.source !== "myapps") return;
+    if (call.customerNumber) return;
+    const phone = String(call.callerNumber || "").trim();
+    if (!phone) return;
+    const id = callIdOf(call);
+    if (state.callCustomer.callId === id && state.callCustomer.status !== "idle") return;
+
+    state.callCustomer = { callId: id, phone, status: "loading", matches: [], error: "", typed: "" };
+    render();
+
+    supabaseClient.customerByPhone(phone).then((res) => {
+      if (state.callCustomer.callId !== id) return;
+      if (!res || !res.ok) {
+        state.callCustomer = {
+          callId: id, phone, status: "error", matches: [],
+          reason: (res && res.reason) || "", error: (res && res.error) || "", typed: state.callCustomer.typed || ""
+        };
+        render();
+        return;
+      }
+      const matches = Array.isArray(res.matches) ? res.matches : [];
+      if (matches.length === 1) {
+        state.callCustomer = { callId: id, phone, status: "idle", matches: [], error: "", typed: "" };
+        assignCustomerToCall(matches[0].customerNumber, matches[0].name, { silent: true });
+        return;
+      }
+      state.callCustomer = {
+        callId: id, phone,
+        status: matches.length ? "ambiguous" : "none",
+        matches, error: "", typed: state.callCustomer.typed || ""
+      };
+      render();
+    }).catch((error) => {
+      if (state.callCustomer.callId !== id) return;
+      state.callCustomer = { callId: id, phone, status: "error", matches: [], reason: "", error: String((error && error.message) || error), typed: state.callCustomer.typed || "" };
+      render();
+    });
+  }
+
+  /**
+   * Kunde und Anruf zusammenbringen — der eine Handgriff, in den alle Wege
+   * münden (Treffer der Suche, Auswahl aus mehreren, Eingabe von Hand).
+   *
+   * Geschrieben wird an drei Stellen, und keine davon ist verzichtbar:
+   *   1. der gemeinsame Storage-Schlüssel, damit Cockpit und Auskunft dasselbe
+   *      Gespräch sehen (die Auskunft übernimmt es in ihren Zustand, sonst
+   *      putzte ihr Herzschlag die Zuordnung nach vier Sekunden weg),
+   *   2. die Zeile in `calls`, damit der Anruf auch in der Auswertung dem
+   *      Kunden gehört,
+   *   3. die Kundenakte, damit im Gespräch tatsächlich etwas dasteht.
+   */
+  function assignCustomerToCall(customerNumber, customerName, options) {
+    const number = String(customerNumber || "").trim();
+    if (!number) {
+      toast("Keine Kundennummer angegeben.");
+      return;
+    }
+    const call = currentActiveCall() || callForCloseout();
+    if (!call) {
+      toast("Kein Gespräch, dem sich der Kunde zuordnen ließe.");
+      return;
+    }
+
+    const active = currentActiveCall();
+    const payload = { ...call, customerNumber: number, updatedAt: Date.now() };
+    if (customerName) payload.callerName = customerName;
+
+    if (active) {
+      safeLocalSet({ [CONFIG.storageKeys.activeCall]: payload });
+      resetCallCustomer(callIdOf(payload));
+      handleActiveCallChange(payload);
+    } else {
+      // Ein beendetes Gespräch bleibt beendet. Es über handleActiveCallChange
+      // zu schicken, machte es durch das frische updatedAt für fünfzehn
+      // Sekunden wieder „aktiv" – das Cockpit käme zurück, obwohl längst
+      // aufgelegt wurde. Der Zeitpunkt des Endes bleibt deshalb auch stehen.
+      state.lastCall = { ...payload, endedAt: state.lastCall && state.lastCall.endedAt ? state.lastCall.endedAt : Date.now() };
+      safeLocalSet({ [CONFIG.storageKeys.lastCall]: state.lastCall });
+      resetCallCustomer(callIdOf(payload));
+      ensureCustomerCardForCall(state.lastCall);
+      maybePrepCustomer();
+      render();
+    }
+
+    patchCallCustomerRow(call.dbCallId, callIdOf(payload), number);
+    if (!(options && options.silent)) toast(`Kunde ${number} zugeordnet.`);
+  }
+
+  // Die Zuordnung auf die Zeile in `calls` nachziehen.
+  //
+  // Der Haken: bei unbekanntem Anrufer laufen zwei Dinge gleichzeitig los — die
+  // Auskunft legt die Zeile an, das Panel sucht den Kunden. Wer zuerst fertig
+  // ist, steht nicht fest. Ist die Suche schneller, gibt es noch keine
+  // Zeilen-ID, und ein einmaliger Versuch ginge ins Leere: der Anruf bliebe in
+  // der Auswertung herrenlos, obwohl im Cockpit der richtige Kunde stand.
+  // Deshalb wird die Zuordnung gemerkt und nachgeholt, sobald die ID eintrifft
+  // (handleActiveCallChange).
+  let pendingCustomerPatch = null;
+
+  function patchCallCustomerRow(dbCallId, callId, customerNumber) {
+    if (!supabaseClient || typeof supabaseClient.patchCallCustomer !== "function") return;
+    if (!dbCallId) {
+      pendingCustomerPatch = { callId, customerNumber };
+      return;
+    }
+    pendingCustomerPatch = null;
+    // Kein stilles .catch(): der Mensch hat gerade bewusst zugeordnet und eine
+    // Quittung dafür bekommen. Landet es nicht in der Historie, muss die
+    // Quittung widerrufen werden – sonst gilt der Anruf in der Auswertung als
+    // herrenlos, während im Cockpit der richtige Kunde steht.
+    Promise.resolve()
+      .then(() => supabaseClient.patchCallCustomer(dbCallId, customerNumber))
+      .then((res) => {
+        if (res && res.ok) return;
+        toast(`Kunde ${customerNumber} steht im Cockpit, aber nicht in der Anrufhistorie.`);
+      })
+      .catch(() => {
+        toast(`Kunde ${customerNumber} steht im Cockpit, aber nicht in der Anrufhistorie.`);
+      });
+  }
+
+  function flushPendingCustomerPatch(call) {
+    if (!pendingCustomerPatch || !call || !call.dbCallId) return;
+    if (callIdOf(call) !== pendingCustomerPatch.callId) return;
+    patchCallCustomerRow(call.dbCallId, pendingCustomerPatch.callId, pendingCustomerPatch.customerNumber);
+  }
+
+  /** Die Zuordnungszeile im Gesprächskopf – nur, solange keiner feststeht. */
+  function renderCustomerMatch(call) {
+    if (!call || call.customerNumber) return "";
+    if (call.source !== "myapps") return "";
+    const cc = state.callCustomer;
+    if (cc.callId !== callIdOf(call)) return "";
+
+    if (cc.status === "loading") {
+      return `<p class="sc-callhead-match">Kunde wird über die Rufnummer gesucht …</p>`;
+    }
+    if (cc.status === "ambiguous") {
+      const options = cc.matches.slice(0, 4).map((match) => `
+        <button class="sc-secondary-button" type="button" data-action="assign-customer"
+          data-customer-number="${escapeHtml(match.customerNumber)}" data-customer-name="${escapeHtml(match.name || "")}">
+          ${escapeHtml(match.customerNumber)}${match.name ? ` · ${escapeHtml(match.name)}` : ""}
+        </button>`).join("");
+      return `
+        <div class="sc-callhead-match is-ambiguous">
+          <p>Mehrere Kunden zu dieser Rufnummer — welcher ist es?</p>
+          <div class="sc-inline-actions">${options}</div>
+        </div>`;
+    }
+    // "none", "error" und alles Übrige: von Hand geht immer. Der Grund gehört
+    // aber dazu — „nicht gefunden" und „nicht angemeldet" sehen sonst gleich
+    // aus, und im zweiten Fall sucht man an der falschen Stelle.
+    const reasons = {
+      "not-logged-in": "Nicht bei Supabase angemeldet – die Rufnummernsuche braucht eine Anmeldung (⚙).",
+      "not-migrated": "Die Rufnummernsuche fehlt in der Datenbank (Migration 027).",
+      "not-configured": "Kein Supabase hinterlegt – die Rufnummernsuche ist aus."
+    };
+    const hint = cc.status === "error"
+      ? (reasons[cc.reason] || "Die Suche ist fehlgeschlagen.")
+      : "Die Telefonanlage kennt diesen Anrufer nicht.";
+    return `
+      <div class="sc-callhead-match">
+        <p>${escapeHtml(hint)} Kundennummer zuordnen:</p>
+        <div class="sc-inline-actions">
+          <input class="sc-text-input" data-role="assign-customer-number" placeholder="z. B. 182962" value="${escapeHtml(cc.typed || "")}">
+          <button class="sc-secondary-button" type="button" data-action="assign-customer">Zuordnen</button>
+        </div>
+      </div>`;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Wählen
+  //
+  // Die Telefonanlage nimmt tel:-Adressen entgegen — unter Windows über den
+  // URI-Handler, den die myApps platform services mitbringen, unter macOS,
+  // sobald myApps in FaceTime als „Standard für Telefonate" eingetragen ist.
+  // Gewählt wird deshalb nicht hier, sondern im Hauptprozess der Auskunft
+  // (desktop/main/main.js); in Chrome gibt es diesen Weg nicht, dort bleibt es
+  // beim Kopieren der Nummer.
+  // ---------------------------------------------------------------------------
+
+  function canDial() {
+    const host = hudHost();
+    return Boolean(host && typeof host.canDial === "function" && host.canDial());
+  }
+
+  function renderDialButton(phone, context, className) {
+    if (!canDial()) return "";
+    const number = normalizePhone(phone);
+    if (!number) return "";
+    const ctx = context || {};
+    return `<button class="${className || "sc-secondary-button"}" type="button" data-action="dial-number"
+      data-phone="${escapeHtml(number)}"
+      data-customer-number="${escapeHtml(ctx.customerNumber || "")}"
+      data-customer-name="${escapeHtml(ctx.callerName || ctx.customerName || "")}"
+      title="Über die Telefonanlage anrufen">Anrufen</button>`;
+  }
+
+  /**
+   * Wählen — und sich merken, wen man gewählt hat.
+   *
+   * Der Merkposten ist der Grund, warum das hier mehr ist als ein Knopf: die
+   * Anlage meldet den entstehenden Anruf gleich zurück, kann aber weder die
+   * Richtung noch (bei unbekannter Nummer) den Kunden nennen. Beides steht
+   * durch diesen Eintrag fest, sobald die Meldung eintrifft — siehe
+   * matchingDial() in desktop/renderer/call-session.js.
+   */
+  function dialNumber(phone, context) {
+    const number = normalizePhone(phone);
+    if (!number) {
+      toast("Für diesen Eintrag ist keine Rufnummer hinterlegt.");
+      return false;
+    }
+    const host = hudHost();
+    if (!host || typeof host.dial !== "function") return false;
+
+    const ctx = context || {};
+    safeLocalSet({
+      [CONFIG.storageKeys.pendingDial]: {
+        phoneKey: shared.phoneKey(number),
+        customerNumber: ctx.customerNumber || "",
+        customerName: ctx.customerName || "",
+        at: Date.now()
+      }
+    });
+    host.dial(number);
+    // Ein Wähl-Knopf, der unter macOS stillschweigend FaceTime öffnet, ist der
+    // ärgerlichste Fall: er tut etwas, nur nicht das Erwartete. Der Gastgeber
+    // weiß, wer tel:-Adressen bekommt – gesagt wird es hier, im Moment des
+    // Klicks, und nicht nur in einer Einstellung, die niemand aufschlägt.
+    const hint = typeof host.dialHint === "function" ? host.dialHint() : "";
+    toast(hint ? `${number}: ${hint}` : `${number} wird gewählt …`);
+    return true;
+  }
+
   // ---------------------------------------------------------------------------
   // Arbeitsrichtung (Inbound/Outbound)
   //
@@ -522,9 +878,14 @@
     toast("Rückruf erledigt.");
   }
 
-  // Wählen heißt hier: Nummer in die Zwischenablage und ab in den timio-Tab.
-  // Bewusst kein schreibender Zugriff auf timio – dessen DOM ist nicht
-  // bekannt, und genau darauf beruht die Robustheit der ganzen Integration.
+  // Wählen. Auf dem Schreibtisch übernimmt das die Telefonanlage selbst — ein
+  // Klick genügt, und der entstehende Anruf meldet sich Sekunden später als
+  // Gespräch zurück.
+  //
+  // In Chrome gibt es diesen Weg nicht: dort bleibt es beim Kopieren und einem
+  // Sprung in den timio-Tab. Bewusst kein schreibender Zugriff auf timio –
+  // dessen DOM ist nicht bekannt, und genau darauf beruht die Robustheit der
+  // ganzen Integration.
   async function dialCallback(id) {
     const entry = state.callbacks.find((item) => item.id === id);
     if (!entry) return;
@@ -533,6 +894,8 @@
       toast("Für diesen Eintrag ist keine Rufnummer hinterlegt.");
       return;
     }
+    if (dialNumber(number, { customerNumber: entry.customerReference || "", customerName: entry.customerName || "" })) return;
+
     await copyText(number, `${number} kopiert – in timio einfügen und wählen.`);
     try {
       if (chrome.runtime && chrome.runtime.sendMessage) {
@@ -595,7 +958,13 @@
     // nächsten Kunden mitten in Schritt 5 eines fremden Gesprächs — der
     // Fortschritt ist die Aussage des Schrittwerks und darf nicht überhängen.
     const nextId = callIdOf(state.activeCall);
-    if (nextId && nextId !== previousId) resetGuide();
+    if (nextId && nextId !== previousId) {
+      resetGuide();
+      // Auch die Kundenerkennung gehört zurückgesetzt: sonst hinge die
+      // Trefferliste des vorigen Anrufs am neuen, und ein Klick darauf ordnete
+      // den falschen Kunden zu.
+      resetCallCustomer(nextId);
+    }
 
     if (status === "ringing" || status === "connected") {
       window.clearTimeout(cockpitEndedTimer);
@@ -608,9 +977,18 @@
       }
     }
     if (status === "ended" && previousStatus !== "ended") {
+      // Bevor der beendete Anruf verfällt: festhalten, worauf sich die
+      // Ergebnis-Erfassung danach noch bezieht (siehe callForCloseout()).
+      rememberEndedCall(state.activeCall);
       scheduleCockpitEndedHide();
     }
     render();
+    // Die Kundenakte des Anrufs: entweder ist die Nummer schon da (die Anlage
+    // hat sie im Displaynamen mitgeschickt) oder sie muss über die Rufnummer
+    // gesucht werden. Beides genau einmal je Anruf.
+    flushPendingCustomerPatch(state.activeCall);
+    ensureCustomerCardForCall(state.activeCall);
+    maybeResolveCallCustomer(state.activeCall);
     // lookupCustomerNumber() nimmt die Nummer des laufenden Anrufs vor die des
     // Tickets. Ohne Nachladen stünde im Widget die neue Kundennummer über der
     // Akte des vorigen Kunden.
@@ -659,15 +1037,18 @@
     if (!call || call.status === "ended") return;
 
     const startedAt = call.connectedAt || call.updatedAt || Date.now();
+    const elapsedMs = Math.max(0, Date.now() - startedAt);
     const payload = {
       ...call,
       status: "ended",
       updatedAt: Date.now(),
-      // Sekunden, wie sie auch timio liefert – daraus wird duration_s.
-      // Nicht als Sekundenzahl: shared.callTimerText() gibt finalDuration
-      // unverändert aus – eine 2 stünde dann als "2" im Gesprächskopf statt als
-      // "0:02". Dasselbe Format, das timio geschrieben hat.
-      finalDuration: formatDuration(Date.now() - startedAt),
+      // Zwei Felder mit je einer Aufgabe. finalDuration ist Anzeigetext:
+      // shared.callTimerText() gibt ihn unverändert aus – eine 2 stünde dort
+      // als "2" im Gesprächskopf statt als "0:02". durationS ist die
+      // Sekundenzahl, aus der duration_s in der Datenbank wird; wer sie aus
+      // dem Text zurückrechnen muss, rechnet früher oder später falsch.
+      finalDuration: formatDuration(elapsedMs),
+      durationS: Math.round(elapsedMs / 1000),
       endedByUser: true
     };
     safeLocalSet({ [CONFIG.storageKeys.activeCall]: payload });
@@ -692,7 +1073,12 @@
   // und Kundennummer für die Doku) und räumt sich dann selbst weg.
   function scheduleCockpitEndedHide() {
     window.clearTimeout(cockpitEndedTimer);
-    const hideAfter = (CONFIG.call && CONFIG.call.endedOverlayMs) || 12000;
+    // Im Outbound-Betrieb wird nach dem Auflegen noch das Gesprächsergebnis
+    // erfasst – dafür sind zwölf Sekunden zu knapp. Genau dafür steht
+    // endedOutboundOverlayMs in config.js; benutzt hat es bisher niemand.
+    const hideAfter = (outboundMode()
+      ? (CONFIG.call && CONFIG.call.endedOutboundOverlayMs)
+      : (CONFIG.call && CONFIG.call.endedOverlayMs)) || 12000;
     cockpitEndedTimer = window.setTimeout(() => {
       const call = currentActiveCall();
       if (call && call.status === "ended") {
@@ -1241,7 +1627,11 @@
   // Kundennummer für die Abfrage: bevorzugt aus einem aktiven Anruf, sonst aus
   // der Kundenreferenz des offenen Tickets (Oikonomikos-Feld).
   function lookupCustomerNumber() {
-    const call = currentActiveCall();
+    // callForCloseout() und nicht currentActiveCall(): nach dem Auflegen wird
+    // das Ergebnis erfasst, und genau dann braucht man die Akte am meisten.
+    // Vorher sprang sie in dem Moment auf den Kunden des offenen Tickets um, in
+    // dem der Anruf veraltete – mitten in der Nachbearbeitung.
+    const call = callForCloseout();
     const fromCall = call && (call.customerNumber || "").trim();
     if (fromCall) return fromCall;
     const ref = state.ticket && state.ticket.customerReference;
@@ -1907,8 +2297,10 @@
   function applyOutcome(outcomeId, context, options) {
     const outcome = activeOutcomes().find((entry) => entry.id === outcomeId);
     if (!outcome) return;
-    const call = context || currentActiveCall() || {};
-    if (!(options && options.alreadyRecorded)) recordOutcomeDisposition(outcome, currentActiveCall());
+    // callForCloseout() statt currentActiveCall(): geklickt wird das Ergebnis
+    // nach dem Auflegen, und da ist der aktive Anruf längst verfallen.
+    const call = context || callForCloseout() || {};
+    if (!(options && options.alreadyRecorded)) recordOutcomeDisposition(outcome, callForCloseout());
 
     syncInputsFromDom();
     const existing = state.ai.callNotes.trim();
@@ -2530,36 +2922,50 @@
         ${hasTicket
           ? `<strong class="sc-callhead-name">${escapeHtml(known(t.customerName) ? t.customerName : t.summary)}</strong>
              <p class="sc-callhead-meta">${escapeHtml(t.key)}${known(t.customerReference) ? ` · Kundennummer ${escapeHtml(t.customerReference)}` : ""}</p>`
-          : `<p class="sc-callhead-meta">Kein Vorgang geöffnet. Sobald timio wählt, steht hier, mit wem du sprichst.</p>`}
+          : `<p class="sc-callhead-meta">Kein Vorgang geöffnet. Sobald ein Gespräch beginnt, steht hier, mit wem du sprichst.</p>`}
         ${renderCallGoalLine()}
       </section>`;
   }
 
+  // Woher dieses Gespräch gemeldet wurde. Stand hier fest „aus timio", auch
+  // wenn es aus der Telefonanlage kam – seit es zwei Quellen gibt, ist das
+  // schlicht falsch, und zwar an der Stelle, an der man es am ehesten glaubt.
+  function callSourceLabel(call) {
+    return call && call.source === "myapps" ? "aus der Telefonanlage" : "aus timio";
+  }
+
   function renderActiveCallCard() {
-    const call = currentActiveCall();
+    const active = currentActiveCall();
+    // Nach dem Auflegen bleibt der Kopf stehen, solange das Ergebnis noch
+    // erfasst werden kann: die Ergebnis-Leiste sitzt darin, und ein Kopf, der
+    // mitten in der Nachbearbeitung verschwindet, nimmt sie mit.
+    const call = active || callForCloseout();
     if (!call) return renderCallHeadIdle();
     const meta = shared.callStatusMeta(call.status, state.callMode);
     const nameLine = call.callerName || call.callerNumber || "Unbekannter Gesprächspartner";
     const timer = callTimerText(call, call.connectedAt);
+    const kundenart = call.kundenart ? shared.kundenartLabel(call.kundenart) : "";
     const details = [
       call.callerNumber,
-      call.customerNumber ? `Kundennummer ${call.customerNumber}` : "",
+      call.customerNumber ? `${kundenart ? kundenart + " " : "Kundennummer "}${call.customerNumber}` : kundenart,
       call.group
     ].filter(Boolean).join(" · ");
     return `
-      <section class="sc-section sc-callhead sc-active-call ${meta.cls}" aria-label="Gesprächskontext">
+      <section class="sc-section sc-callhead sc-active-call ${meta.cls} ${active ? "" : "is-aftercall"}" aria-label="Gesprächskontext">
         <div class="sc-callhead-top">
-          <span class="sc-callhead-status">${escapeHtml(meta.label)}</span>
+          <span class="sc-callhead-status">${escapeHtml(active ? meta.label : "Letztes Gespräch")}</span>
           ${timer ? `<span class="sc-callhead-timer" data-role="call-head-timer">${escapeHtml(timer)}</span>` : ""}
-          <span class="sc-local-label">aus timio</span>
+          <span class="sc-local-label">${escapeHtml(callSourceLabel(call))}</span>
         </div>
         <strong class="sc-callhead-name">${escapeHtml(nameLine)}</strong>
         ${details ? `<p class="sc-callhead-meta">${escapeHtml(details)}</p>` : ""}
         ${renderCallTicketLine(call)}
+        ${renderCustomerMatch(call)}
         ${renderKundenakte(call)}
         ${renderCallGoalLine()}
         <div class="sc-inline-actions sc-callhead-actions">
           ${renderCustomerSearchButton(call, "sc-secondary-button")}
+          ${active ? "" : renderDialButton(call.callerNumber, call, "sc-text-button")}
           <button class="sc-text-button" type="button" data-action="add-callback">Rückruf notieren</button>
         </div>
         ${renderOutcomeBar(call)}
@@ -2570,7 +2976,7 @@
   // Tarifwechsel). Ein Gesprächsergebnis mit Inhalt öffnet das Panel
   // automatisch; ohne offenes Panel bieten wir den manuellen Einstieg an.
   function renderClose() {
-    const call = currentActiveCall();
+    const call = callForCloseout();
     const panel = renderCloseoutPanel(call);
     if (panel) return panel;
     const ticket = state.ticket;
@@ -3700,6 +4106,9 @@
       const status = reason === "not-configured" || reason === "not-logged-in" ? reason : "error";
       state.prepCustomer = { number, status, card: null, calls, error: (cardRes && cardRes.error) || "" };
     }
+    // Fertig geladen – jetzt kann auch das Cockpit die Akte zeigen (und die
+    // Notizen den Kunden eintragen).
+    ensureCustomerCardForCall(currentActiveCall() || callForCloseout());
     render();
   }
 
@@ -4213,6 +4622,19 @@
       case "enable-ai": enableAi(); return;
       case "recheck-ai": loadCapabilities(); render(); return;
       case "end-call": endCurrentCall(); return;
+      case "assign-customer": {
+        // Entweder aus der Trefferliste (Nummer steht am Knopf) oder aus dem
+        // Eingabefeld daneben.
+        const fromList = control.dataset.customerNumber;
+        assignCustomerToCall(fromList || state.callCustomer.typed || "", control.dataset.customerName || "");
+        return;
+      }
+      case "dial-number":
+        dialNumber(control.dataset.phone, {
+          customerNumber: control.dataset.customerNumber || "",
+          customerName: control.dataset.customerName || ""
+        });
+        return;
       case "dismiss-call-overlay": dismissCallOverlay(); return;
       case "toggle-cockpit-mode": toggleCockpitMode(); return;
       case "wipe-data": wipeAllData(); return;
@@ -4259,7 +4681,7 @@
       case "generate-call-prep": generateCallPrep(); return;
       case "copy-call-prep": copyText(callPrepAsText(), "Gesprächsvorbereitung kopiert."); return;
       case "call-outcome": applyOutcome(control.dataset.outcome); return;
-      case "closeout-start": openCloseout("notiz", currentActiveCall(), ""); return;
+      case "closeout-start": openCloseout("notiz", callForCloseout(), ""); return;
       case "closeout-type":
         if (state.closeout) {
           state.closeout.entryType = control.dataset.value;
@@ -4340,6 +4762,7 @@
         persistTheme();
       }
     }
+    else if (role === "assign-customer-number") state.callCustomer.typed = event.target.value;
     else if (role === "lookup-customer") state.lookup.customerInput = event.target.value;
     else if (role === "sb-login-name") state.supabaseAuth.name = event.target.value;
     else if (role === "sb-login-pin") state.supabaseAuth.pin = event.target.value;
@@ -4419,6 +4842,7 @@
       CONFIG.storageKeys.settings,
       CONFIG.storageKeys.aiCache,
       CONFIG.storageKeys.activeCall,
+      CONFIG.storageKeys.lastCall,
       CONFIG.storageKeys.callOverlay,
       CONFIG.storageKeys.callbacks,
       CONFIG.storageKeys.supabaseSession,
@@ -4437,6 +4861,11 @@
     }
     aiCache.init(saved[CONFIG.storageKeys.aiCache]);
     state.activeCall = saved[CONFIG.storageKeys.activeCall] || null;
+    // Das zuletzt beendete Gespräch überlebt einen Neuaufbau des Panels: wer
+    // während der Nachbearbeitung das Fenster neu lädt, soll seine
+    // Ergebnis-Erfassung nicht verlieren. Alte Einträge fallen in
+    // callForCloseout() ohnehin durch das Zeitfenster.
+    state.lastCall = saved[CONFIG.storageKeys.lastCall] || null;
     // Beim Laden gleich ausmisten: erledigte und lang überfällige Einträge
     // verschwinden, ohne dass jemand aufräumen muss (Datensparsamkeit).
     const savedCallbacks = saved[CONFIG.storageKeys.callbacks];
@@ -4620,6 +5049,9 @@
     // Auskunft (Notizen, Startbild) fragen hier nach, statt eine zweite Kopie
     // zu führen.
     hotkey,
+    // In die Zwischenablage samt Quittung – der Gastgeber hat eigene Knöpfe
+    // dafür (die myApps-Adresse) und soll dafür keine zweite Fassung bauen.
+    copyText,
     isCapturingHotkey: () => Boolean(state.hotkeyCapture.id)
   };
 })();
