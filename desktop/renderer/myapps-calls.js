@@ -73,9 +73,16 @@
   // Der laufende Anruf, so wie ihn myApps gemeldet hat. null heißt: keiner.
   let current = null;
 
-  // Der Inbound/Outbound-Schalter. Gespiegelt statt bei jedem Anruf gelesen:
-  // wenn die Meldung hereinkommt, soll geschrieben werden und nicht gewartet.
-  let callMode = "inbound";
+  // Die Arbeitsrichtung. Seit dem Outbound-Umbau ist sie im Panel konstant
+  // ("callMode: outbound" in ui.js, ein Schalter existiert dort nicht mehr) –
+  // also ist das hier die richtige Voreinstellung und NICHT "inbound". Mit der
+  // falschen stünde jeder über myApps gemeldete Anruf als eingehend in der
+  // Auswertung, ohne dass irgendwo ein Fehler aufliefe.
+  //
+  // Der Storage-Schlüssel wird trotzdem weiter gelesen: ältere Stände haben ihn
+  // gesetzt, und wenn eines Tages wieder umgeschaltet werden soll, ist das die
+  // Stelle, an der es ankommt.
+  let callMode = "outbound";
 
   function readCallMode() {
     try {
@@ -125,6 +132,14 @@
     return shared.isOutbound(callMode) ? "outbound" : "inbound";
   }
 
+  // Zum Nachschlagen im Panel: woher die Richtung dieses Anrufs stammt.
+  function directionSourceOf(msg) {
+    const explicit = String((msg && msg.dir) || "").toLowerCase();
+    return explicit === "out" || explicit === "outbound" || explicit === "in" || explicit === "inbound"
+      ? "myapps"
+      : "voreinstellung";
+  }
+
   /** Der Storage-Schlüssel activeCall in genau der Form, die ui.js erwartet. */
   function payloadFor(status) {
     if (!current) return null;
@@ -172,6 +187,7 @@
       number: msg.nr || "",
       name: msg.name || "",
       direction: directionOf(msg),
+      directionSource: directionSourceOf(msg),
       startedAt,
       dbCallId: null
     };

@@ -86,6 +86,13 @@
     // Bearbeitungsmodus (nicht persistiert). `tabs[tabId]` = { order, hidden }
     // hält die persönliche Reihenfolge/Sichtbarkeit; leer = Standard.
     layout: { customizeMode: false, tabs: {} },
+    // Kurzmeldung unten im Panel. Sie gehört in den State und nicht nur ins
+    // DOM: render() baut das Panel komplett neu auf, und das Toast-Element
+    // wurde dabei jedes Mal leer neu erzeugt. Wer nach dem Klick noch etwas
+    // gerendert hat (die Ergebnis-Erfassung tut das gleich zweimal, asynchron),
+    // löschte die Meldung, bevor sie jemand lesen konnte – der Knopf sah dann
+    // aus, als hätte er nichts getan.
+    toast: { text: "", until: 0 },
     activeCall: null, // Signal von timio-content.js über chrome.storage, siehe currentActiveCall()
     // Arbeitsrichtung ist im reinen Outbound-Betrieb konstant. Der Wert bleibt
     // im State, weil geteilte Helfer (shared.callStatusMeta, callModeMeta) ihn
@@ -1948,6 +1955,13 @@
       toast(scheduled.attempts >= maxAttempts
         ? `${outcome.label} – ${scheduled.attempts}. Versuch. Erwäge den schriftlichen Weg.`
         : `${outcome.label} – Wiedervorlage ${formatDueLabel(scheduled.dueAt)} angelegt.`);
+    } else {
+      // Ohne Wiedervorlage gab es bisher gar keine Quittung. „Falsche Nummer"
+      // und „Kein Interesse" öffnen auch kein Abschluss-Panel und wechseln den
+      // Bereich nicht – nach dem Klick passierte sichtbar schlicht nichts,
+      // obwohl das Ergebnis erfasst wurde. Ein Knopf, der stumm bleibt, gilt
+      // als kaputt, und zwar zu Recht.
+      toast(`${outcome.label} – Ergebnis erfasst.`);
     }
     // Kommentar-Entwurf im Anschluss, damit der Toast nicht überschrieben wird.
     runCallClean();
@@ -3117,7 +3131,7 @@
         ${renderActiveCallBanner()}
         ${state.settingsOpen ? "" : `<nav class="sc-tabs" role="tablist" aria-label="Bereiche">${tabs}</nav>`}
         <main class="sc-panel-content">${state.settingsOpen ? renderSettings() : activeContent()}</main>
-        <div class="sc-toast" role="status" aria-live="polite"></div>
+        <div class="sc-toast ${toastVisible() ? "is-visible" : ""}" role="status" aria-live="polite">${escapeHtml(toastVisible() ? state.toast.text : "")}</div>
       </aside>`;
   }
   // ---------------------------------------------------------------------------
@@ -3423,13 +3437,28 @@
     }
   }
 
+  const TOAST_MS = 2600;
+
+  function toastVisible() {
+    return Boolean(state.toast.text) && Date.now() < state.toast.until;
+  }
+
   function toast(message) {
+    state.toast = { text: String(message || ""), until: Date.now() + TOAST_MS };
+    // Sofort ins bestehende DOM, ohne den Umweg über ein volles render(): der
+    // Klick soll ohne Flackern quittiert werden. Ein späteres render() zeichnet
+    // dieselbe Meldung aus dem State nach.
     const element = document.querySelector(`#${CONFIG.rootId} .sc-toast`);
-    if (!element) return;
-    element.textContent = message;
-    element.classList.add("is-visible");
+    if (element) {
+      element.textContent = state.toast.text;
+      element.classList.add("is-visible");
+    }
     window.clearTimeout(toast.timer);
-    toast.timer = window.setTimeout(() => element.classList.remove("is-visible"), 2600);
+    toast.timer = window.setTimeout(() => {
+      state.toast = { text: "", until: 0 };
+      const current = document.querySelector(`#${CONFIG.rootId} .sc-toast`);
+      if (current) current.classList.remove("is-visible");
+    }, TOAST_MS);
   }
 
   async function copyText(value, successMessage) {
