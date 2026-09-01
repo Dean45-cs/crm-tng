@@ -1,0 +1,774 @@
+/* Call-Cockpit auf der timio-Seite (Stadtnetz CRM Copilot). Eigener Namensraum
+   #sc-timio-cockpit, damit timio-Styles unberührt bleiben. */
+
+#sc-timio-cockpit,
+#sc-timio-cockpit * {
+  box-sizing: border-box;
+}
+
+#sc-timio-cockpit {
+  position: fixed;
+  z-index: 2147483000;
+  top: 64px;
+  right: 16px;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  color: #172b4d;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+#sc-timio-cockpit .tc-card {
+  display: flex;
+  max-height: 72vh;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #dfe1e6;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 14px 40px rgba(9, 30, 66, 0.35);
+}
+
+#sc-timio-cockpit .tc-card.is-connected { border-color: #7bcfa9; }
+#sc-timio-cockpit .tc-card.is-ringing { border-color: #f5c26b; }
+
+#sc-timio-cockpit .tc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid #dfe1e6;
+  background: linear-gradient(135deg, #f2fbf6 0%, #ffffff 90%);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+#sc-timio-cockpit .tc-card.is-ringing .tc-head {
+  background: linear-gradient(135deg, #fff7e6 0%, #ffffff 90%);
+}
+
+#sc-timio-cockpit .tc-card.is-ended .tc-head {
+  background: #f7f8fa;
+}
+
+#sc-timio-cockpit .tc-card.tc-idle .tc-head {
+  background: linear-gradient(135deg, #f4f5f7 0%, #ffffff 90%);
+}
+
+#sc-timio-cockpit .tc-card.tc-idle .tc-status {
+  color: #44546f;
+}
+
+#sc-timio-cockpit .tc-head:active { cursor: grabbing; }
+
+#sc-timio-cockpit .tc-status {
+  flex: 0 0 auto;
+  color: #216e4e;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+#sc-timio-cockpit .tc-card.is-ringing .tc-status {
+  color: #974f0c;
+  animation: tc-blink 1.1s ease-in-out infinite;
+}
+
+#sc-timio-cockpit .tc-card.is-ended .tc-status { color: #5e6c84; }
+
+@keyframes tc-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+#sc-timio-cockpit .tc-timer {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#sc-timio-cockpit .tc-head button {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #5e6c84;
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#sc-timio-cockpit .tc-head button:hover {
+  background: #e9f2ff;
+  color: #0c66e4;
+}
+
+#sc-timio-cockpit .tc-body {
+  display: grid;
+  gap: 11px;
+  padding: 11px 12px 12px;
+  overflow-y: auto;
+}
+
+#sc-timio-cockpit .tc-caller strong {
+  display: block;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+#sc-timio-cockpit .tc-caller p {
+  margin: 3px 0 0;
+  color: #5e6c84;
+  font-size: 12px;
+}
+
+#sc-timio-cockpit .tc-wait { font-style: italic; }
+
+#sc-timio-cockpit .tc-queue-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+
+#sc-timio-cockpit .tc-queue-head > span {
+  color: #5e6c84;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#sc-timio-cockpit .tc-queue-head > strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+#sc-timio-cockpit .tc-queue-head > strong.has-waiting { color: #ae2e24; }
+
+#sc-timio-cockpit .tc-queue-head > em {
+  margin-left: auto;
+  color: #974f0c;
+  font-size: 10px;
+  font-style: normal;
+}
+
+#sc-timio-cockpit .tc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+#sc-timio-cockpit .tc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid #dfe1e6;
+  border-radius: 999px;
+  background: #fff;
+  color: #44546f;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+#sc-timio-cockpit .tc-chip b {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+#sc-timio-cockpit .tc-chip.has-waiting {
+  border-color: #f5c26b;
+  background: #fff7e6;
+  color: #7a4a00;
+}
+
+#sc-timio-cockpit .tc-chip.is-call-group {
+  border-color: #0c66e4;
+  box-shadow: 0 0 0 1px #0c66e4 inset;
+}
+
+#sc-timio-cockpit .tc-hint {
+  margin: 0;
+  color: #5e6c84;
+  font-size: 12px;
+}
+
+#sc-timio-cockpit .tc-mismatch {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #f2a99e;
+  border-radius: 8px;
+  background: #fff2ef;
+  color: #ae2e24;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#sc-timio-cockpit .tc-recording-warning {
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border: 1px solid #f4c37a;
+  border-radius: 8px;
+  background: #fff7e8;
+  color: #8a5a00;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#sc-timio-cockpit .tc-ticket {
+  padding-top: 2px;
+  border-top: 1px dashed #dfe1e6;
+}
+
+#sc-timio-cockpit .tc-ticket-key {
+  color: #0c66e4;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+#sc-timio-cockpit .tc-ticket strong {
+  display: block;
+  margin: 1px 0 2px;
+  font-size: 13px;
+}
+
+#sc-timio-cockpit .tc-ticket-meta {
+  margin: 0 0 6px;
+  color: #5e6c84;
+  font-size: 11px;
+}
+
+#sc-timio-cockpit .tc-summary {
+  max-height: 130px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid #c7d8f8;
+  border-radius: 7px;
+  background: #fbfdff;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Mini-Modus: schmale Leiste. */
+#sc-timio-cockpit .tc-card.tc-mini {
+  width: auto;
+  border-radius: 999px;
+}
+
+#sc-timio-cockpit .tc-card.tc-mini .tc-head {
+  border-bottom: 0;
+  padding: 5px 6px 5px 12px;
+}
+
+#sc-timio-cockpit .tc-mini-name {
+  overflow: hidden;
+  max-width: 140px;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#sc-timio-cockpit .tc-mini-queue {
+  display: grid;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 5px;
+  place-items: center;
+  border-radius: 999px;
+  background: #e9edf2;
+  color: #44546f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+#sc-timio-cockpit .tc-mini-queue.has-waiting {
+  background: #ffebe6;
+  color: #ae2e24;
+}
+
+/* ---------------------------------------------------------------------------
+   Outbound-Modus: Richtungsschalter, Gesprächsvorbereitung, Kundennummer-Suche
+   und Ergebnis-Erfassung direkt auf der timio-Seite – dort sitzt der
+   Bearbeiter während und unmittelbar nach dem Gespräch.
+   --------------------------------------------------------------------------- */
+
+#sc-timio-cockpit .tc-card.is-outbound { border-color: #e0a23c; }
+
+#sc-timio-cockpit .tc-card.is-outbound .tc-head {
+  background: linear-gradient(135deg, #fff4e5 0%, #ffffff 90%);
+}
+
+#sc-timio-cockpit .tc-card.is-outbound .tc-status { color: #b26a00; }
+
+#sc-timio-cockpit .tc-mode {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: #e9edf2;
+}
+
+#sc-timio-cockpit .tc-mode button {
+  min-width: 22px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #5e6c84;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#sc-timio-cockpit .tc-mode button.is-active {
+  background: #ffffff;
+  color: #0c66e4;
+  box-shadow: 0 1px 3px rgba(9, 30, 66, 0.2);
+}
+
+#sc-timio-cockpit .tc-mode button[data-act="mode-outbound"].is-active {
+  color: #b26a00;
+}
+
+/* Kundenakte aus dem CRM (Stufe 1, KONZEPT-INTEGRATION.md). */
+#sc-timio-cockpit .tc-akte {
+  margin-top: 6px;
+  padding: 7px 9px;
+  border: 1px solid #c7d8f8;
+  border-radius: 7px;
+  background: #fbfdff;
+  font-size: 12px;
+}
+
+#sc-timio-cockpit .tc-akte-head {
+  margin-bottom: 3px;
+  font-weight: 700;
+}
+
+#sc-timio-cockpit .tc-akte-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: #5e6c84;
+  font-size: 11px;
+}
+
+#sc-timio-cockpit .tc-akte-jira {
+  display: block;
+  margin-top: 6px;
+  color: #0c66e4;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+#sc-timio-cockpit .tc-akte-jira:hover { text-decoration: underline; }
+
+#sc-timio-cockpit .tc-akte-loading,
+#sc-timio-cockpit .tc-akte-hint {
+  color: #5e6c84;
+}
+
+#sc-timio-cockpit .tc-search,
+#sc-timio-cockpit .tc-hint-switch {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px dashed #e0a23c;
+  border-radius: 6px;
+  background: transparent;
+  color: #b26a00;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+#sc-timio-cockpit .tc-search:hover,
+#sc-timio-cockpit .tc-hint-switch:hover { background: #fff4e5; }
+
+#sc-timio-cockpit .tc-prep {
+  padding: 7px 9px;
+  border-left: 3px solid #e0a23c;
+  border-radius: 0 6px 6px 0;
+  background: #fff4e5;
+}
+
+#sc-timio-cockpit .tc-prep-goal {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#sc-timio-cockpit .tc-prep-goal span {
+  margin-right: 5px;
+  color: #b26a00;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#sc-timio-cockpit .tc-prep-list,
+#sc-timio-cockpit .tc-prep-questions ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+}
+
+#sc-timio-cockpit .tc-prep-questions {
+  margin-top: 5px;
+}
+
+#sc-timio-cockpit .tc-prep-questions > span {
+  color: #b26a00;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#sc-timio-cockpit .tc-outcome {
+  padding: 8px 9px;
+  border: 1px solid #e0a23c;
+  border-radius: 8px;
+  background: #fff4e5;
+}
+
+#sc-timio-cockpit .tc-outcome-label {
+  display: block;
+  margin-bottom: 5px;
+  color: #b26a00;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#sc-timio-cockpit .tc-outcome-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+#sc-timio-cockpit .tc-outcome-buttons button {
+  padding: 4px 8px;
+  border: 1px solid #dfe1e6;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #172b4d;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#sc-timio-cockpit .tc-outcome-buttons button:hover {
+  border-color: #e0a23c;
+  color: #b26a00;
+}
+
+#sc-timio-cockpit .tc-outcome-done {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: #e9f5ee;
+  color: #216e4e;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* Abschluss-Panel (Stufe 3, KONZEPT-INTEGRATION.md). */
+#sc-timio-cockpit .tc-closeout {
+  margin-top: 6px;
+  padding: 9px 10px;
+  border: 1px solid #dfe1e6;
+  border-radius: 8px;
+  background: #fbfdff;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+#sc-timio-cockpit .tc-closeout-done {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #e9f5ee;
+  color: #216e4e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#sc-timio-cockpit .tc-closeout-title {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #44546f;
+}
+
+#sc-timio-cockpit .tc-closeout-chipgroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+#sc-timio-cockpit .tc-chip-btn {
+  padding: 4px 8px;
+  border: 1px solid #dfe1e6;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #172b4d;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#sc-timio-cockpit .tc-chip-btn:hover { border-color: #0c66e4; color: #0c66e4; }
+#sc-timio-cockpit .tc-chip-btn.is-active {
+  border-color: #0c66e4;
+  background: #e9f2fe;
+  color: #0c66e4;
+}
+
+#sc-timio-cockpit .tc-closeout-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #5e6c84;
+  text-transform: uppercase;
+}
+
+#sc-timio-cockpit .tc-closeout-label input,
+#sc-timio-cockpit .tc-closeout-label textarea {
+  padding: 6px 8px;
+  border: 1px solid #dfe1e6;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #172b4d;
+  font-size: 12.5px;
+  font-weight: 400;
+  text-transform: none;
+  font-family: inherit;
+  resize: vertical;
+}
+#sc-timio-cockpit .tc-closeout-label input:focus,
+#sc-timio-cockpit .tc-closeout-label textarea:focus {
+  outline: none;
+  border-color: #0c66e4;
+}
+
+#sc-timio-cockpit .tc-closeout-product-group {
+  margin-bottom: 5px;
+}
+
+#sc-timio-cockpit .tc-closeout-product-cat {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #8993a4;
+}
+
+#sc-timio-cockpit .tc-closeout-product-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+#sc-timio-cockpit .tc-closeout-commission {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #e9f5ee;
+  color: #216e4e;
+  font-size: 12px;
+}
+
+#sc-timio-cockpit .tc-closeout-error {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #fff2ef;
+  color: #ae2e24;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+#sc-timio-cockpit .tc-closeout-submit {
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: #0c66e4;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#sc-timio-cockpit .tc-closeout-submit:hover:not(:disabled) { background: #0055cc; }
+#sc-timio-cockpit .tc-closeout-submit:disabled {
+  background: #c1c7d0;
+  cursor: default;
+}
+
+#sc-timio-cockpit .tc-link-btn {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #0c66e4;
+  font-size: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md) — eigener Root
+   #sc-timio-palette, unabhängig vom Call-Cockpit oben: sie ist jederzeit per
+   ⌘K erreichbar, nicht nur während eines Gesprächs. Bewusst funktionales
+   Grundstyling (Layer, Lesbarkeit, Trefferliste) — Feinschliff kommt später.
+   --------------------------------------------------------------------------- */
+
+#sc-timio-palette,
+#sc-timio-palette * {
+  box-sizing: border-box;
+}
+
+#sc-timio-palette .tc-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483100; /* über dem Call-Cockpit (2147483000) */
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgba(9, 30, 66, 0.45);
+  color: #172b4d;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+#sc-timio-palette .tc-palette {
+  display: flex;
+  flex-direction: column;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  max-height: 70vh;
+  overflow: hidden;
+  border: 1px solid #dfe1e6;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 14px 40px rgba(9, 30, 66, 0.35);
+}
+
+#sc-timio-palette .tc-palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #dfe1e6;
+}
+
+#sc-timio-palette .tc-palette-input-row input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #dfe1e6;
+  border-radius: 6px;
+  font: inherit;
+  color: inherit;
+}
+#sc-timio-palette .tc-palette-input-row input:focus {
+  outline: none;
+  border-color: #0c66e4;
+}
+
+#sc-timio-palette .tc-palette-close {
+  padding: 2px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #5e6c84;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+#sc-timio-palette .tc-palette-close:hover { background: #f4f5f7; }
+
+#sc-timio-palette [data-tid="palette-results"] {
+  overflow-y: auto;
+  padding: 6px;
+}
+
+#sc-timio-palette .tc-hint {
+  margin: 0;
+  padding: 10px 6px;
+  color: #5e6c84;
+  font-size: 12px;
+}
+
+#sc-timio-palette .tc-palette-group {
+  padding: 8px 6px 4px;
+  color: #5e6c84;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#sc-timio-palette .tc-palette-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#sc-timio-palette .tc-palette-item:hover,
+#sc-timio-palette .tc-palette-item.is-active { background: #e9f2ff; }
+
+#sc-timio-palette .tc-palette-item-label { font-weight: 700; }
+
+#sc-timio-palette .tc-palette-item-sub {
+  color: #5e6c84;
+  font-size: 12px;
+}
+
+/* Abschluss-Check der Kampagne — siehe closeoutWrapupMarkup in
+   timio-content.js. Gleiche Aufgabe wie .sc-wrapup im Jira-Panel. */
+.tc-wrapup {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.tc-wrapup-status {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.tc-wrapup-status.is-ok { background: rgba(34, 168, 89, 0.2); }
+.tc-wrapup-status.is-open { background: rgba(255, 149, 0, 0.2); }

@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -18,11 +17,19 @@ import {
   Settings as SettingsIcon,
   Plus,
   CornerDownLeft,
+  Calculator,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useRouter, type Route } from '../router';
 import { useQuickAdd } from './QuickAdd';
 import { buildCustomerSummaries, formatCurrency } from '../lib/utils';
+import {
+  getStoredHotkeys,
+  hotkeyMatches,
+  onHotkeysChange,
+  resolveHotkey,
+  type HotkeyMap,
+} from '../lib/hotkeys';
 
 interface CmdItem {
   id: string;
@@ -33,55 +40,58 @@ interface CmdItem {
   run: () => void;
 }
 
+/**
+ * Äußere Hülle: hält nur den Offen/Zu-Zustand und das ⌘K-Tastenkürzel.
+ * Der eigentliche Dialog (inkl. Store-Abo und Suchindex-Aufbau) wird erst
+ * gemountet, wenn die Palette offen ist — so kostet sie im Alltag nichts,
+ * auch wenn sich Verträge/Notizen im Hintergrund per Realtime ändern.
+ */
 export function CommandPalette() {
-  const { contracts, tariffChanges, notes, settings } = useStore();
-  const { navigate } = useRouter();
-  const { openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote } =
-    useQuickAdd();
-
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [activeIdx, setActiveIdx] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const openRef = useRef(false);
-  useEffect(() => {
-    openRef.current = open;
-  }, [open]);
-
-  const openPalette = useCallback(() => {
-    setQuery('');
-    setActiveIdx(0);
-    setOpen(true);
-  }, []);
-  const closePalette = useCallback(() => setOpen(false), []);
+  // Welches Kürzel gilt, steht in den Einstellungen (lib/hotkeys.ts). Der
+  // Zustand hier hält es aktuell, ohne dass die Seite neu geladen werden muss.
+  const [hotkeys, setHotkeysState] = useState<HotkeyMap>(getStoredHotkeys);
+  useEffect(() => onHotkeysChange(setHotkeysState), []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if (hotkeyMatches(e, resolveHotkey('palette', hotkeys))) {
         e.preventDefault();
-        if (openRef.current) closePalette();
-        else openPalette();
+        setOpen((o) => !o);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [openPalette, closePalette]);
+  }, [hotkeys]);
+
+  if (!open) return null;
+  return <PaletteDialog close={() => setOpen(false)} />;
+}
+
+function PaletteDialog({ close: closePalette }: { close: () => void }) {
+  const { contracts, tariffChanges, notes, settings, customers: customerRows } = useStore();
+  const { navigate } = useRouter();
+  const { openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote } =
+    useQuickAdd();
+
+  const [query, setQuery] = useState('');
+  const [activeIdx, setActiveIdx] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return;
     const t = window.setTimeout(() => inputRef.current?.focus(), 0);
     return () => window.clearTimeout(t);
-  }, [open]);
+  }, []);
 
   const customers = useMemo(
-    () => buildCustomerSummaries(contracts, tariffChanges, notes, settings),
-    [contracts, tariffChanges, notes, settings],
+    () => buildCustomerSummaries(contracts, tariffChanges, notes, settings, customerRows),
+    [contracts, tariffChanges, notes, settings, customerRows],
   );
 
   const items: CmdItem[] = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const close = () => setOpen(false);
+    const close = closePalette;
     const go = (r: Route) => () => {
       navigate(r);
       close();
@@ -95,6 +105,7 @@ export function CommandPalette() {
       { id: 'nav-notes', group: 'Navigation', icon: <StickyNote size={15} />, label: 'Notizen', run: go({ name: 'notes' }) },
       { id: 'nav-customers', group: 'Navigation', icon: <Users size={15} />, label: 'Kunden', run: go({ name: 'customers' }) },
       { id: 'nav-leaderboard', group: 'Navigation', icon: <Trophy size={15} />, label: 'Leaderboard', run: go({ name: 'leaderboard' }) },
+      { id: 'nav-netto', group: 'Navigation', icon: <Calculator size={15} />, label: 'Netto-Rechner', run: go({ name: 'netto' }) },
       { id: 'nav-settings', group: 'Navigation', icon: <SettingsIcon size={15} />, label: 'Einstellungen', run: go({ name: 'settings' }) },
     ];
 
@@ -162,7 +173,7 @@ export function CommandPalette() {
     const navMatches = navItems.filter((n) => matches(n.label));
 
     return [...customerItems, ...contractItems, ...tariffItems, ...noteItems, ...navMatches];
-  }, [query, customers, contracts, tariffChanges, notes, navigate, openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote]);
+  }, [query, customers, contracts, tariffChanges, notes, navigate, closePalette, openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote]);
 
   const safeIdx = items.length === 0 ? 0 : Math.min(activeIdx, items.length - 1);
 
@@ -172,11 +183,9 @@ export function CommandPalette() {
       ?.scrollIntoView({ block: 'nearest' });
   }, [safeIdx]);
 
-  if (!open) return null;
-
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      setOpen(false);
+      closePalette();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setActiveIdx(items.length === 0 ? 0 : (safeIdx + 1) % items.length);
@@ -192,7 +201,7 @@ export function CommandPalette() {
   let lastGroup = '';
 
   return (
-    <div className="cmdk-backdrop" onClick={() => setOpen(false)}>
+    <div className="cmdk-backdrop" onClick={closePalette}>
       <div
         className="cmdk"
         role="dialog"

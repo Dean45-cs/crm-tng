@@ -74,10 +74,6 @@ export function LoginScreen() {
 
   return (
     <div className="login-shell">
-      <div className="login-bg-orb login-bg-orb-1" />
-      <div className="login-bg-orb login-bg-orb-2" />
-      <div className="login-bg-orb login-bg-orb-3" />
-
       <div className="login-card">
         <div className="login-brand">
           <TngTile size={64} radius={16} />
@@ -224,24 +220,50 @@ function PinStep({
   onBack: () => void;
 }) {
   const [digits, setDigits] = useState<string[]>(['', '', '', '']);
+  // Spiegel des aktuellen Stands: mehrere change-Events können im selben Tick
+  // eintreffen (Autofill eines Einmalcodes), bevor React neu gerendert hat —
+  // der Render-Closure-Wert wäre dann veraltet und würde Ziffern verschlucken.
+  const digitsRef = useRef(digits);
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
+
+  const commitDigits = (next: string[]) => {
+    digitsRef.current = next;
+    setDigits(next);
+  };
 
   useEffect(() => {
     inputs.current[0]?.focus();
   }, []);
 
+  // Nach einem Fehlversuch (z.B. falsche PIN) die Eingabe leeren und neu
+  // fokussieren — sonst bleiben die vier Punkte gefüllt stehen und der
+  // nächste Tastendruck schickt sofort eine gemischte PIN ab. An [busy]
+  // gebunden statt nur an [error]: bei zweimal derselben Fehlermeldung
+  // ändert sich der error-String nicht, das Ende des Versuchs (busy → false)
+  // aber schon.
+  useEffect(() => {
+    if (busy || !error) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    commitDigits(['', '', '', '']);
+    inputs.current[0]?.focus();
+  }, [busy, error]);
+
+  // Der State-Updater bleibt frei von Seiteneffekten: React ruft ihn im
+  // StrictMode absichtlich zweimal auf, wodurch Fokuswechsel UND Absenden
+  // doppelt liefen — jede PIN-Eingabe löste zwei signInWithPassword-Aufrufe aus
+  // (verifiziert: zwei POSTs auf /auth/v1/token) und zählte bei falscher PIN
+  // zwei Fehlversuche, sodass die Login-Sperre nach der Hälfte der erlaubten
+  // Versuche zuschlug. Fokus und Absenden passieren deshalb hier, außerhalb.
   const setDigit = (i: number, v: string) => {
     const clean = v.replace(/\D/g, '').slice(-1);
-    setDigits((d) => {
-      const next = [...d];
-      next[i] = clean;
-      if (clean && i < 3) inputs.current[i + 1]?.focus();
-      if (next.every((x) => x !== '')) {
-        const pin = next.join('');
-        setTimeout(() => onComplete(pin), 80);
-      }
-      return next;
-    });
+    const next = [...digitsRef.current];
+    next[i] = clean;
+    commitDigits(next);
+    if (clean && i < 3) inputs.current[i + 1]?.focus();
+    if (next.every((x) => x !== '')) {
+      const pin = next.join('');
+      setTimeout(() => onComplete(pin), 80);
+    }
   };
 
   const onKeyDown = (i: number, e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -258,7 +280,7 @@ function PinStep({
     e.preventDefault();
     const next = ['', '', '', ''];
     for (let i = 0; i < text.length; i++) next[i] = text[i];
-    setDigits(next);
+    commitDigits(next);
     if (text.length === 4) setTimeout(() => onComplete(text), 80);
     else inputs.current[text.length]?.focus();
   };

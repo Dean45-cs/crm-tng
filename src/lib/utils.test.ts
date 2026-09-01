@@ -9,8 +9,11 @@ import {
   parseLocalDate,
   contractEndDate,
   daysUntil,
+  buildContractJiraDoc,
+  formatCurrency,
+  buildCustomerSummaries,
 } from './utils';
-import { testSettings, makeContract, makeTariff } from '../test/fixtures';
+import { testSettings, makeContract, makeTariff, makeCustomer } from '../test/fixtures';
 
 describe('calcContractCommission', () => {
   it('summiert die Provision aller Produkte', () => {
@@ -100,6 +103,45 @@ describe('contractEndDate', () => {
   });
 });
 
+describe('buildContractJiraDoc', () => {
+  it('baut die Kern-Dokumentation aus Kunde, Produkten und Provision', () => {
+    const doc = buildContractJiraDoc(
+      makeContract({ products: ['Fibrefamily', 'Waipu TV'], contractDate: '2024-06-15' }),
+      testSettings,
+    );
+    expect(doc).toContain('Kunde: Test Kunde (KdNr. 1000)');
+    expect(doc).toContain('Datum: 15.06.2024');
+    expect(doc).toContain(`- Fibrefamily (${formatCurrency(50)})`);
+    expect(doc).toContain(`- Waipu TV (${formatCurrency(10)})`);
+    expect(doc).toContain(`Provision gesamt: ${formatCurrency(60)}`);
+    expect(doc).toContain('Laufzeit: Unbefristet');
+    expect(doc).toContain('Status: Aktiv');
+  });
+
+  it('ergänzt Laufzeitende, Wiedervorlage, Jira-Ticket und Notiz, wenn vorhanden', () => {
+    const doc = buildContractJiraDoc(
+      makeContract({
+        contractDate: '2024-06-15',
+        laufzeitMonate: 12,
+        followUpDate: '2024-07-01',
+        jiraTicket: 'TNG-1234',
+        notes: 'Sonderkonditionen vereinbart',
+      }),
+      testSettings,
+    );
+    expect(doc).toContain('Laufzeit: 12 Monate (Ende: 15.06.2025)');
+    expect(doc).toContain('Wiedervorlage: 01.07.2024');
+    expect(doc).toContain('Jira: TNG-1234');
+    expect(doc).toContain('Notiz: Sonderkonditionen vereinbart');
+  });
+
+  it('zeigt 0 € Gesamtprovision bei stornierten Verträgen', () => {
+    const doc = buildContractJiraDoc(makeContract({ status: 'storniert' }), testSettings);
+    expect(doc).toContain('Status: Storniert');
+    expect(doc).toContain(`Provision gesamt: ${formatCurrency(0)}`);
+  });
+});
+
 describe('daysUntil', () => {
   it('zählt Tage bis zu einem künftigen Datum', () => {
     const d = new Date();
@@ -111,5 +153,32 @@ describe('daysUntil', () => {
     const d = new Date();
     d.setDate(d.getDate() - 3);
     expect(daysUntil(d)).toBe(-3);
+  });
+});
+
+describe('buildCustomerSummaries', () => {
+  it('zeigt einen Kunden ohne jeglichen Vorgang mit Nullständen an', () => {
+    const customer = makeCustomer({ customerNumber: '2000', name: 'Anrufer ohne Vertrag' });
+    const summaries = buildCustomerSummaries([], [], [], testSettings, [customer]);
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      customerNumber: '2000',
+      customerName: 'Anrufer ohne Vertrag',
+      contractCount: 0,
+      tariffChangeCount: 0,
+      noteCount: 0,
+      totalCommission: 0,
+    });
+  });
+
+  it('zahlt einen späteren Vorgang in den vorbelegten Kunden-Eintrag ein', () => {
+    const customer = makeCustomer({ customerNumber: '3000', name: 'Bestandskunde', lastContactAt: '2024-01-01T00:00:00.000Z' });
+    const contract = makeContract({ customerNumber: '3000', customerName: 'Bestandskunde', contractDate: '2024-06-15' });
+    const summaries = buildCustomerSummaries([contract], [], [], testSettings, [customer]);
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].contractCount).toBe(1);
+    expect(summaries[0].lastActivity).toBe('2024-06-15');
   });
 });

@@ -1,0 +1,80 @@
+{
+  "manifest_version": 3,
+  "name": "Stadtnetz CRM Outbound – lokale KI fürs Vertriebstelefonat",
+  "version": "0.14.0",
+  "description": "KI-gestützter Outbound-Assistent: liest den Jira-Vorgang als Kontext, bereitet ausgehende Anrufe vor (Ziel, Gesprächspunkte, Einwände), führt durch Leitfaden und Ergebnis-Erfassung, schließt Notiz/Lead/Vertrag/Tarifwechsel direkt ins CRM ab und pflegt die Rückrufliste. Mit timio-Anrufkontext und Call-Cockpit – vollständig lokal, ohne Cloud.",
+  "permissions": ["storage", "clipboardWrite", "notifications", "alarms", "tabs"],
+  "host_permissions": ["https://jira.ennit.de/*", "https://ccc.my-phone.cloud/*", "https://*.supabase.co/*", "https://fttx-dash.tng.de/*", "https://gfiz-dash.tng.de/*"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Stadtnetz CRM Outbound – Rückrufe",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://jira.ennit.de/*"],
+      "js": [
+        "src/config.js",
+        "src/commission.js",
+        "src/shift-time.js",
+        "src/campaigns.js",
+        "src/shared.js",
+        "src/supabase.js",
+        "src/ai-cache.js",
+        "src/jira-reader.js",
+        "src/rules.js",
+        "src/local-ai.js",
+        "src/theme.js",
+        "src/ui.js",
+        "src/content.js",
+        "src/hud-agent.js"
+      ],
+      "css": ["styles/content.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://ccc.my-phone.cloud/*"],
+      "js": [
+        "src/config.js",
+        "src/commission.js",
+        "src/shift-time.js",
+        "src/campaigns.js",
+        "src/shared.js",
+        "src/supabase.js",
+        "src/timio-content.js"
+      ],
+      "css": ["styles/timio.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://fttx-dash.tng.de/*"],
+      "js": [
+        "src/config.js",
+        "src/shared.js",
+        "src/baustatus-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gfiz-dash.tng.de/*"],
+      "js": [
+        "src/config.js",
+        "src/shared.js",
+        "src/churn-content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

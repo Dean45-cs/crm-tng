@@ -4,6 +4,14 @@ import { ContractForm } from './ContractForm';
 import { TariffChangeForm } from './TariffChangeForm';
 import { NoteForm } from './NoteForm';
 import type { Contract, Note, TariffChange } from '../types';
+import {
+  getStoredHotkeys,
+  hotkeyLabel,
+  hotkeyMatches,
+  onHotkeysChange,
+  resolveHotkey,
+  type HotkeyMap,
+} from '../lib/hotkeys';
 
 type FormKind = 'contract' | 'tariff' | 'note' | null;
 
@@ -77,25 +85,29 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // Cmd/Ctrl + N → Vertrag, Cmd/Ctrl + T → Tarifwechsel, Cmd/Ctrl + Shift + N → Notiz
+  // Welche Tasten das sind, steht in den Einstellungen (lib/hotkeys.ts).
+  const [hotkeys, setHotkeysState] = useState<HotkeyMap>(getStoredHotkeys);
+  useEffect(() => onHotkeysChange(setHotkeysState), []);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      const k = e.key.toLowerCase();
-      if (k === 'n' && e.shiftKey) {
+      // Reihenfolge zählt nicht, weil hotkeyMatches die Zusatztasten exakt
+      // vergleicht: ⌘⇧N ist nie zugleich ⌘N.
+      const actions: [string, () => void][] = [
+        [resolveHotkey('newNote', hotkeys), ctx.openNewNote],
+        [resolveHotkey('newContract', hotkeys), ctx.openNewContract],
+        [resolveHotkey('newTariff', hotkeys), ctx.openNewTariff],
+      ];
+      for (const [binding, run] of actions) {
+        if (!hotkeyMatches(e, binding)) continue;
         e.preventDefault();
-        ctx.openNewNote();
-      } else if (k === 'n') {
-        e.preventDefault();
-        ctx.openNewContract();
-      } else if (k === 't') {
-        e.preventDefault();
-        ctx.openNewTariff();
+        run();
+        return;
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [ctx]);
+  }, [ctx, hotkeys]);
 
   return (
     <Ctx.Provider value={ctx}>
@@ -107,21 +119,21 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
             <FabItem
               icon={<FileSignature size={16} />}
               label="Vertrag"
-              hint="⌘N"
+              hint={hotkeyLabel(resolveHotkey('newContract', hotkeys))}
               onClick={() => ctx.openNewContract()}
               color="bg-blue"
             />
             <FabItem
               icon={<ArrowLeftRight size={16} />}
               label="Tarifwechsel"
-              hint="⌘T"
+              hint={hotkeyLabel(resolveHotkey('newTariff', hotkeys))}
               onClick={() => ctx.openNewTariff()}
               color="bg-orange"
             />
             <FabItem
               icon={<StickyNote size={16} />}
               label="Notiz"
-              hint="⌘⇧N"
+              hint={hotkeyLabel(resolveHotkey('newNote', hotkeys))}
               onClick={() => ctx.openNewNote()}
               color="bg-purple"
             />

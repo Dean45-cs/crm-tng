@@ -26,6 +26,158 @@ create table if not exists public.users (
 );
 
 -- ------------------------------------------------------------
+-- CUSTOMERS
+-- ------------------------------------------------------------
+-- Eigenständige Kunden-Entität (Migration 017): ein Anrufer ohne Vertrag/
+-- Tarifwechsel/Notiz existiert damit trotzdem im CRM. customer_number bleibt
+-- in contracts/tariff_changes/notes/leads bewusst eine reine Textspalte ohne
+-- Fremdschlüssel hierher. Wird ausschließlich über den touch_customer()-
+-- Trigger weiter unten befüllt, siehe dort.
+-- ------------------------------------------------------------
+create table if not exists public.customers (
+  customer_number text primary key,
+  name text,
+  phone text,
+  first_seen_at timestamptz,
+  last_contact_at timestamptz,
+  created_by uuid references public.users(id) on delete set null
+);
+create index if not exists idx_customers_last_contact on public.customers(last_contact_at desc);
+
+-- ------------------------------------------------------------
+-- CAMPAIGNS
+-- ------------------------------------------------------------
+-- Fester, vom Chef gepflegter Kampagnen-Katalog (Migration 019,
+-- Outbound-Umbau). call_type bestimmt in der Extension automatisch Skript
+-- und Einwandkarten (siehe extension/src/config.js).
+-- ------------------------------------------------------------
+create table if not exists public.campaigns (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  -- Typen siehe Migration 025: churn, welcome, prl, dupe, bvw, courtesy, other
+  call_type text not null check (call_type in ('churn', 'welcome', 'prl', 'dupe', 'bvw', 'courtesy', 'other')),
+  active boolean not null default true,
+  created_at timestamptz default now(),
+  created_by uuid references public.users(id) on delete set null
+);
+
+-- ------------------------------------------------------------
+-- SHIFTS
+-- ------------------------------------------------------------
+-- Wochenraster Früh/Spät/frei je Agent:in und Tag, optional mit
+-- Kampagnen-Zuordnung (Migration 020). Für alle aktiven Nutzer lesbar
+-- (geteilter Plan), Schreiben bleibt Chef-Sache — siehe RLS unten.
+-- ------------------------------------------------------------
+create table if not exists public.shifts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  shift_date date not null,
+  shift_type text not null check (shift_type in ('frueh', 'spaet', 'frei')),
+  campaign_id uuid references public.campaigns(id) on delete set null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (user_id, shift_date)
+);
+create index if not exists idx_shifts_date on public.shifts(shift_date);
+create index if not exists idx_shifts_user_date on public.shifts(user_id, shift_date);
+
+-- ------------------------------------------------------------
+-- SHIFT_SWAP_REQUESTS
+-- ------------------------------------------------------------
+-- Schichttausch zwischen zwei Agent:innen (Migration 023): A fragt B, B nimmt
+-- an, der Chef bestätigt. Der Plan bleibt damit Chef-Sache, der Anstoß kommt
+-- aber aus dem Team. Getauscht wird ausschließlich über die Funktion
+-- public.apply_shift_swap() weiter unten — sie ist die einzige Stelle, die
+-- `shifts` im Namen von Agent:innen anfasst.
+-- ------------------------------------------------------------
+create table if not exists public.shift_swap_requests (
+  id uuid primary key default gen_random_uuid(),
+  requester_id uuid not null references public.users(id) on delete cascade,
+  requester_date date not null,
+  partner_id uuid not null references public.users(id) on delete cascade,
+  partner_date date not null,
+  message text,
+  status text not null default 'pending'
+    check (status in ('pending', 'accepted', 'declined', 'cancelled', 'approved', 'rejected')),
+  -- Momentaufnahme beim Anlegen, damit die Anfrage lesbar bleibt, wenn sich
+  -- der Plan bis zur Bestätigung ändert. Nur Anzeige — getauscht wird der
+  -- tatsächliche Stand.
+  requester_shift_type text,
+  partner_shift_type text,
+  decided_at timestamptz,
+  approved_by uuid references public.users(id) on delete set null,
+  approved_at timestamptz,
+  created_at timestamptz not null default now(),
+  constraint shift_swap_distinct_users check (requester_id <> partner_id)
+);
+create index if not exists idx_swap_status on public.shift_swap_requests(status);
+create index if not exists idx_swap_partner on public.shift_swap_requests(partner_id, status);
+create index if not exists idx_swap_requester on public.shift_swap_requests(requester_id, status);
+create index if not exists idx_swap_dates on public.shift_swap_requests(requester_date, partner_date);
+
+-- ------------------------------------------------------------
+-- NOTIFICATIONS
+-- ------------------------------------------------------------
+-- Das persönliche Postfach (Migration 023). Eine Zeile = eine Meldung an genau
+-- eine Person, und anders als der geteilte Schichtplan strikt privat: hier
+-- steht, was mich betrifft. `link` trägt das Sprungziel in der App
+-- ({"route":"schedule"}), `entity_id` den Auslöser (z. B. eine Tauschanfrage).
+-- ------------------------------------------------------------
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  kind text not null,
+  title text not null,
+  body text,
+  link jsonb,
+  actor_id uuid references public.users(id) on delete set null,
+  actor_name text,
+  entity_id uuid,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_notifications_user_created
+  on public.notifications(user_id, created_at desc);
+create index if not exists idx_notifications_unread
+  on public.notifications(user_id) where read_at is null;
+
+-- ------------------------------------------------------------
+-- CALLS
+-- ------------------------------------------------------------
+-- Anruf-Historie (Migration 018): von der Stadtnetz-CRM-Copilot-Extension über
+-- ihre eigene Supabase-Session automatisch geschrieben. customer_number ist
+-- nullable — nicht jeder Anrufer ist zuzuordnen. disposition/cancellation_reason/
+-- campaign_id (Migration 021) werden vom Abschluss-Panel der Extension am
+-- Gesprächsende gesetzt und tragen die Save-Rate-/Kündigungsgrund-Auswertung
+-- im Team-Dashboard (siehe src/lib/callStats.ts).
+-- ------------------------------------------------------------
+create table if not exists public.calls (
+  id uuid primary key default gen_random_uuid(),
+  customer_number text,
+  caller_name text,
+  caller_number text,
+  direction text not null check (direction in ('inbound', 'outbound')),
+  queue_group text,
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  duration_s int,
+  agent_id uuid not null references public.users(id) on delete cascade,
+  outcome text,
+  note text,
+  jira_ticket text,
+  disposition text check (disposition in ('gehalten', 'gekuendigt', 'rueckruf', 'kein-interesse', 'sonstige')),
+  cancellation_reason text,
+  campaign_id uuid references public.campaigns(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_calls_customer on public.calls(customer_number);
+create index if not exists idx_calls_agent on public.calls(agent_id);
+create index if not exists idx_calls_started on public.calls(started_at desc);
+create index if not exists idx_calls_active on public.calls(started_at) where ended_at is null;
+create index if not exists idx_calls_campaign on public.calls(campaign_id);
+create index if not exists idx_calls_disposition on public.calls(disposition);
+
+-- ------------------------------------------------------------
 -- CONTRACTS
 -- ------------------------------------------------------------
 create table if not exists public.contracts (
@@ -129,6 +281,10 @@ create table if not exists public.user_settings (
   monthly_target numeric default 1500,
   sp_client_id text default '',
   sp_tenant_id text default '',
+  sp_file_path text default '',
+  sp_sheet_name text default 'Tabelle1',
+  theme_pref text,          -- Hell/Dunkel-Präferenz, surface-übergreifend (Migration 022)
+  palette jsonb,            -- Farb-Palette {presetId, overrides} (Migration 022)
   updated_at timestamptz default now()
 );
 
@@ -224,11 +380,45 @@ create index if not exists idx_audit_log_actor on public.audit_log(actor_id);
 create index if not exists idx_audit_log_entity on public.audit_log(entity_type, entity_id);
 create index if not exists idx_audit_log_action on public.audit_log(action);
 
+-- ------------------------------------------------------------
+-- STATUS BOARD
+-- ------------------------------------------------------------
+-- user_status: der aktuelle Status je Nutzer:in (genau eine Zeile) für die
+-- Live-Team-Ansicht. status_log: lückenlose Historie abgeschlossener Abschnitte
+-- (Start/Ende/Dauer) als Grundlage für Chef-KPIs und den PowerBI-Export.
+-- ------------------------------------------------------------
+create table if not exists public.user_status (
+  user_id uuid primary key references public.users(id) on delete cascade,
+  status text,
+  sub text,
+  description text,
+  is_afk boolean not null default false,
+  started_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.status_log (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.users(id) on delete set null,
+  status text not null,
+  sub text,
+  description text,
+  is_afk boolean not null default false,
+  started_at timestamptz not null,
+  ended_at timestamptz not null,
+  duration_seconds integer not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_status_log_user on public.status_log(user_id);
+create index if not exists idx_status_log_started on public.status_log(started_at desc);
+
 -- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
 
 alter table public.users enable row level security;
+alter table public.customers enable row level security;
+alter table public.calls enable row level security;
 alter table public.contracts enable row level security;
 alter table public.tariff_changes enable row level security;
 alter table public.notes enable row level security;
@@ -237,9 +427,18 @@ alter table public.user_settings enable row level security;
 alter table public.shared_settings enable row level security;
 alter table public.incentives enable row level security;
 alter table public.leads enable row level security;
+alter table public.user_status enable row level security;
+alter table public.status_log enable row level security;
 alter table public.lead_activities enable row level security;
 alter table public.audit_log enable row level security;
 alter table public.customer_access_requests enable row level security;
+-- campaigns/shifts standen bisher nur in ihren Migrationen (019/020) — ohne
+-- diese Zeilen liefe eine frisch aus schema.sql aufgesetzte Datenbank mit
+-- Policies, die mangels aktiviertem RLS nichts absichern.
+alter table public.campaigns enable row level security;
+alter table public.shifts enable row level security;
+alter table public.notifications enable row level security;
+alter table public.shift_swap_requests enable row level security;
 
 -- ----------------------------------------------------------------------------
 -- Helper-Funktionen (SECURITY DEFINER → umgehen RLS, verhindern Rekursion bei
@@ -270,6 +469,125 @@ $$;
 
 grant execute on function public.users_exist() to anon, authenticated;
 
+-- Profil automatisch anlegen: Sobald ein Auth-Konto entsteht (signUp), legt
+-- dieser SECURITY-DEFINER-Trigger das zugehörige public.users-Profil an. Damit
+-- ist die Profil-Erstellung unabhängig von Session/RLS/E-Mail-Bestätigung und
+-- der Client muss das Profil nicht mehr selbst einfügen. Anzeige-Name und
+-- normalisierter key kommen aus den signUp-Metadaten (mit Fallbacks).
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_display text;
+  v_key text;
+begin
+  v_display := coalesce(
+    nullif(trim(new.raw_user_meta_data->>'display_name'), ''),
+    split_part(new.email, '@', 1)
+  );
+  v_key := coalesce(
+    nullif(trim(new.raw_user_meta_data->>'key'), ''),
+    lower(v_display)
+  );
+  begin
+    insert into public.users (id, key, display_name)
+    values (new.id, v_key, v_display)
+    on conflict (id) do nothing;
+  exception
+    when unique_violation then
+      insert into public.users (id, key, display_name)
+      values (new.id, v_key || '-' || left(new.id::text, 8), v_display)
+      on conflict (id) do nothing;
+  end;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Kunden-Zeile automatisch pflegen: bei jedem neuen/geänderten Vertrag,
+-- Tarifwechsel, Notiz oder Lead legt dieser SECURITY-DEFINER-Trigger die
+-- passende public.customers-Zeile an bzw. aktualisiert last_contact_at. So
+-- bleibt customers aktuell, ohne die vier bestehenden Insert-Pfade im Client
+-- anzufassen (siehe src/lib/supabaseApi.ts).
+create or replace function public.touch_customer()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.customer_number is null or new.customer_number = '' then
+    return new;
+  end if;
+
+  insert into public.customers (customer_number, name, first_seen_at, last_contact_at, created_by)
+  values (
+    new.customer_number,
+    coalesce(nullif(new.customer_name, ''), ''),
+    now(),
+    now(),
+    new.created_by
+  )
+  on conflict (customer_number) do update
+    set last_contact_at = now(),
+        name = coalesce(nullif(public.customers.name, ''), excluded.name);
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_touch_customer_contracts on public.contracts;
+create trigger trg_touch_customer_contracts
+  after insert or update on public.contracts
+  for each row execute function public.touch_customer();
+
+drop trigger if exists trg_touch_customer_tariff on public.tariff_changes;
+create trigger trg_touch_customer_tariff
+  after insert or update on public.tariff_changes
+  for each row execute function public.touch_customer();
+
+drop trigger if exists trg_touch_customer_notes on public.notes;
+create trigger trg_touch_customer_notes
+  after insert or update on public.notes
+  for each row execute function public.touch_customer();
+
+drop trigger if exists trg_touch_customer_leads on public.leads;
+create trigger trg_touch_customer_leads
+  after insert or update on public.leads
+  for each row execute function public.touch_customer();
+
+-- calls hat weder customer_name noch created_by (stattdessen caller_name/
+-- agent_id) — touch_customer() passt nicht direkt, daher eine eigene,
+-- sonst identische Funktion. Ohne das bekäme ein Anrufer, der nie einen
+-- Vertrag/Tarifwechsel/Notiz/Lead hatte, trotz protokollierter Anrufe keine
+-- eigenständige customers-Zeile.
+create or replace function public.touch_customer_from_call()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.customer_number is null or new.customer_number = '' then
+    return new;
+  end if;
+
+  insert into public.customers (customer_number, name, first_seen_at, last_contact_at, created_by)
+  values (
+    new.customer_number,
+    coalesce(nullif(new.caller_name, ''), ''),
+    now(),
+    now(),
+    new.agent_id
+  )
+  on conflict (customer_number) do update
+    set last_contact_at = now(),
+        name = coalesce(nullif(public.customers.name, ''), excluded.name);
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_touch_customer_calls on public.calls;
+create trigger trg_touch_customer_calls
+  after insert on public.calls
+  for each row execute function public.touch_customer_from_call();
+
 -- Privilege-Escalation verhindern: role/is_active/key/id nur durch Manager:innen
 -- (oder serverseitig per service_role / SQL-Editor, wo auth.uid() NULL ist).
 -- Ausnahme: Solange noch KEIN Manager existiert, darf der erste Account sich
@@ -296,6 +614,75 @@ create trigger trg_prevent_user_privilege_change
   before update on public.users
   for each row execute function public.prevent_user_privilege_change();
 
+-- ----------------------------------------------------------------------------
+-- Schichttausch ausführen (Migration 023)
+-- ----------------------------------------------------------------------------
+-- Vertauscht die beiden Schichten und setzt die Anfrage auf 'approved' — alles
+-- in einer Transaktion, damit der Plan nie halb getauscht dasteht.
+--
+-- SECURITY DEFINER, weil `shifts` für Agent:innen schreibgeschützt ist und
+-- bleiben soll. Die Rechteprüfung passiert deshalb hier von Hand, gleich als
+-- Erstes. Dies ist die einzige Ausnahme von „Schreiben ist Chef-Sache".
+create or replace function public.apply_shift_swap(p_request_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  req public.shift_swap_requests;
+  a public.shifts;  -- Schicht der anfragenden Person
+  b public.shifts;  -- Schicht der Partner:in
+begin
+  if not public.auth_is_manager() then
+    raise exception 'Nur Chefs können einen Schichttausch bestätigen.'
+      using errcode = '42501';
+  end if;
+
+  -- for update: zwei gleichzeitige Bestätigungen derselben Anfrage würden sonst
+  -- beide den Statuscheck passieren und zweimal tauschen (= Rücktausch).
+  select * into req from public.shift_swap_requests where id = p_request_id for update;
+  if not found then
+    raise exception 'Tauschanfrage nicht gefunden.' using errcode = 'P0002';
+  end if;
+  if req.status <> 'accepted' then
+    raise exception 'Nur angenommene Anfragen können bestätigt werden (Status: %).', req.status
+      using errcode = 'P0001';
+  end if;
+
+  select * into a from public.shifts
+    where user_id = req.requester_id and shift_date = req.requester_date;
+  select * into b from public.shifts
+    where user_id = req.partner_id and shift_date = req.partner_date;
+
+  -- Erst beide Zeilen weg, dann neu setzen: ein direktes Update liefe bei
+  -- gleichem Tag in den unique(user_id, shift_date)-Konflikt.
+  delete from public.shifts
+    where user_id = req.requester_id and shift_date = req.requester_date;
+  delete from public.shifts
+    where user_id = req.partner_id and shift_date = req.partner_date;
+
+  -- Eine Seite ohne Schicht ist erlaubt und heißt „übernimm meinen Tag, ich
+  -- habe an deinem frei": dann bleibt die Gegenseite eben leer.
+  if a.id is not null then
+    insert into public.shifts (user_id, shift_date, shift_type, campaign_id, updated_at)
+    values (req.partner_id, req.partner_date, a.shift_type, a.campaign_id, now());
+  end if;
+  if b.id is not null then
+    insert into public.shifts (user_id, shift_date, shift_type, campaign_id, updated_at)
+    values (req.requester_id, req.requester_date, b.shift_type, b.campaign_id, now());
+  end if;
+
+  update public.shift_swap_requests
+     set status = 'approved',
+         approved_by = auth.uid(),
+         approved_at = now()
+   where id = p_request_id;
+end;
+$$;
+
+grant execute on function public.apply_shift_swap(uuid) to authenticated;
+
 -- USERS: aktive Nutzer lesen alle Profile (Leaderboard, Sharing). Schreiben nur
 -- das eigene Profil; Manager:innen auch fremde. Schutz-Spalten siehe Trigger.
 create policy "users read all" on public.users
@@ -304,6 +691,83 @@ create policy "users insert own" on public.users
   for insert with check (auth.uid() = id);
 create policy "users update own or manager" on public.users
   for update using (auth.uid() = id or public.auth_is_manager());
+
+-- CUSTOMERS: lesen für alle aktiven Nutzer (auch die Extension-Session ist nur
+-- ein weiterer aktiver Nutzer). Schreiben ausschließlich über den
+-- touch_customer()-Trigger oben, deshalb keine insert/update-Policy für
+-- Clients. Löschen nur für Chefs (DSGVO-Purge in CustomerDetail.tsx ist
+-- managergated).
+create policy "customers read all" on public.customers
+  for select using (public.auth_is_active());
+create policy "customers delete manager" on public.customers
+  for delete using (public.auth_is_manager());
+
+-- CALLS: lesen für alle aktiven Nutzer (Live-Anrufleiste, Anrufhistorie,
+-- Team-KPI). Anlegen nur als sich selbst (agent_id = auth.uid()), damit kein
+-- Client Anrufe im Namen anderer Agent:innen einträgt. Abschließen
+-- (ended_at/duration_s) durch die eigene Sitzung oder einen Chef. Löschen
+-- (u.a. DSGVO-Purge) nur für Chefs.
+create policy "calls read all" on public.calls
+  for select using (public.auth_is_active());
+create policy "calls insert own" on public.calls
+  for insert with check (public.auth_is_active() and auth.uid() = agent_id);
+create policy "calls update own or manager" on public.calls
+  for update using (public.auth_is_active() and (auth.uid() = agent_id or public.auth_is_manager()));
+create policy "calls delete manager" on public.calls
+  for delete using (public.auth_is_manager());
+
+-- CAMPAIGNS: alle aktiven Nutzer lesen (Extension braucht sie fürs
+-- Call-Typ-Routing, Agenten sehen sie im Schichtplan). Schreiben nur Chefs.
+create policy "campaigns read all" on public.campaigns
+  for select using (public.auth_is_active());
+create policy "campaigns insert manager" on public.campaigns
+  for insert with check (public.auth_is_manager());
+create policy "campaigns update manager" on public.campaigns
+  for update using (public.auth_is_manager());
+create policy "campaigns delete manager" on public.campaigns
+  for delete using (public.auth_is_manager());
+
+-- SHIFTS: alle aktiven Nutzer lesen den kompletten Plan (geteilte Ansicht,
+-- kein user_id = auth.uid()-Filter). Schreiben/Ändern/Löschen nur Chefs.
+create policy "shifts read all" on public.shifts
+  for select using (public.auth_is_active());
+create policy "shifts insert manager" on public.shifts
+  for insert with check (public.auth_is_manager());
+create policy "shifts update manager" on public.shifts
+  for update using (public.auth_is_manager());
+create policy "shifts delete manager" on public.shifts
+  for delete using (public.auth_is_manager());
+
+-- SHIFT_SWAP_REQUESTS: lesen wie den Plan selbst (alle aktiven Nutzer) — nur
+-- so kann der Schichtplan an der Zelle zeigen, dass für den Tag schon eine
+-- Anfrage läuft. Anlegen nur im eigenen Namen; ändern dürfen die beiden
+-- Beteiligten und Chefs. Welcher Statuswechsel erlaubt ist, entscheidet die
+-- App — ein gefälschter Status bewegt trotzdem keine Schicht, denn tauschen
+-- kann allein apply_shift_swap(), und die prüft erneut auf Chef-Rechte.
+create policy "swap read all" on public.shift_swap_requests
+  for select using (public.auth_is_active());
+create policy "swap insert own" on public.shift_swap_requests
+  for insert with check (public.auth_is_active() and auth.uid() = requester_id);
+create policy "swap update involved" on public.shift_swap_requests
+  for update using (
+    public.auth_is_active()
+    and (auth.uid() = requester_id or auth.uid() = partner_id or public.auth_is_manager())
+  );
+create policy "swap delete own or manager" on public.shift_swap_requests
+  for delete using (auth.uid() = requester_id or public.auth_is_manager());
+
+-- NOTIFICATIONS: das Postfach gehört dem Empfänger, und zwar allein — auch
+-- Chefs lesen es nicht. Schreiben darf jede:r Aktive, aber nur im eigenen
+-- Namen (actor_id = auth.uid()), damit A dem B eine Tauschanfrage zustellen
+-- kann, ohne dass sich jemand als jemand anderes ausgeben kann.
+create policy "notifications read own" on public.notifications
+  for select using (auth.uid() = user_id);
+create policy "notifications insert active" on public.notifications
+  for insert with check (public.auth_is_active() and auth.uid() = actor_id);
+create policy "notifications update own" on public.notifications
+  for update using (auth.uid() = user_id);
+create policy "notifications delete own" on public.notifications
+  for delete using (auth.uid() = user_id);
 
 -- CONTRACTS / TARIFF / NOTES: aktive Nutzer lesen alles.
 -- Bearbeiten/Löschen nur, wenn der User den Datensatz selbst erfasst hat,
@@ -395,15 +859,21 @@ create policy "notes delete own" on public.notes
     )
   );
 
--- OWNERSHIPS: aktive Nutzer lesen/anlegen, nur owner ändern/löschen
+-- OWNERSHIPS: aktive Nutzer lesen/anlegen, Besitzer:in/Manager:in ändern/löschen.
+-- WITH CHECK bewusst nur "aktiv": die Besitzer:in darf den Besitz auf eine
+-- andere Person ÜBERTRAGEN (owner wechselt) — ohne eigene WITH-CHECK-Klausel
+-- würde Postgres die USING-Bedingung auch auf die neue Zeile anwenden und
+-- die Übertragung ablehnen.
 create policy "ownership read all" on public.customer_ownerships
   for select using (public.auth_is_active());
 create policy "ownership insert" on public.customer_ownerships
   for insert with check (public.auth_is_active());
 create policy "ownership update owner or manager" on public.customer_ownerships
-  for update using (public.auth_is_active() and (auth.uid() = owner or public.auth_is_manager()));
-create policy "ownership delete owner" on public.customer_ownerships
-  for delete using (public.auth_is_active() and auth.uid() = owner);
+  for update
+  using (public.auth_is_active() and (auth.uid() = owner or public.auth_is_manager()))
+  with check (public.auth_is_active());
+create policy "ownership delete owner or manager" on public.customer_ownerships
+  for delete using (public.auth_is_active() and (auth.uid() = owner or public.auth_is_manager()));
 
 -- SETTINGS: jeder verwaltet seine eigene Zeile, Chefs verwalten alle
 -- (z.B. um Monatsziele im Team-Bereich zu setzen).
@@ -470,10 +940,77 @@ create policy "access_req decide owner or manager" on public.customer_access_req
     and (owner_id = auth.uid() or public.auth_is_manager())
   );
 
+-- USER_STATUS: alle aktiven Nutzer:innen sehen den Live-Status aller Kolleg:innen;
+-- schreiben darf jede:r nur die eigene Zeile.
+create policy "user_status read all" on public.user_status
+  for select using (public.auth_is_active());
+create policy "user_status insert own" on public.user_status
+  for insert with check (public.auth_is_active() and user_id = auth.uid());
+create policy "user_status update own" on public.user_status
+  for update using (public.auth_is_active() and user_id = auth.uid());
+create policy "user_status delete own" on public.user_status
+  for delete using (public.auth_is_active() and user_id = auth.uid());
+
+-- STATUS_LOG: eigene Historie + Chef:innen lesen; anlegen nur für sich selbst;
+-- Chef:innen dürfen die Historie aufräumen.
+create policy "status_log read own or manager" on public.status_log
+  for select using (public.auth_is_active() and (user_id = auth.uid() or public.auth_is_manager()));
+create policy "status_log insert own" on public.status_log
+  for insert with check (public.auth_is_active() and user_id = auth.uid());
+create policy "status_log delete manager" on public.status_log
+  for delete using (public.auth_is_manager());
+
+-- ============================================================================
+-- RPCs
+-- ============================================================================
+
+-- Ein Aufruf statt vier Tabellenabfragen aus einem Content-Script — die
+-- Stadtnetz-CRM-Copilot-Extension ruft das bei eingehendem Anruf für die
+-- Kundenakte auf. Bewusst NICHT security definer: RLS erlaubt bereits jedem
+-- aktiven Nutzer (auch der Extension-Session) das Lesen dieser Tabellen,
+-- Invoker-Rechte reichen also (least privilege). Kein customers-Eintrag zur
+-- Nummer → die Funktion liefert null ("im CRM nicht bekannt"). leads hat
+-- keine jira_ticket-Spalte, daher fließt nur contracts/tariff_changes/notes
+-- in die Ticket-Suche ein.
+create or replace function public.customer_card(p_customer_number text)
+returns jsonb language sql stable as $$
+  select jsonb_build_object(
+    'customerNumber', p_customer_number,
+    'name', c.name,
+    'phone', c.phone,
+    'firstSeenAt', c.first_seen_at,
+    'lastContactAt', c.last_contact_at,
+    'contractCount', (select count(*) from public.contracts x where x.customer_number = p_customer_number),
+    'tariffChangeCount', (select count(*) from public.tariff_changes x where x.customer_number = p_customer_number),
+    'noteCount', (select count(*) from public.notes x where x.customer_number = p_customer_number),
+    'leadCount', (select count(*) from public.leads x where x.customer_number = p_customer_number),
+    'jiraTicket', (
+      select jira_ticket from (
+        select jira_ticket, created_at from public.contracts
+          where customer_number = p_customer_number and jira_ticket is not null and jira_ticket <> ''
+        union all
+        select jira_ticket, created_at from public.tariff_changes
+          where customer_number = p_customer_number and jira_ticket is not null and jira_ticket <> ''
+        union all
+        select jira_ticket, created_at from public.notes
+          where customer_number = p_customer_number and jira_ticket is not null and jira_ticket <> ''
+      ) t
+      order by created_at desc
+      limit 1
+    )
+  )
+  from public.customers c
+  where c.customer_number = p_customer_number;
+$$;
+
+grant execute on function public.customer_card(text) to authenticated;
+
 -- ============================================================================
 -- REALTIME
 -- ============================================================================
 -- Damit alle Clients live Updates bekommen.
+alter publication supabase_realtime add table public.customers;
+alter publication supabase_realtime add table public.calls;
 alter publication supabase_realtime add table public.contracts;
 alter publication supabase_realtime add table public.tariff_changes;
 alter publication supabase_realtime add table public.notes;
@@ -484,3 +1021,12 @@ alter publication supabase_realtime add table public.leads;
 alter publication supabase_realtime add table public.lead_activities;
 alter publication supabase_realtime add table public.audit_log;
 alter publication supabase_realtime add table public.customer_access_requests;
+alter publication supabase_realtime add table public.user_status;
+alter publication supabase_realtime add table public.status_log;
+alter publication supabase_realtime add table public.campaigns;
+alter publication supabase_realtime add table public.shifts;
+alter publication supabase_realtime add table public.user_settings;
+-- Ohne Realtime wäre das Postfach eines, das man selbst aufmachen muss — eine
+-- Push-Meldung soll aber ankommen, während man woanders arbeitet.
+alter publication supabase_realtime add table public.notifications;
+alter publication supabase_realtime add table public.shift_swap_requests;

@@ -4,9 +4,16 @@ import type { AuditAction, AuditEntity } from '../types';
 
 /**
  * Schreibt einen Audit-Log-Eintrag für die aktuelle Aktion des angemeldeten
- * Nutzers. Fire-and-forget: Fehler beim Loggen blockieren niemals die
- * eigentliche Operation, sondern landen nur in der Konsole. Wenn kein Nutzer
- * angemeldet ist, wird der Eintrag verworfen (RLS würde ihn ohnehin ablehnen).
+ * Nutzers. Fehler beim Loggen blockieren niemals die eigentliche Operation,
+ * sondern landen nur in der Konsole. Wenn kein Nutzer angemeldet ist, wird der
+ * Eintrag verworfen (RLS würde ihn ohnehin ablehnen).
+ *
+ * Gibt das Promise zurück, damit Aufrufer, die dem Schreibvorgang die
+ * Berechtigung unter den Füßen wegziehen, darauf warten können — konkret der
+ * Logout: die RLS-Policy verlangt `actor_id = auth.uid()`, und nach signOut()
+ * ist auth.uid() null. Ohne await lief der Eintrag ins Leere (42501), das
+ * Audit-Log enthielt deshalb ausschließlich Logins, nie ein Logout. Alle
+ * anderen Aufrufer dürfen das Promise weiterhin ignorieren.
  *
  * DSGVO Art. 30: Verzeichnis von Verarbeitungstätigkeiten — wer hat wann was
  * auf welcher personenbezogenen Datenquelle verändert.
@@ -17,11 +24,11 @@ export function logAudit(params: {
   entityId?: string;
   entityLabel?: string;
   details?: Record<string, unknown>;
-}): void {
+}): Promise<void> {
   const user = useAuth.getState().getCurrentUser();
-  if (!user) return;
+  if (!user) return Promise.resolve();
 
-  insertAuditLog({
+  return insertAuditLog({
     actorId: user.key,
     actorName: user.displayName,
     action: params.action,

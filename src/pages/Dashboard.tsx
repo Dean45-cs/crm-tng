@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   TrendingUp,
   FileSignature,
@@ -10,6 +10,11 @@ import {
   ArrowDownRight,
   User,
   Users,
+  Phone,
+  Percent,
+  LayoutGrid,
+  Check,
+  Clock,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -28,9 +33,17 @@ import {
   formatCurrency,
   formatDate,
   isSameMonth,
-  monthKey,
-  monthLabel,
 } from '../lib/utils';
+import { monthlySeries, trendPct } from '../lib/teamStats';
+import {
+  callVolumeStats,
+  linkCallsToOutcomes,
+  conversionStats,
+  callTimingStats,
+} from '../lib/callStats';
+import { formatDuration } from '../lib/reporting';
+import { useMonthCalls } from '../store/useMonthCalls';
+import { useCurrentShiftContext } from '../hooks/useCurrentShiftContext';
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
 import { FollowUpInbox } from '../components/FollowUpInbox';
@@ -38,18 +51,78 @@ import { SkeletonDashboard } from '../components/Skeleton';
 import { IncentiveWidget } from '../components/IncentiveWidget';
 import { ExpiryRadarWidget } from '../components/ExpiryRadarWidget';
 import { AccessRequestInbox } from '../components/AccessRequests';
+import { CustomizableGrid } from '../components/CustomizableGrid';
+import { MyShiftWidget } from '../components/MyShiftWidget';
+import type { WidgetDef } from '../lib/gridLayout';
 import { useRouter } from '../router';
+import type { CampaignCallType } from '../types';
 
 type Scope = 'mine' | 'all';
 
+// Beschriftungen für das Betriebskontext-Badge (Tier 2).
+const CALL_TYPE_LABEL: Record<CampaignCallType, string> = {
+  churn: 'Rückgewinnung',
+  welcome: 'Willkommen',
+  prl: 'Postrückläufer',
+  dupe: 'Dubletten-Check',
+  bvw: 'Bauverweigerer',
+  courtesy: 'Courtesy',
+  other: 'Sonstige',
+};
+const SHIFT_LABEL: Record<'frueh' | 'spaet', string> = {
+  frueh: 'Frühschicht',
+  spaet: 'Spätschicht',
+};
+
 export function Dashboard() {
-  const { contracts: allContracts, tariffChanges: allTariffChanges, settings, loaded } = useStore();
+  // Gezielte Selektoren statt Komplett-Abo: das Dashboard (inkl. Chart)
+  // rendert so nur neu, wenn sich Verträge/Tarifwechsel/Settings ändern —
+  // nicht bei jedem Realtime-Update von Notizen, Leads oder Aktivitäten.
+  const allContracts = useStore((s) => s.contracts);
+  const allTariffChanges = useStore((s) => s.tariffChanges);
+  const settings = useStore((s) => s.settings);
+  const loaded = useStore((s) => s.loaded);
   const currentUser = useAuth((s) => s.getCurrentUser());
   const greetName = currentUser?.displayName ?? 'Kolleg:in';
+  // Live aus useShifts.todayShift + Kampagnen-Katalog abgeleitet (Tier 2).
+  const shiftContext = useCurrentShiftContext();
+  const shiftContextText = shiftContext.working
+    ? shiftContext.campaignName
+      ? `Heute: ${shiftContext.campaignName}${shiftContext.callType ? ` · ${CALL_TYPE_LABEL[shiftContext.callType]}` : ''}`
+      : `Heute: ${shiftContext.shiftType === 'spaet' ? SHIFT_LABEL.spaet : SHIFT_LABEL.frueh}`
+    : null;
   const { navigate } = useRouter();
 
   const [scope, setScope] = useState<Scope>('mine');
+  const [editingLayout, setEditingLayout] = useState(false);
   const userKey = currentUser?.key;
+
+  // Anrufe kommen aus dem geteilten, live gehaltenen Monats-Store
+  // (useMonthCalls) — eine Quelle für Dashboard/TeamDashboard/AgentDetail, die
+  // per calls-Realtime aktuell bleibt. `null` = lädt noch (Skeleton).
+  const monthCalls = useMonthCalls((s) => s.calls);
+
+  // Echte Gesprächszeiten und Erreichbarkeit (Migration 028). Beruht auf der
+  // Ende-Erkennung der Auskunft; wo nicht gemessen wurde, bleiben die Kacheln
+  // leer statt zu raten.
+  const callTiming = useMemo(() => {
+    if (!monthCalls) return null;
+    return callTimingStats(monthCalls, scope === 'mine' && userKey ? userKey : undefined);
+  }, [monthCalls, scope, userKey]);
+
+  // Abschlussquote Anruf → Vertrag/Tarifwechsel (Stufe 4, KONZEPT-INTEGRATION.md).
+  // Notizen/Leads werden hier bewusst per Store-Snapshot statt reaktivem
+  // Selektor gelesen (siehe Kommentar oben zu allContracts/allTariffChanges) —
+  // sonst würde jedes Notiz-/Lead-Realtime-Update diese Seite neu rendern.
+  const callConversion = useMemo(() => {
+    if (!monthCalls) return null;
+    const scoped = scope === 'mine' && userKey ? monthCalls.filter((c) => c.agentId === userKey) : monthCalls;
+    const { notes, leads } = useStore.getState();
+    const links = linkCallsToOutcomes(scoped, allContracts, allTariffChanges, leads, notes);
+    return conversionStats(links);
+  }, [monthCalls, allContracts, allTariffChanges, scope, userKey]);
+
+  const callVolume = monthCalls ? callVolumeStats(monthCalls, scope === 'mine' ? userKey : undefined) : null;
 
   const todayLabel = new Date().toLocaleDateString('de-DE', {
     weekday: 'long',
@@ -88,38 +161,19 @@ export function Dashboard() {
     contracts.reduce((sum, c) => sum + calcContractCommission(c, settings), 0) +
     tariffChanges.reduce((sum, t) => sum + calcTariffCommission(t, settings), 0);
 
-  const monthContracts = contracts.filter((c) => isSameMonth(c.contractDate));
   const monthTariff = tariffChanges.filter((t) => isSameMonth(t.changeDate));
 
-  const monthCommission =
-    monthContracts.reduce((s, c) => s + calcContractCommission(c, settings), 0) +
-    monthTariff.reduce((s, t) => s + calcTariffCommission(t, settings), 0);
+  // Einzige Quelle für Monats-/Vormonatsprovision und die 6-Monats-Reihe
+  // (siehe teamStats.ts) — vorher hatte diese Seite ihre eigene, leicht
+  // abweichende Kopie derselben Schleife.
+  const series = monthlySeries(contracts, tariffChanges, settings, 6);
+  const currentPoint = series[series.length - 1];
+  const prevPoint = series[series.length - 2];
+  const monthCommission = currentPoint.contractCommission + currentPoint.tariffCommission;
+  const prevMonthCommission = prevPoint.contractCommission + prevPoint.tariffCommission;
+  const trend = trendPct(monthCommission, prevMonthCommission);
 
-  // Vormonat-Vergleich
-  const prevMonthRef = (() => {
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() - 1);
-    return d;
-  })();
-  const prevMonthCommission =
-    contracts
-      .filter((c) => isSameMonth(c.contractDate, prevMonthRef))
-      .reduce((s, c) => s + calcContractCommission(c, settings), 0) +
-    tariffChanges
-      .filter((t) => isSameMonth(t.changeDate, prevMonthRef))
-      .reduce((s, t) => s + calcTariffCommission(t, settings), 0);
-
-  const trendPct =
-    prevMonthCommission > 0
-      ? Math.round(
-          ((monthCommission - prevMonthCommission) / prevMonthCommission) * 100,
-        )
-      : monthCommission > 0
-        ? 100
-        : 0;
-
-  const target = settings.monthlyTarget || 0;
+  const target = currentUser?.monthlyTarget || 0;
   const targetProgress = target > 0 ? Math.min(100, (monthCommission / target) * 100) : 0;
   const remainingToTarget = Math.max(0, target - monthCommission);
 
@@ -130,26 +184,11 @@ export function Dashboard() {
     return last - now.getDate();
   })();
 
-  const chartData = Array.from({ length: 6 }, (_, i) => {
-    const offset = -5 + i;
-    const refDate = new Date();
-    refDate.setDate(1);
-    refDate.setMonth(refDate.getMonth() + offset);
-    const key = monthKey(refDate.toISOString());
-
-    const cSum = contracts
-      .filter((c) => monthKey(c.contractDate) === key)
-      .reduce((s, c) => s + calcContractCommission(c, settings), 0);
-    const tSum = tariffChanges
-      .filter((t) => monthKey(t.changeDate) === key)
-      .reduce((s, t) => s + calcTariffCommission(t, settings), 0);
-
-    return {
-      month: monthLabel(offset),
-      Neuvertrag: Math.round(cSum * 100) / 100,
-      Tarifwechsel: Math.round(tSum * 100) / 100,
-    };
-  });
+  const chartData = series.map((p) => ({
+    month: p.month,
+    Neuvertrag: p.contractCommission,
+    Tarifwechsel: p.tariffCommission,
+  }));
 
   // Top-Produkte
   const productMap = new Map<string, number>();
@@ -177,9 +216,11 @@ export function Dashboard() {
       customer: c.customerName,
       customerNumber: c.customerNumber,
       product:
-        c.products.length === 1
-          ? c.products[0]
-          : `${c.products[0]} +${c.products.length - 1}`,
+        c.products.length === 0
+          ? '–'
+          : c.products.length === 1
+            ? c.products[0]
+            : `${c.products[0]} +${c.products.length - 1}`,
       jira: c.jiraTicket,
       commission: calcContractCommission(c, settings),
       status: c.status,
@@ -213,7 +254,7 @@ export function Dashboard() {
         <defs>
           <linearGradient id="tng-ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#0066b3" />
-            <stop offset="100%" stopColor="#00a3e0" />
+            <stop offset="100%" stopColor="#3a8dd1" />
           </linearGradient>
         </defs>
       </svg>
@@ -224,6 +265,12 @@ export function Dashboard() {
             {greeting()}, {greetName}
           </h1>
           <div className="dash-date">{todayLabel}</div>
+          {shiftContextText && (
+            <div className="dash-shift-context">
+              <span className="dash-shift-context-dot" />
+              {shiftContextText}
+            </div>
+          )}
         </div>
         <div className="dash-header-actions">
           <div
@@ -251,6 +298,13 @@ export function Dashboard() {
             </button>
           </div>
           <button
+            className={`dash-report-pill${editingLayout ? ' is-active' : ''}`}
+            onClick={() => setEditingLayout((v) => !v)}
+            title="Dashboard-Layout anpassen (Widgets verschieben, Größe ändern, ausblenden)"
+          >
+            {editingLayout ? <><Check size={13} /> Fertig</> : <><LayoutGrid size={13} /> Anpassen</>}
+          </button>
+          <button
             className="dash-report-pill"
             onClick={() => navigate({ name: 'report' })}
             title="Druckansicht des Monatsabschlusses öffnen"
@@ -260,124 +314,222 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="widget-row hero-row">
-        <TargetWidget
-          monthCommission={monthCommission}
-          target={target}
-          progress={targetProgress}
-          daysLeft={daysLeftInMonth}
-          remaining={remainingToTarget}
-        />
-
-        <div className="widget-mini-grid">
-          <KpiWidget
-            icon={<TrendingUp size={14} />}
-            accent="blue"
-            label="Provision gesamt"
-            value={formatCurrency(totalCommission)}
-            delta={`${contracts.length + tariffChanges.length} Vorgänge`}
-          />
-          <KpiWidget
-            icon={<FileSignature size={14} />}
-            accent="orange"
-            label="Aktive Verträge"
-            value={`${activeContracts.length}`}
-            delta={`${offenCount} offen`}
-          />
-          <KpiWidget
-            icon={<ArrowLeftRight size={14} />}
-            accent="purple"
-            label="Tarifwechsel"
-            value={`${tariffChanges.length}`}
-            delta={`${monthTariff.length} diesen Monat`}
-          />
-          <KpiWidget
-            icon={<Sparkles size={14} />}
-            accent="green"
-            label="vs. Vormonat"
-            value={`${trendPct > 0 ? '+' : ''}${trendPct} %`}
-            delta={formatCurrency(prevMonthCommission) + ' im Vormonat'}
-            trend={trendPct > 0 ? 'positive' : trendPct < 0 ? 'negative' : undefined}
-          />
-        </div>
-      </div>
-
+      {/* Bedingte Info-Boxen bleiben außerhalb des Grids (blenden sich selbst
+          aus, wenn leer) und immer über volle Breite. */}
       <AccessRequestInbox />
       <IncentiveWidget />
       <ExpiryRadarWidget />
 
-      <div className="grid-2" style={{ marginBottom: 14 }}>
-        <div className="widget">
-          <div className="row between" style={{ marginBottom: 14 }}>
-            <h3 className="widget-title" style={{ margin: 0 }}>
-              Provision pro Monat
-            </h3>
-            <span className="muted">Letzte 6 Monate</span>
-          </div>
-          <div style={{ width: '100%', height: 240 }}>
-            <ResponsiveContainer>
-              <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
-                <YAxis axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
-                <Tooltip
-                  cursor={{ fill: 'rgba(0,102,179,0.05)' }}
-                  contentStyle={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 12,
-                    fontSize: 12,
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
-                  }}
-                  formatter={(value) => formatCurrency(Number(value ?? 0))}
+      <CustomizableGrid
+        storageKey="crm-dashboard-layout"
+        editing={editingLayout}
+        widgets={[
+          {
+            id: 'target',
+            title: 'Monatsziel',
+            defaultW: 5,
+            minW: 4,
+            render: () => (
+              <TargetWidget
+                monthCommission={monthCommission}
+                target={target}
+                progress={targetProgress}
+                daysLeft={daysLeftInMonth}
+                remaining={remainingToTarget}
+              />
+            ),
+          },
+          {
+            id: 'kpis',
+            title: 'Kennzahlen',
+            defaultW: 7,
+            minW: 4,
+            render: () => (
+              <div className="widget-mini-grid">
+                <KpiWidget
+                  icon={<TrendingUp size={14} />}
+                  accent="blue"
+                  label="Provision gesamt"
+                  value={formatCurrency(totalCommission)}
+                  delta={`${contracts.length + tariffChanges.length} Vorgänge`}
                 />
-                <Bar dataKey="Neuvertrag" stackId="a" fill="#0066b3" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Tarifwechsel" stackId="a" fill="#00a3e0" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <FollowUpInbox />
-      </div>
-
-      <div className="grid-2" style={{ marginBottom: 16 }}>
-        <div className="widget">
-          <h3 className="widget-title">Zuletzt erfasst</h3>
-          {recent.length === 0 ? (
-            <div className="empty-inline">
-              <span>Noch keine Vorgänge.</span>
-            </div>
-          ) : (
-            <div className="recent-list">
-              {recent.map((r) => (
-                <button
-                  key={`${r.kind}-${r.id}`}
-                  className="recent-item"
-                  onClick={() => navigate({ name: 'customer', kdnr: r.kdnr })}
-                >
-                  <div className={`recent-bullet ${r.type === 'Vertrag' ? 'bullet-blue' : 'bullet-orange'}`} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="row between" style={{ gap: 8 }}>
-                      <div className="recent-name">{r.customer}</div>
-                      <div className="recent-amount">{formatCurrency(r.commission)}</div>
-                    </div>
-                    <div className="recent-meta">
-                      <span className="muted" style={{ fontSize: 11.5 }}>
-                        {formatDate(r.date)} · {r.product}
-                      </span>
-                      {r.jira && <JiraLink ticket={r.jira} />}
-                      <StatusBadge status={r.status} />
-                    </div>
+                <KpiWidget
+                  icon={<FileSignature size={14} />}
+                  accent="orange"
+                  label="Aktive Verträge"
+                  value={`${activeContracts.length}`}
+                  delta={`${offenCount} offen`}
+                />
+                <KpiWidget
+                  icon={<ArrowLeftRight size={14} />}
+                  accent="purple"
+                  label="Tarifwechsel"
+                  value={`${tariffChanges.length}`}
+                  delta={`${monthTariff.length} diesen Monat`}
+                />
+                <KpiWidget
+                  icon={<Sparkles size={14} />}
+                  accent="green"
+                  label="vs. Vormonat"
+                  value={`${trend > 0 ? '+' : ''}${trend} %`}
+                  delta={formatCurrency(prevMonthCommission) + ' im Vormonat'}
+                  trend={trend > 0 ? 'positive' : trend < 0 ? 'negative' : undefined}
+                />
+                <KpiWidget
+                  icon={<Phone size={14} />}
+                  accent="blue"
+                  label="Anrufe diesen Monat"
+                  value={callVolume === null ? '–' : `${callVolume.count}`}
+                  delta="von der Extension automatisch erfasst"
+                />
+                <KpiWidget
+                  icon={<Phone size={14} />}
+                  accent={
+                    callTiming && callTiming.answerRatePct !== null && callTiming.answerRatePct >= 60
+                      ? 'green'
+                      : 'orange'
+                  }
+                  label="Erreichbarkeit"
+                  value={
+                    callTiming?.answerRatePct == null ? '–' : `${callTiming.answerRatePct} %`
+                  }
+                  delta={
+                    callTiming && callTiming.measured > 0
+                      ? `${callTiming.answered} angenommen · ${callTiming.unanswered} ohne Abheben`
+                      : 'noch kein Gesprächsende gemessen'
+                  }
+                />
+                <KpiWidget
+                  icon={<Clock size={14} />}
+                  accent="purple"
+                  label="Ø Gespräch (ab Abheben)"
+                  value={callTiming?.avgTalkS == null ? '–' : formatDuration(callTiming.avgTalkS)}
+                  delta={
+                    callTiming?.avgAhtS == null
+                      ? `${callTiming?.withTalkTime ?? 0} gemessene Gespräche`
+                      : `AHT Ø ${formatDuration(callTiming.avgAhtS)} mit Nachbearbeitung`
+                  }
+                />
+                <KpiWidget
+                  icon={<Percent size={14} />}
+                  accent="orange"
+                  label="Abschlussquote (Anruf → Vertrag/Tarifwechsel)"
+                  value={callConversion?.conversionPct == null ? '–' : `${callConversion.conversionPct} %`}
+                  delta={
+                    callConversion?.linkedCount
+                      ? `${callConversion.linkedCount} von ${callConversion.totalCount} Anrufen`
+                      : 'noch keine Verknüpfung diesen Monat'
+                  }
+                />
+              </div>
+            ),
+          },
+          {
+            id: 'chart',
+            title: 'Provision pro Monat',
+            defaultW: 6,
+            minW: 4,
+            render: () => (
+              <div className="widget">
+                <div className="row between" style={{ marginBottom: 10 }}>
+                  <h3 className="widget-title" style={{ margin: 0 }}>
+                    Provision pro Monat
+                  </h3>
+                  <span className="muted">Letzte 6 Monate</span>
+                </div>
+                <div style={{ width: '100%', height: 200 }}>
+                  {/* Feste Höhe direkt am ResponsiveContainer statt nur am Wrapper:
+                      sonst misst er beim ersten Rendern noch nichts (-1) und
+                      warnt bei jedem Seitenaufbau in der Konsole. Die Breite
+                      bleibt prozentual, also weiterhin responsiv. */}
+                  <ResponsiveContainer height={200}>
+                    <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
+                      <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
+                      <YAxis axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
+                      <Tooltip
+                        cursor={{ fill: 'rgba(0,102,179,0.05)' }}
+                        contentStyle={{
+                          background: 'var(--bg-card)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 12,
+                          fontSize: 12,
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                        }}
+                        formatter={(value) => formatCurrency(Number(value ?? 0))}
+                      />
+                      <Bar dataKey="Neuvertrag" stackId="a" fill="#0066b3" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="Tarifwechsel" stackId="a" fill="#00a3e0" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ),
+          },
+          {
+            id: 'myshift',
+            title: 'Meine Schicht',
+            defaultW: 6,
+            minW: 4,
+            render: () => <MyShiftWidget />,
+          },
+          {
+            id: 'followups',
+            title: 'Wiedervorlagen',
+            defaultW: 6,
+            minW: 4,
+            render: () => <FollowUpInbox />,
+          },
+          {
+            id: 'recent',
+            title: 'Zuletzt erfasst',
+            defaultW: 6,
+            minW: 4,
+            render: () => (
+              <div className="widget">
+                <h3 className="widget-title">Zuletzt erfasst</h3>
+                {recent.length === 0 ? (
+                  <div className="empty-inline">
+                    <span>Noch keine Vorgänge.</span>
                   </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <TopProductsWidget items={topProducts} max={topMax} />
-      </div>
+                ) : (
+                  <div className="recent-list">
+                    {recent.map((r) => (
+                      <button
+                        key={`${r.kind}-${r.id}`}
+                        className="recent-item"
+                        onClick={() => navigate({ name: 'customer', kdnr: r.kdnr })}
+                      >
+                        <div className={`recent-bullet ${r.type === 'Vertrag' ? 'bullet-blue' : 'bullet-orange'}`} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="row between" style={{ gap: 8 }}>
+                            <div className="recent-name">{r.customer}</div>
+                            <div className="recent-amount">{formatCurrency(r.commission)}</div>
+                          </div>
+                          <div className="recent-meta">
+                            <span className="muted" style={{ fontSize: 11.5 }}>
+                              {formatDate(r.date)} · {r.product}
+                            </span>
+                            {r.jira && <JiraLink ticket={r.jira} />}
+                            <StatusBadge status={r.status} />
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ),
+          },
+          {
+            id: 'topproducts',
+            title: 'Top-Produkte',
+            defaultW: 6,
+            minW: 4,
+            render: () => <TopProductsWidget items={topProducts} max={topMax} />,
+          },
+        ] as WidgetDef[]}
+      />
     </div>
   );
 }
@@ -395,7 +547,7 @@ function TargetWidget({
   daysLeft: number;
   remaining: number;
 }) {
-  const radius = 56;
+  const radius = 44;
   const circ = 2 * Math.PI * radius;
   const dashOffset = circ - (progress / 100) * circ;
   const dailyNeeded = daysLeft > 0 ? remaining / daysLeft : 0;
@@ -403,22 +555,22 @@ function TargetWidget({
   return (
     <div className="widget target-widget">
       <div className="target-ring">
-        <svg width="132" height="132" viewBox="0 0 132 132">
+        <svg width="104" height="104" viewBox="0 0 104 104">
           <circle
             className="target-ring-track"
-            cx="66"
-            cy="66"
+            cx="52"
+            cy="52"
             r={radius}
             fill="none"
-            strokeWidth="11"
+            strokeWidth="9"
           />
           <circle
             className="target-ring-fill"
-            cx="66"
-            cy="66"
+            cx="52"
+            cy="52"
             r={radius}
             fill="none"
-            strokeWidth="11"
+            strokeWidth="9"
             strokeDasharray={circ}
             strokeDashoffset={dashOffset}
           />
@@ -441,7 +593,7 @@ function TargetWidget({
               </span>
             </>
           ) : target > 0 ? (
-            <span style={{ color: '#2eb84e', fontWeight: 600 }}>
+            <span style={{ color: 'var(--green)', fontWeight: 600 }}>
               ✓ Ziel erreicht
             </span>
           ) : (
@@ -514,7 +666,7 @@ function TopProductsWidget({
         Top-Produkte
       </h3>
       {items.length === 0 ? (
-        <div className="empty-inline" style={{ minHeight: 200 }}>
+        <div className="empty-inline" style={{ minHeight: 110 }}>
           <span>Keine Produkte verkauft.</span>
         </div>
       ) : (

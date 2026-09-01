@@ -1,9 +1,18 @@
 import { getSupabase } from './supabase';
+import type { WrapupPatch } from './campaigns';
 import type {
+  AgentCompetency,
+  CompetencyLevel,
+  DoiChannel,
+  DoiStatus,
+  HomeIdKind,
+  WinbackStatus,
   Contract,
   TariffChange,
   Note,
   Settings,
+  Customer,
+  Call,
   CustomerOwnership,
   ProductInfo,
   ProductType,
@@ -25,6 +34,19 @@ import type {
   AuditEntity,
   CustomerAccessRequest,
   AccessRequestStatus,
+  UserStatus,
+  StatusLogEntry,
+  CallDisposition,
+  Campaign,
+  CampaignCallType,
+  Shift,
+  ShiftType,
+  StaffingTarget,
+  ShiftSwapRequest,
+  SwapStatus,
+  AppNotification,
+  NotificationKind,
+  NotificationLink,
 } from '../types';
 import type { AuthUser } from '../store/useAuth';
 
@@ -234,6 +256,32 @@ export async function upsertUserProfile(
     { onConflict: 'id' },
   );
   if (error) throw error;
+}
+
+/**
+ * Login-Zeitstempel setzen, OHNE das bestehende Profil zu überschreiben.
+ * Der frühere Upsert beim Login hat display_name mit der gerade eingetippten
+ * Schreibweise überschrieben (Login als "max" → Anzeigename wurde "max").
+ * Fehlt das Profil noch (z.B. abgebrochene Erst-Registrierung), wird es
+ * angelegt.
+ */
+export async function touchUserLogin(
+  id: string,
+  key: string,
+  displayName: string,
+): Promise<void> {
+  const sb = getSupabase();
+  const { data, error } = await sb.from('users').select('id').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (data) {
+    const { error: ue } = await sb
+      .from('users')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('id', id);
+    if (ue) throw ue;
+  } else {
+    await upsertUserProfile(id, key, displayName);
+  }
 }
 
 export async function updateUserFlags(
@@ -461,6 +509,8 @@ interface UserSettingsRow {
   monthly_target: number;
   sp_client_id: string;
   sp_tenant_id: string;
+  sp_file_path: string | null;
+  sp_sheet_name: string | null;
 }
 
 interface SharedSettingsRow {
@@ -470,7 +520,10 @@ interface SharedSettingsRow {
 }
 
 export async function fetchSettings(userId: string): Promise<{
-  user: Pick<Settings, 'monthlyTarget' | 'spClientId' | 'spTenantId'> | null;
+  user: Pick<
+    Settings,
+    'monthlyTarget' | 'spClientId' | 'spTenantId' | 'spFilePath' | 'spSheetName'
+  > | null;
   shared: Pick<Settings, 'products' | 'tariffCommission'> | null;
 }> {
   const sb = getSupabase();
@@ -491,6 +544,8 @@ export async function fetchSettings(userId: string): Promise<{
           monthlyTarget: Number(userRow.monthly_target),
           spClientId: userRow.sp_client_id ?? '',
           spTenantId: userRow.sp_tenant_id ?? '',
+          spFilePath: userRow.sp_file_path ?? '',
+          spSheetName: userRow.sp_sheet_name || 'Tabelle1',
         }
       : null,
     shared: sharedRow
@@ -504,7 +559,9 @@ export async function fetchSettings(userId: string): Promise<{
 
 export async function upsertUserSettings(
   userId: string,
-  patch: Partial<Pick<Settings, 'monthlyTarget' | 'spClientId' | 'spTenantId'>>,
+  patch: Partial<
+    Pick<Settings, 'monthlyTarget' | 'spClientId' | 'spTenantId' | 'spFilePath' | 'spSheetName'>
+  >,
 ): Promise<void> {
   const payload: Record<string, unknown> = {
     user_id: userId,
@@ -513,6 +570,8 @@ export async function upsertUserSettings(
   if (patch.monthlyTarget !== undefined) payload.monthly_target = patch.monthlyTarget;
   if (patch.spClientId !== undefined) payload.sp_client_id = patch.spClientId;
   if (patch.spTenantId !== undefined) payload.sp_tenant_id = patch.spTenantId;
+  if (patch.spFilePath !== undefined) payload.sp_file_path = patch.spFilePath;
+  if (patch.spSheetName !== undefined) payload.sp_sheet_name = patch.spSheetName;
   const { error } = await getSupabase()
     .from('user_settings')
     .upsert(payload, { onConflict: 'user_id' });
@@ -531,6 +590,44 @@ export async function upsertSharedSettings(
   const { error } = await getSupabase()
     .from('shared_settings')
     .upsert(payload, { onConflict: 'id' });
+  if (error) throw error;
+}
+
+// ---- Appearance (Theme/Palette) — surface-übergreifend über user_settings ----
+// Bewusst getrennt von fetchSettings/upsertUserSettings gehalten: Optik ist eine
+// eigene Achse (UI, nicht Geschäfts-Settings) und wird über einen dedizierten
+// Realtime-Kanal + localStorage-Cache synchronisiert (Migration 022, Tier 3).
+
+/** Rohwerte der gespeicherten Optik; null = noch nie gesetzt (→ Seed vom Client). */
+export async function fetchUserAppearance(userId: string): Promise<{
+  themePref: string | null;
+  palette: unknown | null;
+}> {
+  const { data, error } = await getSupabase()
+    .from('user_settings')
+    .select('theme_pref, palette')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as { theme_pref: string | null; palette: unknown } | null;
+  return { themePref: row?.theme_pref ?? null, palette: row?.palette ?? null };
+}
+
+/** Partieller Upsert nur der Optik-Spalten — andere user_settings-Spalten
+ *  bleiben unangetastet (onConflict aktualisiert nur die übergebenen Felder). */
+export async function upsertUserAppearance(
+  userId: string,
+  patch: { themePref?: string; palette?: unknown },
+): Promise<void> {
+  const payload: Record<string, unknown> = {
+    user_id: userId,
+    updated_at: new Date().toISOString(),
+  };
+  if (patch.themePref !== undefined) payload.theme_pref = patch.themePref;
+  if (patch.palette !== undefined) payload.palette = patch.palette;
+  const { error } = await getSupabase()
+    .from('user_settings')
+    .upsert(payload, { onConflict: 'user_id' });
   if (error) throw error;
 }
 
@@ -615,6 +712,527 @@ export async function updateIncentiveRow(
 
 export async function deleteIncentiveRow(id: string): Promise<void> {
   const { error } = await getSupabase().from('incentives').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ============================================================================
+// Kampagnen (Migration 019) — fester, vom Chef gepflegter Katalog. call_type
+// bestimmt in der Extension automatisch Skript & Einwandkarten.
+// ============================================================================
+
+interface CampaignRow {
+  id: string;
+  name: string;
+  call_type: CampaignCallType;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+}
+
+const mapCampaign = (r: CampaignRow): Campaign => ({
+  id: r.id,
+  name: r.name,
+  callType: r.call_type,
+  active: r.active,
+  createdBy: r.created_by ?? undefined,
+  createdAt: r.created_at,
+});
+
+export async function fetchCampaigns(): Promise<Campaign[]> {
+  const { data, error } = await getSupabase()
+    .from('campaigns')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as CampaignRow[]).map(mapCampaign);
+}
+
+export async function insertCampaign(
+  c: Omit<Campaign, 'id' | 'createdAt'>,
+): Promise<Campaign> {
+  const payload = {
+    name: c.name,
+    call_type: c.callType,
+    active: c.active,
+    created_by: c.createdBy ?? null,
+  };
+  const { data, error } = await getSupabase()
+    .from('campaigns')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return mapCampaign(data as CampaignRow);
+}
+
+export async function updateCampaignRow(id: string, patch: Partial<Campaign>): Promise<void> {
+  const payload: Record<string, unknown> = {};
+  if (patch.name !== undefined) payload.name = patch.name;
+  if (patch.callType !== undefined) payload.call_type = patch.callType;
+  if (patch.active !== undefined) payload.active = patch.active;
+  const { error } = await getSupabase().from('campaigns').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+export async function setCampaignActive(id: string, active: boolean): Promise<void> {
+  await updateCampaignRow(id, { active });
+}
+
+// ============================================================================
+// Kompetenzen (Migration 030) — wer darf welche Kampagne fahren
+// ============================================================================
+// Eine Zeile je (Person, Kampagnentyp). KEINE Zeile heißt „nicht geschult" —
+// deshalb löscht setCompetency() die Zeile, statt eine Stufe „keine" zu
+// schreiben: ein Zustand, den es in zwei Formen gibt, muss überall doppelt
+// geprüft werden.
+
+interface CompetencyRow {
+  user_id: string;
+  call_type: CampaignCallType;
+  level: CompetencyLevel;
+  trained_at: string | null;
+  guide_version: string | null;
+  note: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+const mapCompetency = (r: CompetencyRow): AgentCompetency => ({
+  userId: r.user_id,
+  callType: r.call_type,
+  level: r.level,
+  trainedAt: r.trained_at ?? undefined,
+  guideVersion: r.guide_version ?? undefined,
+  note: r.note ?? undefined,
+  updatedAt: r.updated_at,
+  updatedBy: r.updated_by ?? undefined,
+});
+
+export async function fetchCompetencies(): Promise<AgentCompetency[]> {
+  const { data, error } = await getSupabase().from('agent_competencies').select('*');
+  if (error) throw error;
+  return (data as CompetencyRow[]).map(mapCompetency);
+}
+
+/**
+ * Kompetenz setzen oder — mit `level: null` — entfernen.
+ *
+ * Das Entfernen ist ein echtes DELETE: „nicht geschult" ist die Abwesenheit
+ * einer Zeile, nicht ein eigener Wert (siehe Migration 030).
+ */
+export async function setCompetency(
+  userId: string,
+  callType: CampaignCallType,
+  level: CompetencyLevel | null,
+  extra?: { trainedAt?: string; guideVersion?: string; note?: string; updatedBy?: string },
+): Promise<void> {
+  const sb = getSupabase();
+  if (level === null) {
+    const { error } = await sb
+      .from('agent_competencies')
+      .delete()
+      .eq('user_id', userId)
+      .eq('call_type', callType);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await sb.from('agent_competencies').upsert(
+    {
+      user_id: userId,
+      call_type: callType,
+      level,
+      trained_at: extra?.trainedAt ?? null,
+      guide_version: extra?.guideVersion ?? null,
+      note: extra?.note ?? null,
+      updated_at: new Date().toISOString(),
+      updated_by: extra?.updatedBy ?? null,
+    },
+    { onConflict: 'user_id,call_type' },
+  );
+  if (error) throw error;
+}
+
+// ============================================================================
+// Schichtplan (Migration 020) — geteilter Wochenplan (Früh/Spät/frei je
+// Agent:in und Tag), optional mit Kampagnen-Zuordnung. Nur Chefs schreiben,
+// alle aktiven Nutzer lesen den vollständigen Plan (siehe RLS in schema.sql).
+// ============================================================================
+
+interface ShiftRow {
+  id: string;
+  user_id: string;
+  shift_date: string;
+  shift_type: ShiftType;
+  campaign_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const mapShift = (r: ShiftRow): Shift => ({
+  id: r.id,
+  userId: r.user_id,
+  shiftDate: r.shift_date,
+  shiftType: r.shift_type,
+  campaignId: r.campaign_id ?? undefined,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+/** Alle Schichten einer Woche (weekStart/weekEnd als 'YYYY-MM-DD'), für alle Agent:innen. */
+export async function fetchShiftsForWeek(weekStart: string, weekEnd: string): Promise<Shift[]> {
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .select('*')
+    .gte('shift_date', weekStart)
+    .lte('shift_date', weekEnd);
+  if (error) throw error;
+  return (data as ShiftRow[]).map(mapShift);
+}
+
+/** Legt die Schicht eines Tages an oder überschreibt sie (unique user_id+shift_date). */
+export async function upsertShift(s: {
+  userId: string;
+  shiftDate: string;
+  shiftType: ShiftType;
+  campaignId?: string | null;
+}): Promise<Shift> {
+  const payload = {
+    user_id: s.userId,
+    shift_date: s.shiftDate,
+    shift_type: s.shiftType,
+    campaign_id: s.campaignId ?? null,
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .upsert(payload, { onConflict: 'user_id,shift_date' })
+    .select()
+    .single();
+  if (error) throw error;
+  return mapShift(data as ShiftRow);
+}
+
+export async function deleteShiftRow(id: string): Promise<void> {
+  const { error } = await getSupabase().from('shifts').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * Die Schicht eines einzelnen Users an einem Tag — Grundlage des „aktuellen
+ * Kontexts" (welche Kampagne/welchen Call-Typ fahre ich gerade). Spiegelt
+ * fetchCurrentShift() aus extension/src/supabase.js, damit CRM und Extension
+ * dieselbe Ableitung nutzen. null = keine Schicht an dem Tag.
+ */
+export async function fetchShiftForUserDay(userId: string, dateKey: string): Promise<Shift | null> {
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('shift_date', dateKey)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapShift(data as ShiftRow) : null;
+}
+
+/**
+ * Schichten eines beliebigen Datumsbereichs — dieselbe Abfrage wie
+ * fetchShiftsForWeek, nur ohne die Wochen-Erwartung im Namen. Die
+ * Monatsansicht des Schichtplans lädt damit fünf bis sechs Wochen am Stück.
+ */
+export async function fetchShiftsBetween(fromKey: string, toKey: string): Promise<Shift[]> {
+  return fetchShiftsForWeek(fromKey, toKey);
+}
+
+/**
+ * Die eigenen Schichten eines Zeitfensters, nach Datum sortiert. Grundlage für
+ * „meine laufende und meine nächste Schicht" — dafür reicht die heutige Zeile
+ * nicht: an einem freien Tag ist die interessante Antwort, wann es weitergeht.
+ */
+export async function fetchShiftsForUser(
+  userId: string,
+  fromKey: string,
+  toKey: string,
+): Promise<Shift[]> {
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('shift_date', fromKey)
+    .lte('shift_date', toKey)
+    .order('shift_date', { ascending: true });
+  if (error) throw error;
+  return (data as ShiftRow[]).map(mapShift);
+}
+
+// ============================================================================
+// Soll-Besetzung (Migration 024)
+// ============================================================================
+
+interface StaffingRow {
+  weekday: number;
+  min_frueh: number;
+  min_spaet: number;
+}
+
+const mapStaffing = (r: StaffingRow): StaffingTarget => ({
+  weekday: r.weekday,
+  minFrueh: r.min_frueh,
+  minSpaet: r.min_spaet,
+});
+
+/**
+ * Soll-Besetzung je Wochentag. Fehlt die Tabelle noch (Migration 024 nicht
+ * eingespielt), kommt eine leere Liste zurück statt eines Fehlers — dann zeigt
+ * die Besetzung wie bisher nur Ist-Zahlen ohne Ampel. Gleiches Toleranzmuster
+ * wie bei fetchShiftsForWeek/fetchIncentives.
+ */
+export async function fetchStaffingTargets(): Promise<StaffingTarget[]> {
+  const { data, error } = await getSupabase().from('staffing_targets').select('*');
+  if (error) return [];
+  return (data as StaffingRow[]).map(mapStaffing);
+}
+
+export async function upsertStaffingTarget(t: StaffingTarget): Promise<void> {
+  const { error } = await getSupabase()
+    .from('staffing_targets')
+    .upsert(
+      {
+        weekday: t.weekday,
+        min_frueh: t.minFrueh,
+        min_spaet: t.minSpaet,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'weekday' },
+    );
+  if (error) throw error;
+}
+
+// ============================================================================
+// Schichttausch (Migration 023) — A fragt B, B nimmt an, der Chef bestätigt.
+// Der eigentliche Tausch läuft über die Datenbankfunktion apply_shift_swap():
+// `shifts` bleibt für Agent:innen schreibgeschützt, und beide Zeilen müssen
+// gemeinsam umziehen oder gar nicht.
+// ============================================================================
+
+interface SwapRow {
+  id: string;
+  requester_id: string;
+  requester_date: string;
+  partner_id: string;
+  partner_date: string;
+  message: string | null;
+  status: SwapStatus;
+  requester_shift_type: ShiftType | null;
+  partner_shift_type: ShiftType | null;
+  decided_at: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_at: string;
+}
+
+const mapSwap = (r: SwapRow): ShiftSwapRequest => ({
+  id: r.id,
+  requesterId: r.requester_id,
+  requesterDate: r.requester_date,
+  partnerId: r.partner_id,
+  partnerDate: r.partner_date,
+  message: r.message ?? undefined,
+  status: r.status,
+  requesterShiftType: r.requester_shift_type ?? undefined,
+  partnerShiftType: r.partner_shift_type ?? undefined,
+  decidedAt: r.decided_at ?? undefined,
+  approvedBy: r.approved_by ?? undefined,
+  approvedAt: r.approved_at ?? undefined,
+  createdAt: r.created_at,
+});
+
+/**
+ * Alle Tauschanfragen, die noch zu etwas führen können (offen oder vom Partner
+ * angenommen). Erledigte bleiben in der Datenbank stehen, interessieren die
+ * Oberfläche aber nicht mehr — der Schichtplan markiert damit nur Zellen, für
+ * die gerade etwas läuft.
+ */
+export async function fetchOpenSwapRequests(): Promise<ShiftSwapRequest[]> {
+  const { data, error } = await getSupabase()
+    .from('shift_swap_requests')
+    .select('*')
+    .in('status', ['pending', 'accepted'])
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as SwapRow[]).map(mapSwap);
+}
+
+/** Eine einzelne Anfrage — für die Inline-Aktionen im Postfach. */
+export async function fetchSwapRequest(id: string): Promise<ShiftSwapRequest | null> {
+  const { data, error } = await getSupabase()
+    .from('shift_swap_requests')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapSwap(data as SwapRow) : null;
+}
+
+export async function insertSwapRequest(s: {
+  requesterId: string;
+  requesterDate: string;
+  partnerId: string;
+  partnerDate: string;
+  message?: string;
+  requesterShiftType?: ShiftType;
+  partnerShiftType?: ShiftType;
+}): Promise<ShiftSwapRequest> {
+  const payload = {
+    requester_id: s.requesterId,
+    requester_date: s.requesterDate,
+    partner_id: s.partnerId,
+    partner_date: s.partnerDate,
+    message: s.message?.trim() || null,
+    requester_shift_type: s.requesterShiftType ?? null,
+    partner_shift_type: s.partnerShiftType ?? null,
+  };
+  const { data, error } = await getSupabase()
+    .from('shift_swap_requests')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return mapSwap(data as SwapRow);
+}
+
+/**
+ * Statuswechsel ohne Wirkung auf den Plan: annehmen, ablehnen, zurückziehen,
+ * vom Chef ablehnen. Der Übergang nach 'approved' läuft NICHT hierüber, sondern
+ * über applyShiftSwap() — nur dort werden auch die Schichten getauscht.
+ */
+export async function setSwapStatus(
+  id: string,
+  status: Exclude<SwapStatus, 'approved'>,
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from('shift_swap_requests')
+    .update({ status, decided_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * Chef-Bestätigung: tauscht die beiden Schichten und setzt die Anfrage auf
+ * 'approved' — atomar in der Datenbank (siehe Migration 023). Wirft, wenn die
+ * Anfrage nicht mehr im Status 'accepted' ist oder die Rechte fehlen.
+ */
+export async function applyShiftSwap(requestId: string): Promise<void> {
+  const { error } = await getSupabase().rpc('apply_shift_swap', { p_request_id: requestId });
+  if (error) throw error;
+}
+
+// ============================================================================
+// Postfach (Migration 023) — persönliche Meldungen. Streng privat: die
+// RLS-Policy lässt nur den Empfänger lesen, deshalb braucht keine dieser
+// Funktionen einen user_id-Filter.
+// ============================================================================
+
+interface NotificationRow {
+  id: string;
+  user_id: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  link: NotificationLink | null;
+  actor_id: string | null;
+  actor_name: string | null;
+  entity_id: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+const mapNotification = (r: NotificationRow): AppNotification => ({
+  id: r.id,
+  userId: r.user_id,
+  kind: r.kind as NotificationKind,
+  title: r.title,
+  body: r.body ?? undefined,
+  link: r.link ?? undefined,
+  actorId: r.actor_id ?? undefined,
+  actorName: r.actor_name ?? undefined,
+  entityId: r.entity_id ?? undefined,
+  readAt: r.read_at ?? undefined,
+  createdAt: r.created_at,
+});
+
+/** Die letzten `limit` Meldungen des angemeldeten Users, neueste zuerst. */
+export async function fetchNotifications(limit = 200): Promise<AppNotification[]> {
+  const { data, error } = await getSupabase()
+    .from('notifications')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data as NotificationRow[]).map(mapNotification);
+}
+
+/**
+ * Meldungen zustellen. Mehrere auf einmal, weil eine Aktion oft mehrere
+ * Empfänger hat (der Chef ändert eine Spalte → alle Betroffenen).
+ * Empfänger, die dem Auslöser entsprechen, filtert der Aufrufer heraus —
+ * niemand soll sich selbst benachrichtigen.
+ */
+export async function insertNotifications(
+  items: {
+    userId: string;
+    kind: NotificationKind;
+    title: string;
+    body?: string;
+    link?: NotificationLink;
+    actorId: string;
+    actorName?: string;
+    entityId?: string;
+  }[],
+): Promise<void> {
+  if (items.length === 0) return;
+  const payload = items.map((n) => ({
+    user_id: n.userId,
+    kind: n.kind,
+    title: n.title,
+    body: n.body ?? null,
+    link: n.link ?? null,
+    actor_id: n.actorId,
+    actor_name: n.actorName ?? null,
+    entity_id: n.entityId ?? null,
+  }));
+  const { error } = await getSupabase().from('notifications').insert(payload);
+  if (error) throw error;
+}
+
+export async function markNotificationsRead(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const { error } = await getSupabase()
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .in('id', ids);
+  if (error) throw error;
+}
+
+/** Alles auf gelesen — nur die noch ungelesenen anfassen (kleineres Update). */
+export async function markAllNotificationsRead(): Promise<void> {
+  const { error } = await getSupabase()
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .is('read_at', null);
+  if (error) throw error;
+}
+
+export async function deleteNotificationRow(id: string): Promise<void> {
+  const { error } = await getSupabase().from('notifications').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/** „Postfach leeren" — löscht alle eigenen Meldungen (RLS begrenzt auf sich selbst). */
+export async function deleteAllNotifications(): Promise<void> {
+  const { error } = await getSupabase()
+    .from('notifications')
+    .delete()
+    .not('id', 'is', null);
   if (error) throw error;
 }
 
@@ -821,34 +1439,322 @@ export async function fetchAuditLog(limit = 100): Promise<AuditLogEntry[]> {
 }
 
 // ============================================================================
+// CUSTOMERS
+// ============================================================================
+
+interface CustomerRow {
+  customer_number: string;
+  name: string | null;
+  phone: string | null;
+  first_seen_at: string;
+  last_contact_at: string;
+  created_by: string | null;
+  // Migration 029 — optional, weil ein Client vor der Migration nicht an
+  // fehlenden Spalten scheitern soll.
+  home_id?: string | null;
+  home_id_kind?: HomeIdKind | null;
+  home_id_at?: string | null;
+  doi_status?: DoiStatus | null;
+  doi_confirmed_at?: string | null;
+  fraud_flagged?: boolean | null;
+}
+
+const mapCustomer = (r: CustomerRow): Customer => ({
+  customerNumber: r.customer_number,
+  name: r.name ?? '',
+  phone: r.phone ?? undefined,
+  firstSeenAt: r.first_seen_at,
+  lastContactAt: r.last_contact_at,
+  createdBy: r.created_by ?? undefined,
+  homeId: r.home_id ?? undefined,
+  homeIdKind: r.home_id_kind ?? undefined,
+  homeIdAt: r.home_id_at ?? undefined,
+  doiStatus: r.doi_status ?? undefined,
+  doiConfirmedAt: r.doi_confirmed_at ?? undefined,
+  fraudFlagged: r.fraud_flagged ?? undefined,
+});
+
+export async function fetchCustomers(): Promise<Customer[]> {
+  const { data, error } = await getSupabase().from('customers').select('*');
+  if (error) throw error;
+  return (data as CustomerRow[]).map(mapCustomer);
+}
+
+// ============================================================================
+// CALLS
+// ============================================================================
+// Anruf-Historie (Migration 018) — geschrieben von der Stadtnetz-CRM-Copilot-
+// Extension, hier nur gelesen. Bewusst NICHT Teil des globalen
+// contracts/notes-artigen Ladeprinzips (kein fetchCalls() für den ganzen
+// Store): Anrufvolumen kann deutlich höher sein als Verträge/Notizen, ein
+// unbegrenzter All-Time-Load würde mit der Zeit zum Skalierungsproblem.
+
+interface CallRow {
+  id: string;
+  customer_number: string | null;
+  caller_name: string | null;
+  caller_number: string | null;
+  direction: 'inbound' | 'outbound';
+  queue_group: string | null;
+  started_at: string;
+  ended_at: string | null;
+  duration_s: number | null;
+  agent_id: string;
+  disposition: CallDisposition | null;
+  cancellation_reason: string | null;
+  campaign_id: string | null;
+  connected_at?: string | null;
+  answered?: boolean | null;
+  end_reason?: string | null;
+  disposition_at?: string | null;
+  // Gesprächserfassung nach Leitfaden v2.0 (Migration 029). Optional, weil
+  // Altbestände sie nicht haben — und weil ein Client, der vor der Migration
+  // liest, an fehlenden Spalten nicht scheitern soll.
+  outcome_code?: string | null;
+  winback_status?: WinbackStatus | null;
+  winback_reason?: string | null;
+  winback_measure?: string | null;
+  home_id?: string | null;
+  home_id_kind?: HomeIdKind | null;
+  home_id_confirmed?: boolean | null;
+  doi_status?: DoiStatus | null;
+  doi_channels?: DoiChannel[] | null;
+  doi_sent_at?: string | null;
+  doi_confirmed_at?: string | null;
+  fraud_suspicion?: boolean | null;
+  fraud_markers?: string[] | null;
+  fraud_note?: string | null;
+  sales_partner?: string | null;
+  advice_score?: number | null;
+  advice_protocol?: boolean | null;
+  campaign_data?: Record<string, unknown> | null;
+  wrapup_complete?: boolean | null;
+  wrapup_at?: string | null;
+}
+
+const mapCall = (r: CallRow): Call => ({
+  id: r.id,
+  customerNumber: r.customer_number ?? undefined,
+  callerName: r.caller_name ?? undefined,
+  callerNumber: r.caller_number ?? undefined,
+  direction: r.direction,
+  queueGroup: r.queue_group ?? undefined,
+  startedAt: r.started_at,
+  endedAt: r.ended_at ?? undefined,
+  durationS: r.duration_s ?? undefined,
+  agentId: r.agent_id,
+  disposition: r.disposition ?? undefined,
+  cancellationReason: r.cancellation_reason ?? undefined,
+  campaignId: r.campaign_id ?? undefined,
+  connectedAt: r.connected_at ?? undefined,
+  // Bewusst ?? und nicht ||: `false` heißt „sicher nicht abgehoben" und ist
+  // eine Messung, kein fehlender Wert.
+  answered: r.answered ?? undefined,
+  endReason: r.end_reason ?? undefined,
+  dispositionAt: r.disposition_at ?? undefined,
+  outcomeCode: r.outcome_code ?? undefined,
+  winbackStatus: r.winback_status ?? undefined,
+  winbackReason: r.winback_reason ?? undefined,
+  winbackMeasure: r.winback_measure ?? undefined,
+  homeId: r.home_id ?? undefined,
+  homeIdKind: r.home_id_kind ?? undefined,
+  // Bewusst ?? und nicht ||: `false` heißt „nicht rückbestätigt" und ist eine
+  // Aussage, kein fehlender Wert — dieselbe Unterscheidung wie bei `answered`.
+  homeIdConfirmed: r.home_id_confirmed ?? undefined,
+  doiStatus: r.doi_status ?? undefined,
+  doiChannels: r.doi_channels ?? undefined,
+  doiSentAt: r.doi_sent_at ?? undefined,
+  doiConfirmedAt: r.doi_confirmed_at ?? undefined,
+  fraudSuspicion: r.fraud_suspicion ?? undefined,
+  fraudMarkers: r.fraud_markers ?? undefined,
+  fraudNote: r.fraud_note ?? undefined,
+  salesPartner: r.sales_partner ?? undefined,
+  adviceScore: r.advice_score ?? undefined,
+  adviceProtocol: r.advice_protocol ?? undefined,
+  campaignData: r.campaign_data ?? undefined,
+  wrapupComplete: r.wrapup_complete ?? undefined,
+  wrapupAt: r.wrapup_at ?? undefined,
+});
+
+/**
+ * Schreibt die Gesprächserfassung auf einen bestehenden Anruf (Migration 029).
+ *
+ * Bewusst ein PATCH auf die vorhandene Zeile statt einer eigenen Tabelle: der
+ * Anruf IST der Vorgang, und eine zweite Tabelle hieße, dass jede Auswertung
+ * joinen müsste, um zu erfahren, was aus dem Gespräch geworden ist.
+ *
+ * `disposition_at` wird nur gesetzt, wenn es noch leer ist — die Extension
+ * stempelt es beim ersten Ergebnis (Migration 028), und ein späteres
+ * Nachtragen im CRM darf die gemessene Nachbearbeitungszeit nicht verfälschen.
+ */
+export async function saveCallWrapup(callId: string, patch: WrapupPatch): Promise<void> {
+  const payload: Record<string, unknown> = {
+    outcome_code: patch.outcomeCode ?? null,
+    winback_status: patch.winbackStatus,
+    winback_reason: patch.winbackReason ?? null,
+    winback_measure: patch.winbackMeasure ?? null,
+    home_id: patch.homeId ?? null,
+    home_id_kind: patch.homeIdKind ?? null,
+    home_id_confirmed: patch.homeIdConfirmed,
+    doi_status: patch.doiStatus ?? null,
+    doi_channels: patch.doiChannels ?? null,
+    fraud_suspicion: patch.fraudSuspicion,
+    fraud_markers: patch.fraudMarkers ?? null,
+    fraud_note: patch.fraudNote ?? null,
+    sales_partner: patch.salesPartner ?? null,
+    advice_score: patch.adviceScore ?? null,
+    advice_protocol: patch.adviceProtocol ?? null,
+    campaign_data: patch.campaignData,
+    wrapup_complete: patch.wrapupComplete,
+    wrapup_at: patch.wrapupAt,
+  };
+  // Disposition und Kündigungsgrund nur überschreiben, wenn die Erfassung
+  // wirklich eine liefert: die Extension hat sie beim Auflegen schon gesetzt,
+  // und ein Nachtrag ohne Ergebnis (z.B. nur die HomeID) darf sie nicht löschen.
+  if (patch.disposition) payload.disposition = patch.disposition;
+  if (patch.cancellationReason !== undefined) payload.cancellation_reason = patch.cancellationReason ?? null;
+  // Zeitstempel der Einwilligung nur vorwärts: eine einmal dokumentierte
+  // Bestätigung behält ihren Zeitpunkt, sonst wäre der Nachweis nach § 7a UWG
+  // beim nächsten Speichern verschoben.
+  if (patch.doiSentAt) payload.doi_sent_at = patch.doiSentAt;
+  if (patch.doiConfirmedAt) payload.doi_confirmed_at = patch.doiConfirmedAt;
+
+  const { error } = await getSupabase().from('calls').update(payload).eq('id', callId);
+  if (error) throw error;
+
+  const { error: stampError } = await getSupabase()
+    .from('calls')
+    .update({ disposition_at: patch.wrapupAt })
+    .eq('id', callId)
+    .is('disposition_at', null);
+  if (stampError) throw stampError;
+}
+
+/** Anrufe, die noch nicht beendet sind — Grundlage der Live-Anrufleiste. */
+export async function fetchActiveCalls(): Promise<Call[]> {
+  const { data, error } = await getSupabase()
+    .from('calls')
+    .select('*')
+    .is('ended_at', null)
+    .order('started_at', { ascending: false });
+  if (error) throw error;
+  return (data as CallRow[]).map(mapCall);
+}
+
+/** Anrufhistorie eines einzelnen Kunden, für CustomerDetail. */
+export async function fetchCallsForCustomer(customerNumber: string, limit = 20): Promise<Call[]> {
+  const { data, error } = await getSupabase()
+    .from('calls')
+    .select('*')
+    .eq('customer_number', customerNumber)
+    .order('started_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data as CallRow[]).map(mapCall);
+}
+
+/** Anzahl Anrufe seit einem Zeitpunkt — für die Team-Dashboard-KPI, ohne Zeilen zu übertragen. */
+export async function fetchCallCountSince(iso: string): Promise<number> {
+  const { count, error } = await getSupabase()
+    .from('calls')
+    .select('*', { count: 'exact', head: true })
+    .gte('started_at', iso);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/**
+ * Anrufzeilen seit einem Zeitpunkt — für die Anruf-Prozess-Kennzahlen
+ * (Stufe 4, KONZEPT-INTEGRATION.md: "Anruf → Abschluss"). Zeitlich begrenzt
+ * durch den Aufrufer (z.B. Start des 6-Monats-Fensters), keine unbegrenzte
+ * Historie — respektiert dieselbe Volumen-Entscheidung wie oben.
+ */
+export async function fetchCallsSince(iso: string): Promise<Call[]> {
+  const { data, error } = await getSupabase()
+    .from('calls')
+    .select('*')
+    .gte('started_at', iso)
+    .order('started_at', { ascending: false });
+  if (error) throw error;
+  return (data as CallRow[]).map(mapCall);
+}
+
+/** Obergrenze je Seite; PostgREST deckelt ohnehin bei 1000 Zeilen pro Antwort. */
+const CALL_PAGE_SIZE = 1000;
+/** Sicherung gegen einen versehentlich riesigen Zeitraum (≈ 20 000 Anrufe). */
+const CALL_MAX_PAGES = 20;
+
+/**
+ * Anrufe in einem geschlossenen Zeitfenster — Grundlage der Berichte, die
+ * beliebige Zeiträume auswerten (nicht nur „seit Monatsbeginn").
+ *
+ * Blättert bewusst seitenweise: PostgREST liefert pro Antwort höchstens 1000
+ * Zeilen und meldet das **nicht** als Fehler. Ein Jahresbericht eines
+ * telefonierenden Teams läge darüber und wäre ohne Paginierung stillschweigend
+ * abgeschnitten — die Zahlen sähen plausibel aus und wären falsch. Nach
+ * `CALL_MAX_PAGES` wird abgebrochen, damit ein versehentlich riesiger Zeitraum
+ * den Browser nicht lahmlegt; der Aufrufer erkennt das an `truncated`.
+ */
+export async function fetchCallsBetween(
+  fromIso: string,
+  toIso: string,
+): Promise<{ calls: Call[]; truncated: boolean }> {
+  const sb = getSupabase();
+  const calls: Call[] = [];
+
+  for (let page = 0; page < CALL_MAX_PAGES; page += 1) {
+    const { data, error } = await sb
+      .from('calls')
+      .select('*')
+      .gte('started_at', fromIso)
+      .lte('started_at', toIso)
+      .order('started_at', { ascending: false })
+      .range(page * CALL_PAGE_SIZE, (page + 1) * CALL_PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const rows = (data ?? []) as CallRow[];
+    calls.push(...rows.map(mapCall));
+    if (rows.length < CALL_PAGE_SIZE) return { calls, truncated: false };
+  }
+  return { calls, truncated: true };
+}
+
+// ============================================================================
 // CUSTOMER PURGE — Recht auf Vergessenwerden (Art. 17 DSGVO)
 // ============================================================================
 
 /**
- * Löscht alle CRM-Spuren eines Kunden: Verträge, Tarifwechsel, Notizen und
- * Ownership-Eintrag. Liefert die Anzahl gelöschter Zeilen pro Tabelle zurück.
- * RLS sorgt dafür, dass nur Berechtigte (Ersteller/Owner/Manager) das ausführen
- * können — Manager dürfen kraft Policy alle Zeilen löschen.
+ * Löscht alle CRM-Spuren eines Kunden: Verträge, Tarifwechsel, Notizen,
+ * Anrufe, Ownership-Eintrag und die Kunden-Zeile selbst. Liefert die Anzahl
+ * gelöschter Zeilen pro Tabelle zurück. RLS sorgt dafür, dass nur Berechtigte
+ * (Ersteller/Owner/Manager) das ausführen können — Manager dürfen kraft
+ * Policy alle Zeilen löschen.
  */
 export async function purgeCustomerData(customerNumber: string): Promise<{
   contracts: number;
   tariffChanges: number;
   notes: number;
   ownership: number;
+  customers: number;
+  calls: number;
 }> {
   const sb = getSupabase();
-  const [c, t, n, o] = await Promise.all([
+  const [c, t, n, o, cu, ca] = await Promise.all([
     sb.from('contracts').delete({ count: 'exact' }).eq('customer_number', customerNumber),
     sb.from('tariff_changes').delete({ count: 'exact' }).eq('customer_number', customerNumber),
     sb.from('notes').delete({ count: 'exact' }).eq('customer_number', customerNumber),
     sb.from('customer_ownerships').delete({ count: 'exact' }).eq('customer_number', customerNumber),
+    sb.from('customers').delete({ count: 'exact' }).eq('customer_number', customerNumber),
+    sb.from('calls').delete({ count: 'exact' }).eq('customer_number', customerNumber),
   ]);
-  for (const res of [c, t, n, o]) if (res.error) throw res.error;
+  for (const res of [c, t, n, o, cu, ca]) if (res.error) throw res.error;
   return {
     contracts: c.count ?? 0,
     tariffChanges: t.count ?? 0,
     notes: n.count ?? 0,
     ownership: o.count ?? 0,
+    customers: cu.count ?? 0,
+    calls: ca.count ?? 0,
   };
 }
 
@@ -936,5 +1842,140 @@ export async function updateAccessRequestStatus(
       decided_by: decidedBy ?? null,
     })
     .eq('id', id);
+  if (error) throw error;
+}
+
+// ============================================================================
+// STATUS BOARD
+// ============================================================================
+
+interface UserStatusRow {
+  user_id: string;
+  status: string | null;
+  sub: string | null;
+  description: string | null;
+  is_afk: boolean;
+  started_at: string | null;
+  updated_at: string;
+}
+
+const mapUserStatus = (r: UserStatusRow): UserStatus => ({
+  userId: r.user_id,
+  status: r.status,
+  sub: r.sub ?? undefined,
+  description: r.description ?? undefined,
+  isAfk: r.is_afk === true,
+  startedAt: r.started_at ?? undefined,
+  updatedAt: r.updated_at,
+});
+
+interface StatusLogRow {
+  id: string;
+  user_id: string | null;
+  status: string;
+  sub: string | null;
+  description: string | null;
+  is_afk: boolean;
+  started_at: string;
+  ended_at: string;
+  duration_seconds: number;
+  created_at: string;
+}
+
+const mapStatusLog = (r: StatusLogRow): StatusLogEntry => ({
+  id: r.id,
+  userId: r.user_id ?? undefined,
+  status: r.status,
+  sub: r.sub ?? undefined,
+  description: r.description ?? undefined,
+  isAfk: r.is_afk === true,
+  startedAt: r.started_at,
+  endedAt: r.ended_at,
+  durationSeconds: Number(r.duration_seconds),
+  createdAt: r.created_at,
+});
+
+/** Aktueller Status aller Kolleg:innen, indexiert nach User-ID. */
+export async function fetchUserStatuses(): Promise<Record<string, UserStatus>> {
+  const { data, error } = await getSupabase().from('user_status').select('*');
+  if (error) throw error;
+  const map: Record<string, UserStatus> = {};
+  for (const row of (data ?? []) as UserStatusRow[]) {
+    map[row.user_id] = mapUserStatus(row);
+  }
+  return map;
+}
+
+/** Schreibt den vollständigen aktuellen Status einer Person (Upsert). */
+export async function upsertUserStatus(s: {
+  userId: string;
+  status: string | null;
+  sub?: string | null;
+  description?: string | null;
+  isAfk: boolean;
+  startedAt?: string | null;
+}): Promise<void> {
+  const payload = {
+    user_id: s.userId,
+    status: s.status,
+    sub: s.sub ?? null,
+    description: s.description ?? null,
+    is_afk: s.isAfk,
+    started_at: s.startedAt ?? null,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await getSupabase()
+    .from('user_status')
+    .upsert(payload, { onConflict: 'user_id' });
+  if (error) throw error;
+}
+
+/** Archiviert einen abgeschlossenen Status-Abschnitt in der Historie. */
+export async function insertStatusLog(e: {
+  userId: string;
+  status: string;
+  sub?: string | null;
+  description?: string | null;
+  isAfk: boolean;
+  startedAt: string;
+  endedAt: string;
+  durationSeconds: number;
+}): Promise<void> {
+  const payload = {
+    user_id: e.userId,
+    status: e.status,
+    sub: e.sub ?? null,
+    description: e.description ?? null,
+    is_afk: e.isAfk,
+    started_at: e.startedAt,
+    ended_at: e.endedAt,
+    duration_seconds: Math.max(0, Math.round(e.durationSeconds)),
+  };
+  const { error } = await getSupabase().from('status_log').insert(payload);
+  if (error) throw error;
+}
+
+/**
+ * Historie ab `sinceIso` (ISO), absteigend nach Start. RLS liefert Agent:innen
+ * nur die eigenen Abschnitte, Chef:innen alle.
+ */
+export async function fetchStatusLog(sinceIso?: string, limit = 5000): Promise<StatusLogEntry[]> {
+  let q = getSupabase()
+    .from('status_log')
+    .select('*')
+    .order('started_at', { ascending: false })
+    .limit(limit);
+  if (sinceIso) q = q.gte('started_at', sinceIso);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data as StatusLogRow[]).map(mapStatusLog);
+}
+
+/** Chef-Aktion: löscht die komplette Status-Historie (Datensparsamkeit). */
+export async function clearStatusLog(): Promise<void> {
+  const { error } = await getSupabase()
+    .from('status_log')
+    .delete()
+    .not('id', 'is', null);
   if (error) throw error;
 }

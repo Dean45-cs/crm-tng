@@ -1,13 +1,10 @@
 import { useMemo } from 'react';
-import { Trophy, Crown, Medal, Award, EyeOff, Sparkles, BarChart3 } from 'lucide-react';
+import { Crown, Medal, Award, EyeOff, Sparkles, BarChart3 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
-import {
-  calcContractCommission,
-  calcTariffCommission,
-  formatCurrency,
-  isSameMonth,
-} from '../lib/utils';
+import { SkeletonTable } from '../components/Skeleton';
+import { calcContractCommission, calcTariffCommission, formatCurrency, isSameMonth } from '../lib/utils';
+import { agentStats } from '../lib/teamStats';
 
 interface Row {
   key: string;
@@ -20,65 +17,64 @@ interface Row {
 }
 
 export function Leaderboard() {
-  const { contracts, tariffChanges, settings } = useStore();
+  const { contracts, tariffChanges, settings, loaded } = useStore();
   const { users, currentUserKey, setLeaderboardOptIn } = useAuth();
 
   const me = currentUserKey ? users[currentUserKey] : null;
   const myOptIn = me?.leaderboardOptIn ?? true;
 
+  // Einzige Quelle für Pro-Mitarbeiter-Provision ist agentStats()
+  // (teamStats.ts) — vorher baute diese Seite dieselbe Aggregation ein
+  // drittes Mal eigenständig nach (TeamDashboard.tsx tat es ein zweites Mal).
+  // Ausnahme: Verträge/Tarifwechsel ohne bekannte:n Ersteller:in (z.B. eine
+  // gelöschte Mitarbeiter:in, created_by wird dann null) laufen weiterhin
+  // unter "Unbekannt", damit ihre Provision im Ranking nicht kommentarlos
+  // verschwindet — das deckt agentStats() nicht ab, da es einen bekannten
+  // agentKey braucht.
   const rows: Row[] = useMemo(() => {
-    const map = new Map<string, Row>();
-    const ensure = (key: string, displayName: string, optedIn: boolean): Row => {
-      let r = map.get(key);
-      if (!r) {
-        r = {
-          key,
-          displayName,
-          monthCommission: 0,
-          totalCommission: 0,
-          deals: 0,
-          isMe: key === currentUserKey,
-          optedIn,
-        };
-        map.set(key, r);
-      }
-      return r;
-    };
-
-    Object.values(users).forEach((u) =>
-      ensure(u.key, u.displayName, u.leaderboardOptIn),
-    );
-
-    contracts.forEach((c) => {
-      const key = c.createdBy ?? '__unknown__';
-      const user = users[key];
-      const row = ensure(
-        key,
-        user?.displayName ?? 'Unbekannt',
-        user?.leaderboardOptIn ?? false,
-      );
-      const com = calcContractCommission(c, settings);
-      row.totalCommission += com;
-      // Stornierte Verträge zählen nicht als Abschluss.
-      if (c.status !== 'storniert') row.deals += 1;
-      if (isSameMonth(c.contractDate)) row.monthCommission += com;
+    const known: Row[] = Object.values(users).map((u) => {
+      const stats = agentStats(u.key, contracts, tariffChanges, settings);
+      return {
+        key: u.key,
+        displayName: u.displayName,
+        monthCommission: stats.monthCommission,
+        totalCommission: stats.totalCommission,
+        deals: stats.totalDeals,
+        isMe: u.key === currentUserKey,
+        optedIn: u.leaderboardOptIn,
+      };
     });
 
-    tariffChanges.forEach((t) => {
-      const key = t.createdBy ?? '__unknown__';
-      const user = users[key];
-      const row = ensure(
-        key,
-        user?.displayName ?? 'Unbekannt',
-        user?.leaderboardOptIn ?? false,
-      );
-      const com = calcTariffCommission(t, settings);
-      row.totalCommission += com;
-      row.deals += 1;
-      if (isSameMonth(t.changeDate)) row.monthCommission += com;
-    });
+    const orphanContracts = contracts.filter((c) => !c.createdBy || !users[c.createdBy]);
+    const orphanTariffs = tariffChanges.filter((t) => !t.createdBy || !users[t.createdBy]);
+    if (orphanContracts.length || orphanTariffs.length) {
+      let monthCommission = 0;
+      let totalCommission = 0;
+      let deals = 0;
+      orphanContracts.forEach((c) => {
+        const com = calcContractCommission(c, settings);
+        totalCommission += com;
+        if (c.status !== 'storniert') deals += 1;
+        if (isSameMonth(c.contractDate)) monthCommission += com;
+      });
+      orphanTariffs.forEach((t) => {
+        const com = calcTariffCommission(t, settings);
+        totalCommission += com;
+        deals += 1;
+        if (isSameMonth(t.changeDate)) monthCommission += com;
+      });
+      known.push({
+        key: '__unknown__',
+        displayName: 'Unbekannt',
+        monthCommission,
+        totalCommission,
+        deals,
+        isMe: false,
+        optedIn: false,
+      });
+    }
 
-    return Array.from(map.values())
+    return known
       .filter((r) => r.optedIn || r.isMe)
       .filter((r) => r.deals > 0 || r.isMe)
       .sort((a, b) => b.monthCommission - a.monthCommission);
@@ -93,15 +89,12 @@ export function Leaderboard() {
     <div>
       <div className="page-header">
         <div>
-          <h2>
-            <Trophy size={20} style={{ verticalAlign: '-3px', marginRight: 8, color: '#f5a623' }} />
-            Leaderboard
-          </h2>
+          <h2>Leaderboard</h2>
           <p>Wer hat in diesem Monat die meiste Provision erzielt?</p>
         </div>
       </div>
 
-      <div className="widget" style={{ marginBottom: 16 }}>
+      <div className="widget" style={{ marginBottom: 10 }}>
         <div className="row between" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="row" style={{ gap: 10 }}>
             <div className={`leaderboard-toggle ${myOptIn ? 'on' : 'off'}`}>
@@ -131,7 +124,9 @@ export function Leaderboard() {
         </div>
       </div>
 
-      {visibleRows.length === 0 ? (
+      {!loaded ? (
+        <SkeletonTable rows={6} cols={4} />
+      ) : visibleRows.length === 0 ? (
         <div className="widget empty">
           <BarChart3 size={32} strokeWidth={1.4} className="empty-icon" />
           <h3>Noch keine Daten</h3>
@@ -139,10 +134,10 @@ export function Leaderboard() {
         </div>
       ) : (
         <>
-          {visibleRows.length >= 3 && <Podium rows={visibleRows.slice(0, 3)} />}
+          {visibleRows.length >= 3 && <TopThree rows={visibleRows.slice(0, 3)} />}
 
           <div className="widget">
-            <div className="row between" style={{ marginBottom: 14 }}>
+            <div className="row between" style={{ marginBottom: 10 }}>
               <h3 className="widget-title" style={{ margin: 0 }}>
                 Gesamt-Ranking
               </h3>
@@ -187,7 +182,7 @@ export function Leaderboard() {
                       </div>
                       <div className="row between" style={{ marginTop: 6 }}>
                         <span className="muted" style={{ fontSize: 11.5 }}>
-                          {r.deals} Abschluss{r.deals === 1 ? '' : 'e'}
+                          {r.deals} {r.deals === 1 ? 'Abschluss' : 'Abschlüsse'}
                         </span>
                         <span className="muted" style={{ fontSize: 11.5 }}>
                           Gesamt: {formatCurrency(r.totalCommission)}
@@ -205,19 +200,32 @@ export function Leaderboard() {
   );
 }
 
-function Podium({ rows }: { rows: Row[] }) {
+/**
+ * Top 3 als ruhige Daten-Karten statt Sieger-Podest: die große Provisions-
+ * zahl ist der Held, die Platzierung zeigt sich nur in feinen Metall-Akzenten
+ * (Ring um den Avatar, kleines Badge) — kein Farbblock, kein Glow.
+ */
+function TopThree({ rows }: { rows: Row[] }) {
   const order = [rows[1], rows[0], rows[2]]; // visuell: 2 – 1 – 3
-  const heights = [110, 140, 90];
   const places = [2, 1, 3];
   return (
-    <div className="podium">
+    <div className="top3">
       {order.map((r, i) => (
-        <div key={r.key} className={`podium-col place-${places[i]}`}>
-          <div className="podium-avatar">{initialsOf(r.displayName)}</div>
-          <div className="podium-name">{r.displayName}</div>
-          <div className="podium-amount">{formatCurrency(r.monthCommission)}</div>
-          <div className="podium-block" style={{ height: heights[i] }}>
-            <span className="podium-place">{places[i]}</span>
+        <div
+          key={r.key}
+          className={`top3-card place-${places[i]} ${r.isMe ? 'is-me' : ''}`}
+        >
+          <div className="top3-badge">{places[i]}</div>
+          {places[i] === 1 && <Crown size={16} className="top3-crown" aria-hidden />}
+          <div className="top3-avatar">{initialsOf(r.displayName)}</div>
+          <div className="top3-name">
+            {r.displayName}
+            {r.isMe && <span className="leaderboard-me">Du</span>}
+          </div>
+          <div className="top3-amount">{formatCurrency(r.monthCommission)}</div>
+          <div className="top3-sub">
+            {r.deals} Abschluss{r.deals === 1 ? '' : 'e'} · Gesamt{' '}
+            {formatCurrency(r.totalCommission)}
           </div>
         </div>
       ))}

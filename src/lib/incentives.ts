@@ -61,8 +61,13 @@ export interface Standing {
 }
 
 /**
- * Rangliste aller Nutzer für ein Incentive, absteigend nach Wert sortiert.
+ * Rangliste für ein Incentive, absteigend nach Wert sortiert.
  * Gleichstände erhalten eindeutige Positionsränge (klarer Platz 1).
+ *
+ * Gesperrte Konten bleiben außen vor: Sie können den Wettbewerb weder gewinnen
+ * noch verlieren, blähen aber das Teilnehmerfeld auf — „Platz 17 von 19" liest
+ * sich deutlich anders als „Platz 9 von 11", wenn acht davon stillgelegte
+ * Testzugänge sind.
  */
 export function incentiveStandings(
   incentive: Incentive,
@@ -72,6 +77,7 @@ export function incentiveStandings(
   settings: Settings,
 ): Standing[] {
   return Object.values(users)
+    .filter((u) => u.isActive)
     .map((u) => ({
       key: u.key,
       displayName: u.displayName,

@@ -1,0 +1,77 @@
+# Referenz-Screen: Dashboard. Siehe 05-canvas-screens.md.
+Screens:
+  scrDashboard:
+    Properties:
+      Fill: =Theme.Background
+    Children:
+      - conRoot:
+          Control: GroupContainer@1.3.0
+          Variant: ManualLayout
+          Properties:
+            Width: =Parent.Width
+            Height: =Parent.Height
+          Children:
+            - lblTitle:
+                Control: Label
+                Properties:
+                  Text: ="Dashboard"
+                  Color: =Theme.Primary
+                  Font: =FontMain
+                  Size: =28
+                  FontWeight: =FontWeight.Semibold
+                  X: =Space.xl
+                  Y: =Space.xl
+            # ---- KPI: Provision laufender Monat (eigene) ----
+            - cardCommission:
+                Control: GroupContainer@1.3.0
+                Variant: ManualLayout
+                Properties:
+                  Fill: =Theme.Surface
+                  X: =Space.xl
+                  Y: =72
+                  Width: =260
+                  Height: =110
+                  RadiusTopLeft: =Radius.card
+                  RadiusTopRight: =Radius.card
+                  RadiusBottomLeft: =Radius.card
+                  RadiusBottomRight: =Radius.card
+                  DropShadow: =DropShadow.Light
+                Children:
+                  - lblCommissionCap:
+                      Control: Label
+                      Properties:
+                        Text: ="Provision (Monat)"
+                        Color: =Theme.TextMuted
+                        Font: =FontMain
+                        Size: =13
+                        X: =Space.md
+                        Y: =Space.md
+                  - lblCommissionVal:
+                      Control: Label
+                      Properties:
+                        Text: |
+                          =Text(
+                            With({ cM: Filter(tng_Contracts, 'Created By'.'Primary Email'=User().Email,
+                                              tng_contractdate>=MonStart, tng_contractdate<MonEnd),
+                                   tM: Filter(tng_TariffChanges, 'Created By'.'Primary Email'=User().Email,
+                                              tng_changedate>=MonStart, tng_changedate<MonEnd) },
+                              Sum(cM, If(tng_status='Contract Status'.Storniert, 0,
+                                         Sum(tng_contractproduct_Contract, tng_commissionsnapshot)))
+                              + Sum(tM, tng_commission)),
+                            "[$-de-DE]€ #,##0.00")
+                        Color: =Theme.Primary
+                        Font: =FontMain
+                        Size: =24
+                        FontWeight: =FontWeight.Bold
+                        X: =Space.md
+                        Y: =44
+            # ---- Chart: Provision pro Monat (letzte 6) ----
+            - chartCommission:
+                Control: Chart@1.0.0   # Column chart; Items aus colMonths (05)
+                Properties:
+                  X: =Space.xl
+                  Y: =200
+                  Width: =540
+                  Height: =260
+                  Items: =colMonths
+      # OnVisible baut colMonths (siehe 05-canvas-screens.md)

@@ -1,21 +1,16 @@
 import { useStore } from '../store/useStore';
-import type { ProductType, ProductCategory } from '../types';
-import { formatCurrency } from '../lib/utils';
+import type { ProductType } from '../types';
+import { formatCurrency, groupProductsByCategory } from '../lib/utils';
 
 interface Props {
   value: ProductType;
   onChange: (p: ProductType) => void;
 }
 
-const ORDER: ProductCategory[] = ['Privat', 'Business', 'Zusatz'];
-
 export function ProductPicker({ value, onChange }: Props) {
   const products = useStore((s) => s.settings.products);
 
-  const grouped = ORDER.map((cat) => ({
-    category: cat,
-    items: products.filter((p) => p.category === cat),
-  }));
+  const grouped = groupProductsByCategory(products);
 
   return (
     <select
@@ -25,7 +20,7 @@ export function ProductPicker({ value, onChange }: Props) {
     >
       {grouped.map((g) => (
         <optgroup key={g.category} label={g.category}>
-          {g.items.map((p) => (
+          {g.products.map((p) => (
             <option key={p.name} value={p.name}>
               {p.name} — {formatCurrency(p.commission)}
             </option>

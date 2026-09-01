@@ -1,0 +1,488 @@
+# Stadtnetz CRM Copilot – Desktop-App (Mac & Windows)
+
+Das Cockpit, das bisher als Overlay in der Jira-Seite hing, in einem eigenen
+Fenster: immer im Vordergrund, unabhängig davon, welcher Tab gerade offen ist,
+und mit Notizen als zusätzlicher Funktion.
+
+## Warum Chrome trotzdem laufen muss
+
+Die Extension bleibt bestehen und liefert weiterhin zwei Dinge, die es außerhalb
+von Chrome nicht gibt:
+
+1. **Den geöffneten Jira-Vorgang.** Gelesen wird er aus dem DOM der Seite – dafür
+   braucht es die Seite selbst.
+2. **Die lokale KI.** Chromes eingebaute Modelle (`LanguageModel`, `Summarizer`,
+   … alias Gemini Nano) sind an Google Chrome gebunden. Nicht einmal andere
+   Chromium-Browser wie Edge oder Brave bekommen sie – das Chromium in Electron
+   erst recht nicht.
+
+Damit gilt: **Zusammenfassung, Einordnung und Entwürfe funktionieren nur, solange
+Jira in Google Chrome offen ist** (ein Hintergrund-Tab genügt, das Fenster muss
+nicht sichtbar sein). Ohne Chrome zeigt die App den zuletzt bekannten Stand,
+sagt im Panelkopf, dass sie nicht verbunden ist – und Notizen funktionieren
+weiter, die hängen an nichts davon.
+
+Wer das nicht will, müsste die lokale KI durch ein eigenes Modell im Bundle
+ersetzen (z. B. Ollama). Das ist bewusst nicht gebaut: es wäre ein zweiter
+KI-Pfad neben `src/local-ai.js`, mit eigenen Prompts, eigener Pflege und deutlich
+größerem Installationspaket.
+
+## Aufbau
+
+```
+Chrome                                   Desktop-App
+┌───────────────────────────┐            ┌────────────────────────────┐
+│ jira.ennit.de             │            │ Fenster (renderer/)        │
+│  jira-reader.js  ─ liest  │            │  ui.js  ← unverändert      │
+│  local-ai.js     ─ KI     │            │  supabase.js ← unverändert │
+│  hud-agent.js    ─┐       │            │  shim-chrome.js            │
+│                   │       │            │  shim-jira-reader.js       │
+│ Service-Worker    │       │            │  shim-local-ai.js          │
+│  hud-bridge.js  ←─┘       │            │  notes.js                  │
+│                   │       │            │  call-session.js ← neu     │
+│                   │       │            │  myapps-calls.js           │
+└──────────┬────────────────┘            └────────────┬───────────────┘
+           │      WebSocket 127.0.0.1:8777            │  IPC
+           └──────────────────► main/bridge.js ◄──────┘
+
+myApps (innovaphone) ──── stadtnetzcrm://call?… ────► main/call-url.js
+```
+
+Anrufe haben damit zwei mögliche Quellen: timio in Chrome (liest den Bildschirm)
+und myApps über das URL-Schema. Beide schreiben denselben Storage-Schlüssel,
+`activeCall` – das Panel merkt keinen Unterschied, außer wo es einen machen
+muss (Beschriftungen, Kundenerkennung: `call.source`). Siehe „Anrufe aus
+myApps".
+
+Der Verlauf eines Gesprächs – Anfang, Auffrischen, Ende, Dauer – steht dabei in
+`call-session.js` und nicht in `myapps-calls.js`. Aus demselben Grund wie bei
+`main/call-url.js`: das ist die Stelle, an der aus einer einzelnen Meldung von
+außen eine Zeile in der Anrufhistorie wird, und die will man prüfen können,
+ohne ein Fenster zu starten (`test/call-session.test.js`).
+
+Der Kniff: **`ui.js` läuft im Fenster unverändert.** Es weiß nicht, dass es nicht
+mehr in einem Jira-Tab steckt. Ersetzt sind nur die drei Dinge, die es dort gäbe
+und hier nicht:
+
+| Original | Im Fenster | Was passiert |
+| --- | --- | --- |
+| `chrome.storage`, `chrome.runtime` | `shim-chrome.js` | Lesen/Schreiben gehen über die Bridge auf das echte `chrome.storage.local` in Chrome. Ein Spiegel im Benutzerprofil hält den letzten Stand vor, damit das Fenster auch ohne Chrome etwas anzeigt. |
+| `jira-reader.js` | `shim-jira-reader.js` | Gelesen wird weiter in Chrome (`hud-agent.js` ruft dort denselben `read()` auf), das Ergebnis kommt herüber. |
+| `local-ai.js` | `shim-local-ai.js` | Fernbedienung: Aufruf geht nach Chrome, Streaming (`onChunk`), Download-Fortschritt und Abbruch inklusive. |
+
+Weil es keine zweite Kopie gibt, sondern `renderer/index.html` direkt
+`../../extension/src/*.js` lädt, kann die Fassung im Fenster gar nicht von der im
+Browser abweichen. Die Ladereihenfolge entspricht exakt `manifest.json` – die
+Dateien bauen beim Laden aufeinander auf.
+
+> **Achtung beim Ausprobieren:** Das gilt für den Quellstand (`npm start`). Die
+> **installierte** App trägt `extension/` als eigene Ressource im Paket (siehe
+> `build.extraResources`) – eingefroren zum Zeitpunkt des Baus. Eine Änderung an
+> `extension/src/*` erscheint dort erst nach `npm run dist` (bzw.
+> `npm run pack:mac`) und dem Ersetzen der App. Wer das übersieht, ändert etwas
+> am Panel und sieht in der laufenden Auskunft nichts davon.
+
+Solange die App läuft, baut die Extension ihr eigenes Panel in der Jira-Seite
+**nicht** auf (`content.js`, `app.hudTakeover`). Sonst liefen beide Fassungen
+parallel und würden dieselben KI-Aufgaben doppelt starten. An seine Stelle tritt
+unten rechts die Sprechblase „Auskunft": ein Klick holt das Overlay nach vorn.
+Denselben Weg nimmt der Klick auf das Symbol der Erweiterung. Beides läuft über
+`{ t: "show" }` durch die Bridge – der einzige Auftrag, den Chrome der App
+erteilt.
+
+## Mitteilungen
+
+Die App zeigt Mitteilungen in einem **eigenen Fenster** an, nicht über die
+System-Meldung des Betriebssystems (`main/notifications.js`,
+`renderer/notify.*`).
+
+Der Grund ist die Optik: Electrons `Notification` reicht an das System durch,
+und dort sieht dieselbe Meldung überall anders aus – auf dem Mac das bekannte
+Banner oben rechts, unter Windows eine eckige Kachel unten rechts im
+Info-Center. Gefordert war dieselbe Erscheinung auf beiden Systemen. Ein
+rahmenloses, durchsichtiges Fenster, das die Banner als HTML selbst zeichnet,
+liefert genau das.
+
+Das Fenster verhält sich wie die Mitteilungszentrale: oben rechts am Rand des
+Arbeitsbereichs (auf dem Bildschirm, auf dem der Mauszeiger steht), immer
+obenauf – auch über Vollbild-Fenstern –, **nie fokussierbar**, damit es
+niemandem beim Tippen die Tastatur wegnimmt. Es ist genau so groß wie sein
+Inhalt: `notify.js` misst den Stapel und meldet die Höhe zurück, `0` heißt
+„nichts mehr da" und versteckt das Fenster. Ohne das fienge eine unsichtbare
+Restfläche dauerhaft Klicks auf dem Schreibtisch ab.
+
+Ausgelöst wird eine Mitteilung auf zwei Wegen:
+
+| Von wo | Aufruf |
+| --- | --- |
+| Panel im Fenster | `window.hud.notify({ title, body, tone, url })` |
+| Chrome-Extension | `{ t: "notify", item: { title, body, tone, url } }` durch die Bridge |
+
+`tone` ist `info` (Vorgabe), `success`, `warn` oder `danger` und färbt nur das
+Symbol, nicht die Fläche – sonst würde aus einer Mitteilung ein Warnschild. Ein
+Klick holt die Auskunft nach vorn; trägt die Meldung eine `url`, geht diese
+stattdessen in den echten Browser.
+
+`app.setAppUserModelId(...)` steht bewusst dabei: unter Windows ordnet das
+System Fenster und Meldungen über diese Kennung einer Anwendung zu. Ohne sie
+stünde dort „Electron" statt des Produktnamens. Sie muss zur `build.appId` in
+`package.json` passen.
+
+## Wie man die Auskunft hervorholt
+
+Sie hat kein Dock-Symbol, keine Titelleiste und keinen Eintrag im
+Programmumschalter – ausgeblendet ist sie deshalb nur über diese Wege wieder da.
+Absichtlich mehrere: fällt einer aus (Tastenkombination von einem anderen
+Programm belegt, Symbol in der Menüleiste übersehen), tragen die übrigen.
+
+| Weg | Wo |
+| --- | --- |
+| `Cmd/Strg + Umschalt + Leertaste` | systemweit, auch wenn Chrome nicht vorn ist |
+| Sprechblase „Auskunft" | unten rechts in der Jira-Seite, solange die App läuft |
+| Symbol der Erweiterung | in Chrome, neben der Adressleiste |
+| Symbol in der Menü-/Infoleiste | Klick blendet ein/aus, Rechtsklick öffnet das Menü |
+
+Die Tastenkombination steht bei jedem Start auf dem Startbild und in den
+Einstellungen des Panels unter „Overlay".
+
+## Anrufe aus myApps (innovaphone)
+
+In Chrome liest `extension/src/timio-content.js` die Anrufe aus dem Bildschirm
+des timio-Portals. Für myApps geht das nicht: es läuft als eigenständige App,
+nicht als Seite im Browser – ein Content-Script kommt da nicht heran.
+
+Stattdessen meldet myApps von sich aus. Unter **Einstellungen · Externe
+Anwendungen · Anwendung für eine Aktion hinzufügen** lässt sich eine Adresse
+hinterlegen, die bei einem Anruf geöffnet wird, mit Platzhaltern für Nummer,
+Name und Anruf-Kennung. Die App meldet dafür ein eigenes URL-Schema an
+(`stadtnetzcrm://`), nimmt die Meldung entgegen und macht daraus genau dasselbe
+Signal, das sonst timio schreibt. Alles Weitere – Call-Cockpit, Kundenakte,
+Ergebnis erfassen, Live-Anrufleiste im CRM – läuft unverändert.
+
+**Eingerichtet wird das im Panel**, nicht nach dieser Anleitung: ⚙ →
+„Telefonanlage (myApps)". Dort steht die fertige Adresse zum Kopieren, ein
+Testanruf-Knopf und – wichtiger – der Stand der Anbindung: wie viele Meldungen
+angekommen sind, wann zuletzt, und bei wie vielen davon ein Kunde erkannt
+wurde. Ohne diese Anzeige ist „es kommt nichts an" nicht von „es ruft gerade
+niemand an" zu unterscheiden.
+
+### Was einzutragen ist
+
+| Feld | Wert |
+| --- | --- |
+| Name | `Stadtnetz CRM Copilot` |
+| URL | `stadtnetzcrm://call?id=$c&nr=$I&name=$d` |
+| Parameter | leer lassen – alles steht schon in der Adresse |
+| Autostart | nach Belieben |
+
+**Kein Pfad auf die `.app`.** Unter macOS ist es nicht verlässlich, einem
+App-Bundle Argumente mitzugeben; je nachdem, wie der Aufrufer startet, kommen
+sie gar nicht an. Die Adresse reicht das System dagegen sauber an die
+registrierte – auch schon laufende – App durch.
+
+Die Platzhalter kommen aus myApps: `$n` Rufnummer roh, `$N` national, `$I`
+international (`+49…`), `$u` URI, `$d` Displayname, `$c` Conference-ID.
+Verwendet werden `$I`, `$d` und `$c`.
+
+### Warum `$d` der wichtigste Platzhalter ist
+
+Weil die Anlage den Kunden schon kennt. Erkennt sie die Rufnummer, steht im
+Displaynamen nicht bloß ein Name:
+
+```
+PK 182962 Daniel Ratcliffe
+└┬┘ └──┬─┘ └──────┬──────┘
+ │     │          └ Kundenname
+ │     └ Kundennummer
+ └ Kundenart (PK Privat-, GK Geschäftskunde)
+```
+
+`shared.parseCustomerLabel()` zerlegt das, und damit ist die Kundenakte da,
+bevor das erste Wort gesprochen ist – ohne Suche, ohne Zuordnen von Hand.
+Dieselben drei Teile stehen in Jira im Oikonomikos-Feld, nur in umgekehrter
+Reihenfolge (`287246 / Herr Kevin Carlsson PK`); beide Schreibweisen werden
+erkannt.
+
+Passt das Muster nicht, ist der ganze Text der Name und die Kundennummer bleibt
+leer. **Bewusst kein Raten:** eine falsch erkannte Kundennummer öffnet im
+Gespräch die Akte eines fremden Kunden, und niemand merkt es.
+
+Kennt die Anlage den Anrufer nicht, greift der Rückfall: `customer_by_phone()`
+(Migration 027) sucht die Rufnummer im Kundenstamm, in Leads und in früheren
+Anrufen. Ein Treffer wird zugeordnet, bei mehreren fragt das Cockpit, bei
+keinem steht ein Feld für die Zuordnung von Hand bereit. Ohne Migration 027
+fehlt nur dieser Rückfall – der Hauptweg über `$d` funktioniert davon
+unabhängig.
+
+`$c` ist der zweitwichtigste: eine stabile Kennung pro Gespräch. Meldet myApps
+denselben Anruf mehrfach, wird daraus keine zweite Zeile in der Historie –
+dafür sorgt der eindeutige Index aus Migration 026 (`calls.external_id`).
+
+### Was myApps nicht liefert
+
+Nachgesehen im innovaphone-Wiki (*Howto: Integrate External Apps in innovaphone
+UC clients*). Der Dialog kennt vier Felder – Name, URL, Parameter, Autostart –
+und sonst nichts. Daraus folgen zwei Grenzen, die **keine Einstellungssache**
+sind:
+
+**Das Gesprächsende.** Es gibt dort kein Ereignis dafür – und das ist nicht bloß
+im Wiki nachgelesen, sondern im ausgelieferten Code von myApps selbst
+(`softphone/PhoneCallExternalApplication.js`): die externe Anwendung wird bei
+`autostart` 100 ms nach Aufbau des Gesprächsfensters gestartet, und beim
+Auflegen räumt dieselbe Datei nur ihre Knöpfe weg.
+
+*Gemeldet* wird das Ende also nicht. *Erkannt* wird es trotzdem – siehe
+„Auflegen erkennen" weiter unten. Wo diese Beobachtung nicht greift, bleibt es
+beim Knopf **„Aufgelegt"** im Cockpit, beim nächsten Anruf, und spätestens bei
+der Zwei-Stunden-Grenze in `renderer/call-session.js`, damit kein Anruf für
+immer als „läuft" in der Live-Anrufleiste des CRM stehen bleibt.
+
+**Die Richtung.** Ausgelöst wird „upon incoming and outgoing call" – dieselbe
+Konfiguration für beide Richtungen, kein Schalter dazwischen. Es gilt deshalb
+die Voreinstellung (im reinen Outbound-Betrieb: ausgehend) – **außer** man hat
+aus der Auskunft heraus gewählt. Dann steht die Richtung fest, weil wir das
+Gespräch selbst ausgelöst haben.
+
+Die Adresse versteht trotzdem `dir=in`/`dir=out` und `ev=ring`/`ev=end`. Sollte
+eine spätere myApps-Fassung getrennte Aktionen anbieten, wirken sie sofort;
+verlassen sollte man sich heute nicht darauf.
+
+**Anrufe außerhalb von myApps.** Vom Tischtelefon oder übers Handy sieht diese
+Anbindung nichts. Wer wirklich *alle* Anrufe braucht, kommt an den
+Verbindungsdatensätzen der Anlage nicht vorbei – dafür braucht es Zugang zur
+Anlage selbst.
+
+### Auflegen erkennen
+
+Was myApps nicht meldet, hinterlässt es trotzdem auf dem Rechner: solange
+gesprochen wird, hat der Prozess Sprachverbindungen offen. Gemessen (31.08.2026,
+macOS, zwei echte Anrufe):
+
+| Lage | UDP-Sockets von myApps |
+| --- | --- |
+| kein Anruf | **0** |
+| es klingelt, Fenster ist auf | **0** |
+| abgehoben | **6** (Ports 50000/50001 über alle Adressen) |
+| aufgelegt | **0**, ohne Verzug |
+
+Damit ist „ein UDP-Socket ist da" kein Rauschen, sondern ein Signal – im
+Leerlauf gibt es keinen einzigen. Gefragt wird `lsof` (macOS) bzw. `netstat`
+(Windows), einmal pro Sekunde und **nur, solange ein Gespräch läuft**; drei
+gleichlautende Messungen machen einen Wechsel aus, das Auflegen steht also nach
+rund drei Sekunden fest. Das Auseinandernehmen und die Entscheidung stehen in
+`main/media-watch.js` und sind ohne laufendes Fenster prüfbar.
+
+**Die Sicherung, auf der das steht:** ein Gespräch wird nie beendet, weil ein
+Socket *fehlt* – nur, wenn er für genau dieses Gespräch vorher **da war** und
+dann verschwindet (`mediaState()` in `renderer/call-session.js`). Der
+Unterschied ist der zwischen „aufgelegt" und „ich kann nicht hinsehen". Auf
+einem Rechner, auf dem die Beobachtung nicht greift – andere Plattform, andere
+myApps-Fassung, `lsof` fehlt – kommt nie ein „da war" an, und damit endet auch
+nie etwas von selbst. Der Rückfall ist dann exakt das Verhalten von vorher.
+Deshalb ist eine misslungene Messung ausdrücklich kein Auflegen.
+
+Dazu zwei Signale, die keinen Beweis brauchen: **gesperrter Bildschirm** und
+**Ruhezustand** (`powerMonitor` in `main/main.js`) beenden ein Gespräch immer –
+dort spricht niemand mehr.
+
+Ob es auf einem Rechner greift, steht in der Einrichtungskarte: ⚙ →
+„Telefonanlage" → Zeile **Gesprächsende**, dazu der Knopf **„Erkennung
+prüfen"** für eine einzelne Messung. Ohne diese Anzeige wäre eine Erkennung,
+die sich bei Unklarheit still selbst abschaltet, nicht von einer kaputten zu
+unterscheiden.
+
+**Unter Windows ungeprüft.** Der Prozessname und das Socket-Verhalten sind dort
+nicht gemessen. Kaputt ist dadurch nichts – ohne beobachtete Medien endet
+schlicht nichts von selbst.
+
+**Was es weiterhin nicht sieht:** Anrufe, die gar nicht über myApps laufen
+(Tischtelefon, Handy). Wer die auch braucht, kommt an der Anlage nicht vorbei –
+die App-Websocket-Schnittstelle (`PBX0/APPS/websocket`, RCC-API) meldet
+`CallAdd`/`CallDel` samt `conf-id`, also derselben Kennung, die `$c` liefert.
+`ev=end` und `dir=in|out` sind in `call-url.js` und `call-session.js` schon
+vollständig verdrahtet; es fehlt nur der Absender. Dafür braucht es ein
+App-Objekt in der Anlage.
+
+### Wählen
+
+Umgekehrt geht es auch: „Anrufen" in der Rückrufliste und im Gesprächskopf
+öffnet eine `tel:`-Adresse, und die Anlage wählt. Der entstehende Anruf meldet
+sich Sekunden später auf demselben Weg zurück – der Kreis schließt sich.
+
+* **Windows:** funktioniert ohne Zutun; den URI-Handler bringen die myApps
+  platform services mit.
+* **macOS:** einmalig FaceTime öffnen → Menü „FaceTime" → „Einstellungen…" →
+  **„Standard für Telefonate"** auf myApps. Ohne diesen Schritt bekommt
+  FaceTime die Adresse, und der Knopf öffnet FaceTime statt zu wählen. Die
+  Einrichtungskarte zeigt an, welches Programm gerade zuständig ist, und der
+  Knopf sagt es beim Klick noch einmal.
+
+Gewählt wird im Hauptprozess (`main/main.js`, Befehl `dial`), nicht im Fenster:
+geprüft wird dort auf Ziffern und höchstens ein führendes Plus, damit aus dem
+Panel keine beliebige Adresse an die Systemschale gereicht werden kann.
+
+### Prüfen, ob es ankommt
+
+Am einfachsten über ⚙ → „Telefonanlage" → **Testanruf**. Er geht durch dieselbe
+Strecke wie ein echter Anruf – ein Test, der einen eigenen Weg nimmt, prüft den
+Weg nicht, den es zu prüfen gilt – legt aber **keine Zeile in `calls`** an.
+
+Von Hand, bei laufender App:
+
+```
+open "stadtnetzcrm://call?id=test-1&nr=%2B4970310000000&name=PK%20182962%20Daniel%20Ratcliffe"
+```
+
+Beachten: hier steht `%2B`, myApps setzt für `$I` dagegen ein echtes `+` ein.
+Beides muss dasselbe bedeuten – dass es das lange nicht tat, war ein echter
+Fehler und hat die Rufnummernsuche stillgelegt: `URLSearchParams` liest ein `+`
+nach Formularregeln als Leerzeichen, das `trim()` warf es weg, und übrig blieb
+eine Nummer ohne Plus. `shared.phoneKey()` entscheidet genau daran, ob die
+Landesvorwahl abzuschneiden ist. Deshalb nimmt `call-url.js` die Query jetzt
+selbst auseinander. Wer von Hand prüft, sollte **beide** Schreibweisen
+durchlassen.
+
+Das Overlay muss nach vorn kommen und das Cockpit „Daniel Ratcliffe" mit
+„Privatkunde · 182962" zeigen – nicht den Rohstring. Kommt nichts, ist meist
+das Schema nicht registriert: aus dem Quellstand heraus trägt sich Electron
+selbst ein, nicht die App – verlässlich ist es erst im gepackten Paket
+(`build.protocols` in `package.json`). Die Einrichtungskarte sagt, was davon
+gerade gilt.
+
+## Im Team verteilen
+
+Die entscheidende Eigenschaft einer Auskunft, die es nicht als Fenster gibt:
+**sie muss laufen.** Läuft sie nicht, führt kein Weg zu ihr – auch keiner aus
+Chrome, denn eine Erweiterung kann kein Programm starten. Deshalb sorgt die App
+selbst dafür, dass sie läuft, statt das jeder Person zu überlassen:
+
+1. **Beim ersten Start trägt sie sich als Anmeldeobjekt ein** (`ensureAutoStart`
+   in `main/main.js`) – ab dann ist sie nach jeder Anmeldung da. Genau **einmal**:
+   wer den Schalter unter ⚙ → „Overlay" oder im Tray-Menü umlegt, hat
+   entschieden, und die App legt ihn nie wieder von selbst um.
+2. **Liegt sie nicht im Programme-Ordner, bietet sie an, sich selbst dorthin zu
+   legen** (macOS). Aus „Downloads" oder direkt aus dem Installationsabbild
+   heraus zeigte der Autostart sonst auf einen Pfad, den es beim nächsten
+   Anmelden vielleicht nicht mehr gibt.
+
+Pakete bauen (Symbol, beide Mac-Architekturen, Windows x64):
+
+```bash
+cd desktop && npm install && npm run dist
+```
+
+Ergebnis in `desktop/dist/`:
+
+| Datei | Für |
+| --- | --- |
+| `Stadtnetz CRM Copilot-<Version>-arm64.dmg` | Mac mit Apple-Chip (M1–M4) |
+| `Stadtnetz CRM Copilot-<Version>.dmg` | Mac mit Intel-Prozessor |
+| `Stadtnetz CRM Copilot Setup <Version>.exe` | Windows 64 bit |
+
+Die Architekturen stehen ausdrücklich in `package.json` (`build.mac.target`,
+`build.win.target`). Ohne das baut electron-builder nur die des Baurechners –
+auf einem M-Mac also ein Windows-Paket für ARM, das auf keinem Büro-PC läuft.
+
+**Windows:** Setup doppelklicken. Es installiert ohne Administratorrechte ins
+Benutzerprofil (`oneClick`, `perMachine: false`), legt Verknüpfungen an und
+startet die App danach. SmartScreen meldet einen unbekannten Herausgeber →
+„Weitere Informationen" → „Trotzdem ausführen".
+
+**macOS:** Abbild öffnen, App in den Programme-Ordner ziehen, starten. Beim
+ersten Mal meldet macOS einen nicht verifizierten Entwickler → **Rechtsklick auf
+die App → „Öffnen"** → „Öffnen". Nur einmal nötig.
+
+Die Pakete sind **ad-hoc signiert** (`build/afterPack.js`), nicht von Apple
+beglaubigt. Das ist bewusst der kleine Unterschied, der zählt: ohne diesen
+Schritt bliebe im Bundle die Signatur der Electron-Vorlage stehen, die einen
+anderen Inhalt beschreibt – macOS meldet dann „Die App ist beschädigt", und
+dagegen hilft auch Rechtsklick → Öffnen nicht mehr. Eine echte Beglaubigung
+(Notarisierung, dann startet sie kommentarlos per Doppelklick) bräuchte ein
+Apple-Entwicklerkonto mit „Developer ID Application"-Zertifikat; ist eines da,
+genügen `CSC_LINK`/`CSC_KEY_PASSWORD` und `notarize` in der Build-Konfiguration.
+
+**Dazu gehört immer die Chrome-Erweiterung** – ohne sie kennt die App weder den
+Jira-Vorgang noch die lokale KI (siehe oben, „Warum Chrome trotzdem laufen
+muss"). Sie wird unabhängig verteilt: `chrome://extensions` → Entwicklermodus →
+„Entpackte Erweiterung laden", oder unternehmensweit per Gruppenrichtlinie.
+
+## Starten (Entwicklung)
+
+```bash
+cd desktop && npm install && npm start
+```
+
+Mit sichtbaren DevTools und Renderer-Meldungen im Terminal:
+
+```bash
+cd desktop && npm run dev
+```
+
+Danach in Chrome die Extension aus `extension/` laden (`chrome://extensions`,
+Entwicklermodus, „Entpackte Erweiterung laden") und einen Jira-Vorgang öffnen.
+Der Punkt links im Panelkopf wird grün, sobald die Verbindung steht.
+
+Beim Start zeigt das Fenster ein Startbild, bis das Cockpit steht: es sagt,
+worauf gerade gewartet wird (Stand aus Chrome, Aufbau des Panels), nennt die
+Tastenkombination zum Ein- und Ausblenden – und bietet einen neuen Versuch an,
+falls der Start hängen bleibt. Ohne diese Ebene wäre ein rahmenloses Fenster in
+den ersten Sekunden von einem abgestürzten nicht zu unterscheiden.
+
+## Bedienung
+
+| | |
+| --- | --- |
+| Ein-/ausblenden | `Cmd/Strg + Umschalt + Leertaste` (systemweit) – weitere Wege siehe oben |
+| Befehlspalette | `Cmd/Strg + K` |
+| Verschieben / Größe ändern | am Kopf des Panels ziehen / Anfasser unten rechts |
+| Notizen | `Cmd/Strg + N`, oder ✎ im Panelkopf |
+| Notiz sichern | `Cmd/Strg + Enter` |
+| Immer im Vordergrund, Deckkraft, Klicks durchreichen | ⚙ → „Overlay", oder Tray-Menü |
+| Beim Anmelden starten | ⚙ → „Overlay", oder Tray-Menü (ab Werk an) |
+| Beenden | Tray-Menü → Beenden, oder ⚙ → „Overlay" → Beenden |
+
+Alle Tastenkürzel sind änderbar: ⚙ → „Tastenkürzel", anklicken und die
+gewünschte Kombination drücken (Esc bricht ab, Rücktaste schaltet ein Kürzel
+aus). Die Liste steht in `extension/src/config.js` unter `hotkeys` und ist die
+einzige Wahrheit – ein dort eingetragenes Kürzel erscheint von selbst in den
+Einstellungen. Die beiden systemweiten (Ein-/ausblenden, Klicks durchreichen)
+registriert der Hauptprozess und speichert sie je Gerät; ist eine Taste schon
+von einem anderen Programm belegt, sagt die Zeile das, statt stumm nichts zu
+tun.
+
+## Notizen
+
+Gedacht als Schmierzettel während des Gesprächs. Kunde und Vorgang setzt die App
+selbst ein – aus der Kundenakte des laufenden Anrufs, sonst aus dem in Chrome
+geöffneten Vorgang. Gespeichert wird zuerst lokal, also auch ohne Chrome und ohne
+Netz. Von dort lässt sich jede Notiz einzeln in die Kundenakte übernehmen
+(dieselbe `notes`-Tabelle wie im CRM); dafür braucht es eine Kundennummer und
+eine CRM-Anmeldung, beides wie im Panel unter ⚙.
+
+## Verpacken
+
+`npm run pack:mac` bzw. `npm run pack:win` erzeugen eine lauffähige App ohne
+Installer, `npm run dist` die fertigen Pakete für die Verteilung (siehe „Im Team
+verteilen"). `extension/` wandert dabei als Ressource mit ins Paket, das
+Programmsymbol erzeugt `npm run icon` aus demselben Motiv wie die
+Extension-Icons (`tools/generate-app-icon.js`).
+
+Für Windows und macOS gilt jeweils: unsignierte Pakete werden vom System
+angemeckert. Für den Rollout im Haus braucht es ein Entwicklerzertifikat
+(Apple Developer ID bzw. Authenticode) – bis dahin ist `npm start` der Weg.
+
+## Sicherheit
+
+* Der WebSocket-Server lauscht nur auf `127.0.0.1` – nichts davon verlässt den
+  Rechner.
+* Verbinden dürfen sich nur Chrome-Extensions (`Origin: chrome-extension://…`).
+  Ohne diese Prüfung könnte jede beliebige Webseite im Browser sich anhängen und
+  die Kundendaten mitlesen – `localhost` ist für Webseiten nicht gesperrt. Der
+  Origin-Header wird vom Browser gesetzt und ist von Seitencode nicht fälschbar;
+  eine Webseite trägt immer den Origin ihrer Domain (`https://…`) und kommt damit
+  nicht durch.
+* Das Fenster hat keinen Node-Zugriff (`contextIsolation`, kein
+  `nodeIntegration`) und darf per CSP nur eigene Dateien laden. Einzige erlaubte
+  Netzwerkverbindung ist Supabase (`https://*.supabase.co`) – bei einer selbst
+  gehosteten Supabase-Instanz muss die CSP in `renderer/index.html` ergänzt
+  werden, sonst schlägt der Zugriff fehl.

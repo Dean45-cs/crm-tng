@@ -5,7 +5,13 @@ import { useRouter } from '../router';
 import { buildCustomerSummaries, formatCurrency } from '../lib/utils';
 
 export function CustomerSearchBar() {
-  const { contracts, tariffChanges, notes, settings } = useStore();
+  // Gezielte Selektoren: die Leiste ist dauerhaft gemountet und soll nicht
+  // bei jedem fremden Store-Update (Leads, Incentives, …) neu rendern.
+  const contracts = useStore((s) => s.contracts);
+  const tariffChanges = useStore((s) => s.tariffChanges);
+  const notes = useStore((s) => s.notes);
+  const settings = useStore((s) => s.settings);
+  const customerRows = useStore((s) => s.customers);
   const { navigate } = useRouter();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -13,9 +19,13 @@ export function CustomerSearchBar() {
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
+  const hasQuery = query.trim().length > 0;
+
+  // Suchindex erst aufbauen, wenn wirklich getippt wird — ohne Eingabe
+  // kostet die Leiste bei Datenänderungen nichts.
   const customers = useMemo(
-    () => buildCustomerSummaries(contracts, tariffChanges, notes, settings),
-    [contracts, tariffChanges, notes, settings],
+    () => (hasQuery ? buildCustomerSummaries(contracts, tariffChanges, notes, settings, customerRows) : []),
+    [hasQuery, contracts, tariffChanges, notes, settings, customerRows],
   );
 
   const results = useMemo(() => {

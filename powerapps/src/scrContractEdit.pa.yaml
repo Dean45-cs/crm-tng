@@ -1,0 +1,74 @@
+# Referenz-Screen: Vertrag anlegen/bearbeiten (Edit-Form). Siehe 05.
+# Produkte werden nach OnSuccess als tng_contractproduct-Kindzeilen gepatcht
+# (mit Provisions-Snapshot). Jira-Validierung + Pflicht-Datum wie im React-CRM.
+Screens:
+  scrContractEdit:
+    Properties:
+      Fill: =Theme.Background
+    Children:
+      - lblTitle:
+          Control: Label
+          Properties:
+            Text: =If(IsBlank(varContract.tng_contractid), "Neuer Vertrag", "Vertrag bearbeiten")
+            Color: =Theme.Primary
+            Font: =FontMain
+            Size: =28
+            FontWeight: =FontWeight.Semibold
+            X: =Space.xl
+            Y: =Space.xl
+      - frmContract:
+          Control: Form@2.4.0
+          Properties:
+            DataSource: =tng_Contracts
+            Item: =varContract
+            X: =Space.xl
+            Y: =72
+            Width: =560
+            OnSuccess: |
+              =ForAll(colSelectedProducts As p,
+                 Patch(tng_ContractProducts, Defaults(tng_ContractProducts),
+                   { tng_Contract: frmContract.LastSubmit,
+                     tng_Product: p.product,
+                     tng_commissionsnapshot: p.product.tng_commission }));
+               Patch(tng_AuditEvents, Defaults(tng_AuditEvents),
+                   { tng_action:"create", tng_entitytype:"contract",
+                     tng_entityid: frmContract.LastSubmit.tng_contractid,
+                     tng_actorname: User().FullName });
+               Notify("Vertrag gespeichert.", NotificationType.Success);
+               Navigate(scrContracts, ScreenTransition.UnCoverRight)
+          # DataCards: tng_customer (Lookup, required), tng_contractdate (DateOnly, required),
+          # tng_status (Choice), tng_laufzeit (Choice, optional), tng_jiraticket (Text),
+          # tng_followupdate (DateOnly), tng_notes (Memo). Produkte über eine
+          # zusätzliche Combobox -> colSelectedProducts (Multi-Select).
+      - lblJiraError:
+          Control: Label
+          Properties:
+            Text: =If(!IstJira(frmContract.Updates.tng_jiraticket), "Jira-Format: TNG-1234", "")
+            Color: =Theme.Danger
+            X: =Space.xl
+            Y: =620
+      - btnSave:
+          Control: Button@0.0.45
+          Properties:
+            Text: ="Speichern"
+            Fill: =Theme.Accent
+            Color: =Theme.Surface
+            DisplayMode: |
+              =If(IsBlank(frmContract.Updates.tng_contractdate)
+                  || IsBlank(frmContract.Updates.tng_customer), DisplayMode.Disabled, DisplayMode.Edit)
+            OnSelect: |
+              =If(IstJira(frmContract.Updates.tng_jiraticket),
+                  SubmitForm(frmContract),
+                  Notify("Jira-Format ungültig (TNG-1234).", NotificationType.Error))
+            X: =Space.xl
+            Y: =648
+      - btnCancel:
+          Control: Button@0.0.45
+          Properties:
+            Text: ="Abbrechen"
+            Fill: =Theme.Surface
+            Color: =Theme.Text
+            BorderColor: =Theme.Border
+            OnSelect: =Navigate(scrContracts, ScreenTransition.UnCoverRight)
+            X: =160
+            Y: =648

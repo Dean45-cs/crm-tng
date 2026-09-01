@@ -32,14 +32,22 @@ import {
   calcTariffCommission,
   formatCurrency,
   formatDate,
-  monthKey,
-  monthLabel,
   TARIFF_CONTEXT_LABEL,
   TARIFF_TYPE_LABEL,
 } from '../lib/utils';
-import { agentStats, attainmentPct } from '../lib/teamStats';
+import { agentStats, attainmentPct, monthlySeries } from '../lib/teamStats';
+import { useMonthCalls } from '../store/useMonthCalls';
+import {
+  callVolumeStats,
+  linkCallsToOutcomes,
+  conversionStats,
+  callTimingStats,
+} from '../lib/callStats';
+import { formatDuration } from '../lib/reporting';
+import { KpiTile } from '../components/KpiTile';
 import { StatusBadge } from '../components/StatusBadge';
 import { JiraLink } from '../components/JiraLink';
+import { AgentStatusHistory } from '../components/AgentStatusHistory';
 import { useQuickAdd } from '../components/QuickAdd';
 
 interface Props {
@@ -57,11 +65,31 @@ function initialsOf(name: string): string {
 }
 
 export function AgentDetail({ agentKey }: Props) {
-  const { contracts, tariffChanges, notes, settings, deleteContract, deleteTariffChange, deleteNote } =
+  const { contracts, tariffChanges, notes, leads, settings, deleteContract, deleteTariffChange, deleteNote } =
     useStore();
   const { users, isManager } = useAuth();
   const { navigate } = useRouter();
   const { editContract, editTariff, editNote } = useQuickAdd();
+
+  // Anrufe kommen aus dem geteilten, live gehaltenen Monats-Store
+  // (useMonthCalls) — dieselbe Quelle wie Dashboard/TeamDashboard, per
+  // calls-Realtime aktuell. `null` = lädt noch.
+  const monthCalls = useMonthCalls((s) => s.calls);
+
+  const agentCallVolume = useMemo(
+    () => (monthCalls ? callVolumeStats(monthCalls, agentKey) : null),
+    [monthCalls, agentKey],
+  );
+  // Echte Gesprächszeiten und Erreichbarkeit dieser Person (Migration 028).
+  const agentTiming = useMemo(
+    () => (monthCalls ? callTimingStats(monthCalls, agentKey) : null),
+    [monthCalls, agentKey],
+  );
+  const agentCallConversion = useMemo(() => {
+    if (!monthCalls) return null;
+    const own = monthCalls.filter((c) => c.agentId === agentKey);
+    return conversionStats(linkCallsToOutcomes(own, contracts, tariffChanges, leads, notes));
+  }, [monthCalls, agentKey, contracts, tariffChanges, leads, notes]);
 
   const agent = users[agentKey];
 
@@ -94,24 +122,11 @@ export function AgentDetail({ agentKey }: Props) {
 
   const chart6 = useMemo(
     () =>
-      Array.from({ length: 6 }, (_, i) => {
-        const offset = -5 + i;
-        const refDate = new Date();
-        refDate.setDate(1);
-        refDate.setMonth(refDate.getMonth() + offset);
-        const key = monthKey(refDate.toISOString());
-        const cSum = contracts
-          .filter((c) => c.createdBy === agentKey && monthKey(c.contractDate) === key)
-          .reduce((s, c) => s + calcContractCommission(c, settings), 0);
-        const tSum = tariffChanges
-          .filter((t) => t.createdBy === agentKey && monthKey(t.changeDate) === key)
-          .reduce((s, t) => s + calcTariffCommission(t, settings), 0);
-        return {
-          month: monthLabel(offset),
-          Verträge: Math.round(cSum * 100) / 100,
-          Tarifwechsel: Math.round(tSum * 100) / 100,
-        };
-      }),
+      monthlySeries(contracts, tariffChanges, settings, 6, agentKey).map((p) => ({
+        month: p.month,
+        Verträge: p.contractCommission,
+        Tarifwechsel: p.tariffCommission,
+      })),
     [agentKey, contracts, tariffChanges, settings],
   );
 
@@ -195,32 +210,59 @@ export function AgentDetail({ agentKey }: Props) {
       </div>
 
       <div className="team-kpis" style={{ marginTop: 18 }}>
-        <div className="widget team-kpi">
-          <div className="team-kpi-label">Provision gesamt</div>
-          <div className="team-kpi-value">{formatCurrency(stats.totalCommission)}</div>
-          <div className="team-kpi-sub">über alle Monate</div>
-        </div>
-        <div className="widget team-kpi">
-          <div className="team-kpi-label">Abschlüsse gesamt</div>
-          <div className="team-kpi-value">{stats.totalDeals}</div>
-          <div className="team-kpi-sub">Verträge + Tarifwechsel</div>
-        </div>
-        <div className="widget team-kpi">
-          <div className="team-kpi-label">Monatsziel</div>
-          <div className="team-kpi-value">
-            {agent.monthlyTarget > 0 ? formatCurrency(agent.monthlyTarget) : '–'}
-          </div>
-          <div className="team-kpi-sub">individuelles Ziel</div>
-        </div>
-        <div className="widget team-kpi">
-          <div className="team-kpi-label">Ø Provision / Abschluss</div>
-          <div className="team-kpi-value">
-            {stats.totalDeals > 0
-              ? formatCurrency(stats.totalCommission / stats.totalDeals)
-              : '–'}
-          </div>
-          <div className="team-kpi-sub">Schnitt aller Abschlüsse</div>
-        </div>
+        <KpiTile label="Provision gesamt" value={formatCurrency(stats.totalCommission)} sub="über alle Monate" />
+        <KpiTile label="Abschlüsse gesamt" value={stats.totalDeals} sub="Verträge + Tarifwechsel" />
+        <KpiTile
+          label="Monatsziel"
+          value={agent.monthlyTarget > 0 ? formatCurrency(agent.monthlyTarget) : '–'}
+          sub="individuelles Ziel"
+        />
+        <KpiTile
+          label="Ø Provision / Abschluss"
+          value={stats.totalDeals > 0 ? formatCurrency(stats.totalCommission / stats.totalDeals) : '–'}
+          sub="Schnitt aller Abschlüsse"
+        />
+        <KpiTile
+          label="Anrufe (Monat)"
+          value={agentCallVolume === null ? '–' : agentCallVolume.count}
+          sub="von der Extension automatisch erfasst"
+        />
+        <KpiTile
+          label="Erreichbarkeit"
+          value={agentTiming?.answerRatePct == null ? '–' : `${agentTiming.answerRatePct} %`}
+          sub={
+            agentTiming && agentTiming.measured > 0
+              ? `${agentTiming.answered} angenommen · ${agentTiming.unanswered} ohne Abheben`
+              : 'noch kein Gesprächsende gemessen'
+          }
+        />
+        <KpiTile
+          label="Ø Gespräch (ab Abheben)"
+          value={agentTiming?.avgTalkS == null ? '–' : formatDuration(agentTiming.avgTalkS)}
+          sub={
+            agentTiming?.avgRingS == null
+              ? `${agentTiming?.withTalkTime ?? 0} gemessene Gespräche`
+              : `Ø ${formatDuration(agentTiming.avgRingS)} klingeln bis zum Abheben`
+          }
+        />
+        <KpiTile
+          label="Ø Nachbearbeitung"
+          value={agentTiming?.avgAcwS == null ? '–' : formatDuration(agentTiming.avgAcwS)}
+          sub={
+            agentTiming?.avgAhtS == null
+              ? 'noch kein Ergebnis nach einem Gespräch erfasst'
+              : `AHT Ø ${formatDuration(agentTiming.avgAhtS)}`
+          }
+        />
+        <KpiTile
+          label="Abschlussquote (Anruf → Vertrag/Tarifwechsel)"
+          value={agentCallConversion?.conversionPct == null ? '–' : `${agentCallConversion.conversionPct} %`}
+          sub={
+            agentCallConversion?.linkedCount
+              ? `${agentCallConversion.linkedCount} von ${agentCallConversion.totalCount} Anrufen`
+              : 'noch keine Verknüpfung diesen Monat'
+          }
+        />
       </div>
 
       <div className="widget" style={{ marginBottom: 22 }}>
@@ -234,7 +276,7 @@ export function AgentDetail({ agentKey }: Props) {
           <span className="muted">Letzte 6 Monate</span>
         </div>
         <div style={{ width: '100%', height: 240 }}>
-          <ResponsiveContainer>
+          <ResponsiveContainer height={240}>
             <BarChart data={chart6} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
               <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={12} stroke="var(--text-tertiary)" />
@@ -257,6 +299,8 @@ export function AgentDetail({ agentKey }: Props) {
           </ResponsiveContainer>
         </div>
       </div>
+
+      <AgentStatusHistory agentKey={agentKey} agentName={agent.displayName} />
 
       <Section icon={<FileSignature size={15} />} title="Verträge" count={contractsList.length}>
         {contractsList.length === 0 ? (
@@ -283,10 +327,10 @@ export function AgentDetail({ agentKey }: Props) {
                     <td>{c.customerName}</td>
                     <td>
                       <div className="product-chips">
-                        {c.products.slice(0, 2).map((p) => {
+                        {c.products.slice(0, 2).map((p, i) => {
                           const cat = settings.products.find((x) => x.name === p)?.category;
                           return (
-                            <span key={p} className={`product-chip cat-${cat}`}>{p}</span>
+                            <span key={`${p}-${i}`} className={`product-chip cat-${cat}`}>{p}</span>
                           );
                         })}
                         {c.products.length > 2 && (

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Plus,
@@ -15,10 +15,19 @@ import {
   Globe,
   ShieldAlert,
   Eraser,
+  Phone,
+  PhoneOutgoing,
+  Tag,
+  MailCheck,
+  MailX,
+  ClipboardList,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { useRouter } from '../router';
+import type { Call, Campaign, Customer } from '../types';
+import { fetchCallsForCustomer } from '../lib/supabaseApi';
+import { formatClock, formatDuration } from '../lib/statusBoard';
 import {
   calcContractCommission,
   calcTariffCommission,
@@ -34,21 +43,29 @@ import { useQuickAdd } from '../components/QuickAdd';
 import { CustomerShareDialog } from '../components/CustomerShareDialog';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { AccessRequestInbox, AccessRequestBanner } from '../components/AccessRequests';
+import { SkeletonPage } from '../components/Skeleton';
+import { CallWrapupForm } from '../components/CallWrapupForm';
+import { saveCallWrapup } from '../lib/supabaseApi';
+import { advertisingAllowed, campaignFor, labelOf, outcomeOf, DOI_STATUS, HOME_ID_KINDS } from '../lib/campaigns';
+import { useToast } from '../store/useToast';
 
 interface Props {
   kdnr: string;
 }
 
 export function CustomerDetail({ kdnr }: Props) {
-  const { contracts, tariffChanges, notes, settings, customerOwners, deleteContract, deleteTariffChange, deleteNote, purgeCustomer } =
+  const { contracts, tariffChanges, notes, settings, customerOwners, customers, deleteContract, deleteTariffChange, deleteNote, purgeCustomer, loaded } =
     useStore();
   const { currentUserKey, users, isManager } = useAuth();
   const { navigate } = useRouter();
   const { openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote } =
     useQuickAdd();
+  const { campaigns } = useStore();
+  const toast = useToast((t) => t.push);
   const [shareOpen, setShareOpen] = useState(false);
   const [purgeConfirmStep, setPurgeConfirmStep] = useState(0);
   const [purging, setPurging] = useState(false);
+  const [wrapupCall, setWrapupCall] = useState<Call | null>(null);
 
   const ownership = useMemo(
     () => getEffectiveOwnership(kdnr, customerOwners, contracts, tariffChanges, notes),
@@ -70,11 +87,42 @@ export function CustomerDetail({ kdnr }: Props) {
     () => notes.filter((n) => n.customerNumber === kdnr).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [notes, kdnr],
   );
+  const customerRow = useMemo(
+    () => customers.find((c) => c.customerNumber === kdnr) ?? null,
+    [customers, kdnr],
+  );
+
+  // Anrufhistorie lebt bewusst nicht im globalen Store (siehe useCalls.ts) —
+  // Anrufvolumen kann deutlich höher sein als Verträge/Notizen, deshalb hier
+  // gezielt pro Kunde geladen.
+  // Ein Kunde, der bisher nur angerufen wurde, hat weder Vertrag noch Notiz —
+  // dann entscheidet allein diese Liste über „gefunden oder nicht". Solange sie
+  // lädt, darf die Seite deshalb noch kein Urteil fällen. Die Kundennummer wird
+  // im State mitgeführt: „geladen" heißt damit „geladen für genau diesen
+  // Kunden", ohne ein zweites Flag, das beim Wechsel erst zurückgesetzt werden
+  // müsste (ein synchrones setState im Effekt).
+  const [calls, setCalls] = useState<{ kdnr: string | null; rows: Call[] }>({ kdnr: null, rows: [] });
+  const callsLoaded = calls.kdnr === kdnr;
+  const callsList = callsLoaded ? calls.rows : [];
+  useEffect(() => {
+    let cancelled = false;
+    fetchCallsForCustomer(kdnr)
+      .then((rows) => {
+        if (!cancelled) setCalls({ kdnr, rows });
+      })
+      .catch(() => {
+        if (!cancelled) setCalls({ kdnr, rows: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [kdnr]);
 
   const customerName =
     contractsList[0]?.customerName ??
     tariffList[0]?.customerName ??
     notesList[0]?.customerName ??
+    customerRow?.name ??
     '';
 
   const totalCommission =
@@ -83,13 +131,34 @@ export function CustomerDetail({ kdnr }: Props) {
 
   const initials = (customerName || kdnr).slice(0, 2).toUpperCase();
 
-  if (contractsList.length === 0 && tariffList.length === 0 && notesList.length === 0) {
+  // Solange die CRM-Daten (oder die Anrufhistorie) noch laden, ist jede Aussage
+  // über den Kunden verfrüht. Ohne diese Schranke begrüßte ausgerechnet der
+  // Deep-Link aus der Extension (`?kdnr=…`, siehe router.tsx) den Nutzer mit
+  // „Kunde nicht gefunden" — bei langsamer Verbindung sekundenlang.
+  if (!loaded || !callsLoaded) {
+    return (
+      <div>
+        <button className="btn btn-ghost" disabled style={{ marginBottom: 10 }}>
+          <ArrowLeft size={14} /> Zurück
+        </button>
+        <SkeletonPage />
+      </div>
+    );
+  }
+
+  if (
+    contractsList.length === 0 &&
+    tariffList.length === 0 &&
+    notesList.length === 0 &&
+    callsList.length === 0 &&
+    !customerRow
+  ) {
     return (
       <div>
         <button
           className="btn btn-ghost"
           onClick={() => navigate({ name: 'customers' })}
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 10 }}
         >
           <ArrowLeft size={14} /> Zurück
         </button>
@@ -107,7 +176,7 @@ export function CustomerDetail({ kdnr }: Props) {
       <button
         className="btn btn-ghost"
         onClick={() => navigate({ name: 'customers' })}
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 10 }}
       >
         <ArrowLeft size={14} /> Kunden
       </button>
@@ -118,6 +187,7 @@ export function CustomerDetail({ kdnr }: Props) {
           <h2 className="customer-hero-name">{customerName || 'Unbenannt'}</h2>
           <div className="customer-hero-kdnr">
             Kundennummer <code>{kdnr}</code>
+            {customerRow?.phone && <> · {customerRow.phone}</>}
           </div>
           <div className="customer-owner-row">
             {ownership.owner === null ? (
@@ -194,10 +264,17 @@ export function CustomerDetail({ kdnr }: Props) {
         />
       )}
 
+      {/* Was aus den Gesprächen bleibt (Migration 029). Steht bewusst weit oben:
+          ob werblich angesprochen werden darf und ob eine HomeID vorliegt, muss
+          man sehen, BEVOR man zum Hörer greift — nicht nach dem Durchblättern
+          der Anrufhistorie. */}
+      <CustomerComplianceStrip customer={customerRow} calls={callsList} />
+
       <ActivityTimeline
         contracts={contractsList}
         tariffChanges={tariffList}
         notes={notesList}
+        calls={callsList}
       />
 
       <Section
@@ -227,10 +304,10 @@ export function CustomerDetail({ kdnr }: Props) {
                     <td>{formatDate(c.contractDate)}</td>
                     <td>
                       <div className="product-chips">
-                        {c.products.map((p) => {
+                        {c.products.map((p, i) => {
                           const cat = settings.products.find((x) => x.name === p)?.category;
                           return (
-                            <span key={p} className={`product-chip cat-${cat}`}>
+                            <span key={`${p}-${i}`} className={`product-chip cat-${cat}`}>
                               {p}
                             </span>
                           );
@@ -364,6 +441,69 @@ export function CustomerDetail({ kdnr }: Props) {
         )}
       </Section>
 
+      <Section
+        icon={<Phone size={15} />}
+        title="Anrufe"
+        count={callsList.length}
+      >
+        {callsList.length === 0 ? (
+          <div className="muted" style={{ padding: '14px 2px' }}>Keine Anrufe.</div>
+        ) : (
+          <div className="table-wrap">
+            <table className="crm-table">
+              <thead>
+                <tr>
+                  <th>Datum</th>
+                  <th>Richtung</th>
+                  <th>Anrufer</th>
+                  <th>Bearbeiter:in</th>
+                  <th>Gruppe</th>
+                  <th>Ergebnis</th>
+                  <th style={{ textAlign: 'right' }}>Dauer</th>
+                  <th style={{ textAlign: 'right' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {callsList.map((call) => (
+                  <tr key={call.id}>
+                    <td>
+                      {formatDate(call.startedAt)} · {formatClock(call.startedAt)}
+                    </td>
+                    <td>
+                      <span className="row" style={{ gap: 4 }}>
+                        {call.direction === 'outbound' ? (
+                          <PhoneOutgoing size={13} />
+                        ) : (
+                          <Phone size={13} />
+                        )}
+                        {call.direction === 'outbound' ? 'Ausgehend' : 'Eingehend'}
+                      </span>
+                    </td>
+                    <td>{call.callerName || call.callerNumber || '–'}</td>
+                    <td>{users[call.agentId]?.displayName ?? '–'}</td>
+                    <td>{call.queueGroup || '–'}</td>
+                    <td>
+                      <CallOutcomeCell call={call} campaigns={campaigns} />
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {call.durationS != null ? formatDuration(call.durationS) : '–'}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {canEdit && (
+                        <button className="btn btn-sm" onClick={() => setWrapupCall(call)}>
+                          <ClipboardList size={13} />
+                          {call.wrapupComplete ? 'Ansehen' : 'Dokumentieren'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
       {isManager() && (
         <section className="customer-purge-section">
           <div className="customer-purge-head">
@@ -371,8 +511,9 @@ export function CustomerDetail({ kdnr }: Props) {
             <div>
               <div className="customer-purge-title">DSGVO: Recht auf Vergessenwerden</div>
               <div className="customer-purge-sub">
-                Löscht <strong>alle</strong> Verträge, Tarifwechsel und Notizen zu diesem Kunden
-                endgültig. Der Vorgang ist im Audit-Log nachvollziehbar und nicht rückgängig zu machen.
+                Löscht <strong>alle</strong> Verträge, Tarifwechsel, Notizen, Anrufe und den
+                Kundeneintrag selbst endgültig. Der Vorgang ist im Audit-Log nachvollziehbar und
+                nicht rückgängig zu machen.
               </div>
             </div>
           </div>
@@ -417,7 +558,105 @@ export function CustomerDetail({ kdnr }: Props) {
           </div>
         </section>
       )}
+
+      {wrapupCall && (
+        <CallWrapupForm
+          key={wrapupCall.id}
+          call={wrapupCall}
+          campaign={campaigns.find((c) => c.id === wrapupCall.campaignId)}
+          onClose={() => setWrapupCall(null)}
+          onSave={async (patch) => {
+            await saveCallWrapup(wrapupCall.id, patch);
+            // Die Anrufhistorie hängt hier an einem gezielten Fetch, nicht am
+            // Realtime-Kanal — nach dem Speichern deshalb selbst nachladen.
+            const rows = await fetchCallsForCustomer(kdnr).catch(() => null);
+            if (rows) setCalls({ kdnr, rows });
+            toast(
+              patch.wrapupComplete ? 'success' : 'info',
+              patch.wrapupComplete
+                ? 'Erfassung abgeschlossen — der Vorgang ist abrechenbar.'
+                : 'Erfassung gespeichert, es fehlen noch Pflichtangaben.',
+            );
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Was aus den Gesprächen dieses Kunden bleibt: HomeID, Einwilligung,
+ * Fraud-Markierung.
+ *
+ * Die Werte stehen auf dem Kunden (Migration 029 führt sie per Trigger nach) —
+ * fehlt der Kundensatz noch, wird als Rückfallebene der jüngste Anruf gelesen,
+ * damit die Angabe nicht erst nach dem nächsten Trigger-Lauf erscheint.
+ */
+function CustomerComplianceStrip({ customer, calls }: { customer: Customer | null; calls: Call[] }) {
+  const latest = useMemo(() => {
+    const withHomeId = calls.find((c) => c.homeId && c.homeIdConfirmed);
+    const withDoi = calls.find((c) => c.doiStatus && c.doiStatus !== 'offen');
+    return { withHomeId, withDoi };
+  }, [calls]);
+
+  const homeId = customer?.homeId ?? latest.withHomeId?.homeId;
+  const homeIdKind = customer?.homeIdKind ?? latest.withHomeId?.homeIdKind;
+  const doi = customer?.doiStatus ?? latest.withDoi?.doiStatus;
+  const fraud = customer?.fraudFlagged || calls.some((c) => c.fraudSuspicion);
+
+  // Nichts erfasst, nichts zu zeigen — ein Streifen aus lauter Strichen sagt
+  // weniger als gar keiner.
+  if (!homeId && !doi && !fraud) return null;
+
+  const mayAdvertise = advertisingAllowed(doi);
+
+  return (
+    <div className="compliance-strip">
+      {homeId && (
+        <span className="compliance-item">
+          <Tag size={13} />
+          <span>
+            <strong>{homeId}</strong>
+            <span className="muted"> · {labelOf(HOME_ID_KINDS, homeIdKind ?? '')}</span>
+          </span>
+        </span>
+      )}
+      {doi && (
+        <span className={`compliance-item ${mayAdvertise ? 'is-ok' : 'is-blocked'}`}>
+          {mayAdvertise ? <MailCheck size={13} /> : <MailX size={13} />}
+          <span>
+            Permission: {labelOf(DOI_STATUS, doi)}
+            <span className="muted">
+              {' '}
+              · {mayAdvertise ? 'werbliche Ansprache erlaubt' : 'keine werbliche Ansprache (§ 7 Abs. 2 UWG)'}
+            </span>
+          </span>
+        </span>
+      )}
+      {fraud && (
+        <span className="compliance-item is-flagged">
+          <ShieldAlert size={13} />
+          <span>Fraud-Verdacht dokumentiert — Prüfung in der Nachbearbeitung</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Ergebnis eines Anrufs im Klartext, plus offener Abschluss-Check. */
+function CallOutcomeCell({ call, campaigns }: { call: Call; campaigns: Campaign[] }) {
+  if (!call.outcomeCode && !call.disposition) return <span className="muted">–</span>;
+  const callType = campaigns.find((c) => c.id === call.campaignId)?.callType;
+  const outcome = call.outcomeCode ? outcomeOf(callType, call.outcomeCode) : null;
+  return (
+    <span className="row" style={{ gap: 6 }}>
+      <span>{outcome?.label ?? call.disposition}</span>
+      {call.disposition && !call.wrapupComplete && (
+        <span className="badge badge-orange" title={`Abschluss-Check ${campaignFor(callType).title} unvollständig`}>
+          offen
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -433,7 +672,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section style={{ marginBottom: 22 }}>
+    <section style={{ marginBottom: 14 }}>
       <div className="customer-section-header">
         <div className="customer-section-title">
           {icon}

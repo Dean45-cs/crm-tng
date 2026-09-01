@@ -15,7 +15,7 @@ Die App läuft online über Supabase als Backend. Einmalige Einrichtung:
 3. **Run** klicken — sollte ohne Fehler durchlaufen
 
 Erzeugt:
-- Tabellen: `users`, `contracts`, `tariff_changes`, `notes`, `customer_ownerships`, `user_settings`, `shared_settings`, `incentives`
+- Tabellen: `users`, `customers`, `calls`, `contracts`, `tariff_changes`, `notes`, `customer_ownerships`, `user_settings`, `shared_settings`, `incentives`
 - Row-Level-Security: alle aktiven User lesen, jeder schreibt seine eigenen Daten;
   gesperrte Nutzer haben keinen Datenzugriff, Rollen sind escalation-sicher
 - Realtime-Publikationen, damit Änderungen live an alle Clients gehen
@@ -51,6 +51,61 @@ bereits — Migrationen sind dann nicht nötig.
   lesbar; Bearbeiten bleibt an Rechte gebunden (Besitzer:in / geteilt / Chef:in).
   Neue Tabelle `customer_access_requests`: wer keine Rechte hat, fragt sie mit
   Begründung an, Besitzer:in oder Chef:in nimmt an oder lehnt ab.
+- `014_status_board.sql` — Status-Board für Team-Presence: neue Tabellen
+  `user_status` (aktueller Status je Nutzer:in, für alle sichtbar) und
+  `status_log` (lückenlose Historie mit Start/Ende/Dauer als Basis für die
+  Chef-KPIs und den PowerBI-Export).
+- `015_auto_create_user_profile.sql` — **wichtig:** Trigger `handle_new_user`
+  auf `auth.users`, der das `public.users`-Profil serverseitig anlegt, sobald ein
+  Auth-Konto entsteht. Behebt „new row violates row-level security policy for
+  table users" beim Anlegen neuer Konten (das Profil hing bisher an einer Session
+  des neuen Nutzers und schlug u.a. bei aktiver E-Mail-Bestätigung fehl). Trägt
+  außerdem bereits verwaiste Auth-User (Konten ohne Profil) einmalig nach, damit
+  sie wieder in der Team-Verwaltung auftauchen.
+- `016_ownership_policies_and_sp_settings.sql` — **wichtig:** repariert die
+  Besitz-Übertragung von Kunden (fehlende WITH-CHECK-Klausel ließ RLS jede
+  Übertragung durch die Besitzer:in ablehnen), erlaubt Chefs das Löschen von
+  Ownership-Zeilen (vollständiger DSGVO-Purge) und ergänzt die Spalten
+  `sp_file_path` / `sp_sheet_name`, damit die SharePoint-Export-Konfiguration
+  ein Neuladen überlebt.
+- `017_customers.sql` — **wichtig:** legt die eigenständige Tabelle `customers`
+  an (bisher war ein Kunde nur eine Ableitung aus Verträgen/Tarifwechseln/
+  Notizen) und befüllt sie per Backfill aus `contracts`, `tariff_changes`,
+  `notes` und `leads`. Ein SECURITY-DEFINER-Trigger `touch_customer()` hält die
+  Tabelle danach selbstständig aktuell, ohne bestehenden Insert-Code
+  anzufassen. Neue RPC-Funktion `customer_card()` liefert Name, Kontaktdaten,
+  Vorgangszählung und das zuletzt verwendete Jira-Ticket in einem Aufruf —
+  Grundlage für die „Kundenakte" in der Stadtnetz-CRM-Copilot-Extension.
+- `018_calls.sql` — legt die Tabelle `calls` an (Stufe 2: „Der Anruf wird Teil
+  der Akte"). Die Stadtnetz-CRM-Copilot-Extension schreibt jeden Anruf automatisch
+  über ihre eigene Supabase-Session (Migration 017) hierher — Start bei
+  Klingeln/Verbinden, Abschluss beim Auflegen. `customer_number` ist
+  nullable, nicht jeder Anrufer ist zuzuordnen. Ein eigener Trigger
+  `touch_customer_from_call()` pflegt auch aus Anrufen eine `customers`-Zeile
+  (analog zu `touch_customer()` aus Migration 017) — sonst bliebe ein
+  Anrufer ohne Vertrag/Notiz trotz Anrufhistorie „Kunde nicht gefunden".
+  `outcome`/`note`/`jira_ticket` sind für eine spätere Stufe vorgesehen und
+  bleiben vorerst leer. Die Aufbewahrungsfrist/automatische Anonymisierung
+  der Rufnummer ist bewusst noch nicht Teil dieser Migration — offener
+  Punkt, siehe `KONZEPT-INTEGRATION.md`.
+- `019`–`028` — Outbound-Umbau: Kampagnen, Schichtplan, Dispositionen,
+  Benachrichtigungen, Themes, Rufnummern-Auflösung und echte Gesprächszeiten.
+  Die Dateien im Ordner tragen ihre Begründung jeweils im Kopf.
+- `029_call_wrapup.sql` — die Gesprächserfassung nach den Gesprächsleitfäden
+  v2.0: HomeID, Double-Opt-In, Fraud-Verdacht, Beratungsnote, Winbackstatus und
+  das kampagnenspezifische `campaign_data`. Enthält die Regel „Winbackstatus nur
+  mit Ursache" als Check-Constraint — die Leitfäden markieren sie als
+  vergütungsrelevant, deshalb steht sie in der Datenbank und nicht nur in der
+  Oberfläche. Ein Trigger führt HomeID, Einwilligung und Fraud-Markierung auf
+  die `customers`-Zeile nach, damit die Kundenakte sie ohne Durchsuchen der
+  Anrufhistorie zeigen kann.
+- `030_agent_competencies.sql` — Kompetenzen je Kampagne: eine Zeile je
+  (Person, Kampagnentyp) mit Stufe (Einarbeitung / einsatzbereit / Trainer:in),
+  Schulungsdatum und der Leitfaden-Fassung, auf die geschult wurde. KEINE Zeile
+  heißt „nicht geschult" — es gibt bewusst keine Stufe „keine". Der Schichtplan
+  prüft dagegen und warnt, bevor jemand eine Kampagne fährt, für die er nicht
+  geschult ist; ein hartes Verbot gibt es bewusst nicht (Begründung im Kopf der
+  Migration).
 
 > **Erster Zugang (frische Installation):** Beim allerersten Start bietet der
 > Login-Screen automatisch „Erstes Konto einrichten" an — dieses Konto wird der
@@ -102,3 +157,14 @@ Jonas Schmidt, PIN **1234**) samt gefüllten Team-Dashboards, Leaderboard,
 Leads und Berichten an. Es räumt vorher alte Demo-Daten weg, ist also beliebig
 oft wiederholbar. Zum Entfernen genügt der Abschnitt „(1) Aufräumen" im Skript.
 
+## Die sechs Kampagnen anlegen
+
+Die Kampagnen sind Daten, die der Chef pflegt (Migration 019) — die
+Gesprächsleitfäden v2.0 setzen aber voraus, dass es sie gibt und dass ihr
+`call_type` stimmt: er verbindet die Kampagne mit Leitfaden, Ergebnisliste und
+Pflichtfeldern in `extension/src/campaigns.js`.
+
+[`seed_campaigns.sql`](./seed_campaigns.sql) legt die sechs produktiven
+Kampagnen an (Welcome, Churn, Postrückläufer, Dubletten-Check, Bauverweigerer,
+Courtesy) und zieht bei bereits vorhandenen Kampagnen den Call-Typ nach. Namen
+bleiben änderbar — das Skript legt nur an, was fehlt.

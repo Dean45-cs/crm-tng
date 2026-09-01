@@ -4,6 +4,7 @@ import { useAuth, type AuthUser, type UserRole } from '../store/useAuth';
 import { useStore } from '../store/useStore';
 import { toast } from '../store/useToast';
 import { formatCurrency } from '../lib/utils';
+import { CompetencyMatrix } from '../components/CompetencyMatrix';
 
 function initialsOf(name: string): string {
   return name
@@ -74,6 +75,8 @@ export function TeamManagement() {
           ))}
         </div>
       )}
+
+      <CompetencyMatrix />
     </div>
   );
 }

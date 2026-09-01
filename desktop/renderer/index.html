@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <!-- Kein Netzwerkzugriff außer zu Supabase: das Fenster lädt ausschließlich
+       eigene Dateien, Skripte von außen sind ausgeschlossen. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src https://*.supabase.co;">
+  <title>Stadtnetz CRM Copilot</title>
+
+  <!-- Erst die Schrift (auch das Mitteilungsfenster lädt sie), dann unverändert
+       dieselben Styles wie im Jira-Tab. Die Anpassungen fürs eigene Fenster
+       stehen ausschließlich in hud.css. -->
+  <link rel="stylesheet" href="fonts.css">
+  <link rel="stylesheet" href="../../extension/styles/content.css">
+  <link rel="stylesheet" href="hud.css">
+</head>
+<body>
+  <!-- Bewusst leer: keine Titelleiste, keine Fensterknöpfe, kein Kreuz oben
+       rechts. Das Fenster IST die Auskunft – alles, was man sonst am Rahmen
+       bedient (immer im Vordergrund, Deckkraft, ausblenden, beenden), steht im
+       Panel unter „Einstellungen · Overlay". Gezogen wird am Kopf des Panels,
+       die Größe ändert der Anfasser unten rechts. -->
+  <div class="hud-resize" data-role="hud-resize" title="Größe ändern" aria-hidden="true"></div>
+
+  <!-- Startbild. Zwischen „Fenster ist da" und „Cockpit steht" liegen der
+       Abgleich mit Chrome und der Aufbau des Panels; ohne diese Ebene wäre das
+       Overlay so lange eine leere dunkle Fläche – bei einem rahmenlosen Fenster
+       ohne Titelleiste sieht das nach Absturz aus. Es steht direkt im HTML und
+       nicht in JavaScript, damit es schon im ersten Bild da ist.
+       boot.js blendet es aus, sobald das Panel steht; bleibt der Start hängen,
+       sagt es das hier und bietet einen neuen Versuch an. -->
+  <div class="hud-boot" data-role="hud-boot" role="status" aria-live="polite">
+    <div class="hud-boot-mark" aria-hidden="true">
+      <svg viewBox="0 0 44 44" width="44" height="44" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+        <path d="M14 27a11 11 0 0 1 16 0" opacity="0.85"></path>
+        <path d="M9 21a18 18 0 0 1 26 0" opacity="0.5"></path>
+        <circle cx="22" cy="33" r="2.4" fill="currentColor" stroke="none"></circle>
+      </svg>
+    </div>
+    <p class="hud-boot-name">Stadtnetz CRM Copilot</p>
+    <div class="hud-boot-bar" data-role="hud-boot-bar" aria-hidden="true"><span></span></div>
+    <p class="hud-boot-step" data-role="hud-boot-step">Startet …</p>
+    <button class="hud-boot-retry" type="button" data-role="hud-boot-retry" hidden>Neu starten</button>
+    <p class="hud-boot-hint">Ein- und ausblenden mit <kbd data-role="hud-boot-shortcut">⌘⇧Leertaste</kbd></p>
+    <p class="hud-boot-version" data-role="hud-boot-version"></p>
+  </div>
+
+  <!-- Genau die Reihenfolge aus manifest.json – die Dateien bauen beim Laden
+       aufeinander auf (rules.js greift zum Beispiel sofort auf jiraReader zu).
+       An zwei Stellen steht statt der Originaldatei ein Shim: für das, was es
+       nur im Browser gibt (Seiten-DOM und Chromes eingebaute KI). Davor der
+       Chrome-Ersatz, dahinter das, was nur die App hat. -->
+  <script src="shim-chrome.js"></script>
+  <script src="../../extension/src/config.js"></script>
+  <script src="../../extension/src/commission.js"></script>
+  <script src="../../extension/src/shared.js"></script>
+  <script src="../../extension/src/supabase.js"></script>
+  <script src="../../extension/src/ai-cache.js"></script>
+  <script src="shim-jira-reader.js"></script>
+  <script src="../../extension/src/rules.js"></script>
+  <script src="shim-local-ai.js"></script>
+  <script src="../../extension/src/theme.js"></script>
+  <script src="../../extension/src/ui.js"></script>
+  <script src="notes.js"></script>
+  <!-- Anrufe aus myApps (innovaphone): main.js nimmt sie über das URL-Schema
+       an, hier werden sie zu demselben activeCall-Signal, das in Chrome
+       timio-content.js schreibt. call-session.js trägt den Verlauf eines
+       Gesprächs und ist ohne Fenster prüfbar, myapps-calls.js nur die
+       Verdrahtung – deshalb in dieser Reihenfolge. -->
+  <script src="call-session.js"></script>
+  <script src="myapps-calls.js"></script>
+  <!-- Ergänzt das Panel um das, was es nur auf dem Schreibtisch gibt:
+       Verbindungspunkt, Notizknopf, Offline-Hinweis, Overlay-Einstellungen.
+       Muss vor boot.js laufen, das anschließend mountet. -->
+  <script src="hud-host.js"></script>
+  <script src="boot.js"></script>
+</body>
+</html>

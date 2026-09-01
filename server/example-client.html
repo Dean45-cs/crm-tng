@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Netz-Auskunft Bridge – Testclient</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { font-size: 1.25rem; }
+    p.note { color: #666; font-size: 0.85rem; }
+    label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 600; font-size: 0.85rem; }
+    input, select { width: 100%; padding: 0.5rem; font: inherit; box-sizing: border-box; border: 1px solid #bbb; border-radius: 6px; background: transparent; color: inherit; }
+    button { margin-top: 1rem; padding: 0.6rem 1rem; font: inherit; font-weight: 600; border: none; border-radius: 6px; background: #0c66e4; color: #fff; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    #steps { margin: 1rem 0 0; padding: 0; list-style: none; }
+    #steps li { padding: 2px 0; color: #666; }
+    #steps li.done { color: #216e4e; }
+    #steps li.active { color: inherit; font-weight: 600; }
+    pre { background: rgba(127,127,127,0.12); padding: 0.75rem; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+    .error { color: #ae2e24; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>Netz-Auskunft Bridge – Testclient</h1>
+  <p class="note">Rein zum Ausprobieren. Server muss laufen und die Extension muss verbunden sein (Banner „Bridge aktiv"). Alles bleibt auf 127.0.0.1.</p>
+
+  <label for="url">Server-URL (/lookup)</label>
+  <input id="url" value="ws://127.0.0.1:8766/lookup">
+
+  <label for="token">Bridge-Token</label>
+  <input id="token" placeholder="dasselbe wie BRIDGE_TOKEN des Servers">
+
+  <label for="kind">Abfrageart</label>
+  <select id="kind">
+    <option value="baustatus">Baustatus (FTTX)</option>
+    <option value="churn">Kündiger-Status (GFIZ)</option>
+  </select>
+
+  <label for="customer">Kundennummer</label>
+  <input id="customer" placeholder="z. B. 287246">
+
+  <button id="go">Abfragen</button>
+
+  <ul id="steps"></ul>
+  <div id="status"></div>
+  <pre id="result" hidden></pre>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const stepsEl = $("steps");
+    const statusEl = $("status");
+    const resultEl = $("result");
+
+    $("go").addEventListener("click", () => {
+      stepsEl.innerHTML = "";
+      statusEl.textContent = "";
+      statusEl.className = "";
+      resultEl.hidden = true;
+      resultEl.textContent = "";
+
+      const url = $("url").value.trim();
+      const token = $("token").value.trim();
+      const kind = $("kind").value;
+      const customerNumber = $("customer").value.trim();
+      if (!customerNumber) { statusEl.textContent = "Bitte eine Kundennummer eingeben."; return; }
+
+      let ws;
+      try { ws = new WebSocket(url); } catch (e) { statusEl.textContent = "Verbindung fehlgeschlagen: " + e.message; return; }
+
+      const stepNodes = {};
+      $("go").disabled = true;
+
+      ws.addEventListener("open", () => {
+        ws.send(JSON.stringify({ type: "lookup", token, kind, customerNumber }));
+      });
+
+      ws.addEventListener("message", (event) => {
+        let msg;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        if (msg.type === "status") {
+          statusEl.textContent = msg.message || "";
+        } else if (msg.type === "step") {
+          let li = stepNodes[msg.step];
+          if (!li) { li = document.createElement("li"); stepNodes[msg.step] = li; stepsEl.appendChild(li); }
+          li.textContent = (msg.label || msg.step) + (msg.state === "done" ? " ✓" : " …");
+          li.className = msg.state === "done" ? "done" : "active";
+        } else if (msg.type === "result") {
+          statusEl.textContent = "Fertig.";
+          resultEl.hidden = false;
+          resultEl.textContent = JSON.stringify(msg.data, null, 2);
+          ws.close();
+        } else if (msg.type === "error") {
+          statusEl.textContent = msg.message || "Fehler.";
+          statusEl.className = "error";
+          ws.close();
+        }
+      });
+
+      ws.addEventListener("close", () => { $("go").disabled = false; });
+      ws.addEventListener("error", () => { statusEl.textContent = "Verbindungsfehler – läuft der Server?"; statusEl.className = "error"; $("go").disabled = false; });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "name": "stadtnetz-crm-hud",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Stadtnetz CRM Copilot als eigenständige Desktop-App (Mac & Windows). Zeigt das Cockpit in einem eigenen Fenster statt als Overlay in der Jira-Seite; die Chrome-Extension bleibt die Datenquelle und der KI-Motor.",
+  "main": "main/main.js",
+  "scripts": {
+    "test": "node test/run-all.js",
+    "start": "electron .",
+    "dev": "electron . --hud-dev",
+    "icon": "node tools/generate-app-icon.js",
+    "pack:mac": "electron-builder --mac --dir",
+    "pack:win": "electron-builder --win --dir",
+    "dist": "npm run icon && electron-builder --mac --win"
+  },
+  "devDependencies": {
+    "electron": "^43.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "de.stadtnetz.crm.hud",
+    "productName": "Stadtnetz CRM Copilot",
+    "files": ["main/**", "preload/**", "renderer/**", "package.json"],
+    "extraResources": [{ "from": "../extension", "to": "extension", "filter": ["src/**", "styles/**", "icons/**"] }],
+    "afterPack": "build/afterPack.js",
+    "protocols": [
+      {
+        "name": "Stadtnetz CRM Copilot",
+        "schemes": ["stadtnetzcrm"]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }]
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    }
+  }
+}

@@ -1,0 +1,2657 @@
+#stadtnetzcrm-root,
+#stadtnetzcrm-root * {
+  box-sizing: border-box;
+}
+
+#stadtnetzcrm-root {
+  --sc-ink: #172b4d;
+  --sc-muted: #5e6c84;
+  --sc-line: #dfe1e6;
+  --sc-surface: #ffffff;
+  --sc-soft: #f7f8fa;
+  --sc-blue: #0c66e4;
+  --sc-blue-dark: #0055cc;
+  --sc-success: #216e4e;
+  --sc-warning: #974f0c;
+  --sc-danger: #ae2e24;
+  /* Outbound-Akzent: hebt ausgehende Anrufe und fällige Rückrufe ab, ohne
+     mit Rot (Wartefeld/Fehler) oder Grün (Gespräch läuft) zu kollidieren. */
+  --sc-amber: #b26a00;
+  --sc-amber-soft: #fff4e5;
+  color: var(--sc-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+#stadtnetzcrm-root button,
+#stadtnetzcrm-root textarea {
+  font: inherit;
+}
+
+#stadtnetzcrm-root button {
+  cursor: pointer;
+}
+
+#stadtnetzcrm-root .sc-panel {
+  position: fixed;
+  z-index: 10000;
+  top: 86px;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  width: 390px;
+  max-width: calc(100vw - 28px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--sc-line);
+  border-radius: 14px;
+  background: var(--sc-surface);
+  box-shadow: 0 14px 38px rgba(9, 30, 66, 0.23);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(100% + 30px));
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+#stadtnetzcrm-root .sc-panel.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+/* Eine Zeile, mehr nicht: das Panel ist ein Auskunfts-Overlay, keine App mit
+   Begrüßungsbildschirm. Links wer/worüber, rechts die Werkzeuge. */
+#stadtnetzcrm-root .sc-panel-header {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 6px 5px 12px;
+  border-bottom: 1px solid var(--sc-line);
+  background: var(--sc-surface);
+}
+
+#stadtnetzcrm-root .sc-panel-id {
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+#stadtnetzcrm-root .sc-panel-name {
+  flex: none;
+  color: var(--sc-ink);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Der offene Vorgang bzw. die Kampagne – darf umbruchlos kürzen, statt den
+   Kopf zweizeilig werden zu lassen. */
+#stadtnetzcrm-root .sc-panel-context {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--sc-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#stadtnetzcrm-root .sc-call-banner {
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--sc-line);
+  background: linear-gradient(135deg, #e9fbf3 0%, #ffffff 85%);
+}
+
+#stadtnetzcrm-root .sc-call-banner.is-mismatch {
+  background: linear-gradient(135deg, #fff2ef 0%, #ffffff 85%);
+}
+
+#stadtnetzcrm-root .sc-call-banner.is-ended {
+  background: var(--sc-soft);
+}
+
+#stadtnetzcrm-root .sc-call-banner.is-ended .sc-call-banner-status {
+  color: var(--sc-muted);
+}
+
+/* --- Call-Cockpit: dauerhaftes Overlay während des Gesprächs -------------- */
+#stadtnetzcrm-root .sc-cockpit {
+  position: fixed;
+  z-index: 10002;
+  top: 18px;
+  right: 424px;
+  display: flex;
+  width: 380px;
+  max-width: calc(100vw - 28px);
+  max-height: 76vh;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--sc-line);
+  border-radius: 14px;
+  background: var(--sc-surface);
+  box-shadow: 0 16px 44px rgba(9, 30, 66, 0.32);
+}
+
+#stadtnetzcrm-root .sc-cockpit.is-connected { border-color: #7bcfa9; }
+#stadtnetzcrm-root .sc-cockpit.is-ringing { border-color: #f5c26b; }
+
+#stadtnetzcrm-root .sc-cockpit-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 9px 14px;
+  border-bottom: 1px solid var(--sc-line);
+  background: linear-gradient(135deg, #f2fbf6 0%, #ffffff 90%);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+#stadtnetzcrm-root .sc-cockpit.is-ringing .sc-cockpit-header {
+  background: linear-gradient(135deg, #fff7e6 0%, #ffffff 90%);
+}
+
+#stadtnetzcrm-root .sc-cockpit.is-ended .sc-cockpit-header {
+  background: var(--sc-soft);
+}
+
+#stadtnetzcrm-root .sc-cockpit-header:active {
+  cursor: grabbing;
+}
+
+#stadtnetzcrm-root .sc-cockpit-status {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--sc-success);
+  white-space: nowrap;
+}
+
+#stadtnetzcrm-root .sc-cockpit.is-ringing .sc-cockpit-status {
+  color: var(--sc-warning);
+  animation: sc-blink 1.1s ease-in-out infinite;
+}
+
+#stadtnetzcrm-root .sc-cockpit.is-ended .sc-cockpit-status {
+  color: var(--sc-muted);
+}
+
+@keyframes sc-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+#stadtnetzcrm-root .sc-cockpit-timer {
+  margin-left: auto;
+  color: var(--sc-ink);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#stadtnetzcrm-root .sc-cockpit-body {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  overflow-y: auto;
+}
+
+#stadtnetzcrm-root .sc-cockpit-caller strong {
+  display: block;
+  color: var(--sc-ink);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+#stadtnetzcrm-root .sc-cockpit-caller p {
+  margin: 3px 0 0;
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-cockpit-wait {
+  font-style: italic;
+}
+
+#stadtnetzcrm-root .sc-cockpit-hint {
+  margin: 0;
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-cockpit-mismatch {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #f2a99e;
+  border-radius: 8px;
+  background: #fff2ef;
+  color: var(--sc-danger);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-cockpit-summary {
+  max-height: 150px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+#stadtnetzcrm-root .sc-cockpit-ticket .sc-badge-row {
+  margin-bottom: 8px;
+}
+
+/* Mini-Modus: schmale Leiste mit Status, Name, Timer und Wartefeld-Zähler. */
+#stadtnetzcrm-root .sc-cockpit--mini {
+  width: auto;
+  max-width: calc(100vw - 28px);
+  border-radius: 999px;
+}
+
+#stadtnetzcrm-root .sc-cockpit--mini .sc-cockpit-header {
+  border-bottom: 0;
+  padding: 6px 8px 6px 14px;
+}
+
+#stadtnetzcrm-root .sc-cockpit-mini-name {
+  overflow: hidden;
+  max-width: 150px;
+  color: var(--sc-ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#stadtnetzcrm-root .sc-cockpit-mini-queue {
+  display: grid;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  place-items: center;
+  border-radius: 999px;
+  background: #e9edf2;
+  color: #44546f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+#stadtnetzcrm-root .sc-cockpit-mini-queue.has-waiting {
+  background: #ffebe6;
+  color: var(--sc-danger);
+}
+
+/* --- Wartefeld-Anzeige (Cockpit, Banner, Call-Tab) ------------------------ */
+#stadtnetzcrm-root .sc-queue-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+
+#stadtnetzcrm-root .sc-queue-head > span {
+  color: var(--sc-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#stadtnetzcrm-root .sc-queue-head > strong {
+  color: var(--sc-ink);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+#stadtnetzcrm-root .sc-queue-head > strong.has-waiting {
+  color: var(--sc-danger);
+}
+
+#stadtnetzcrm-root .sc-queue-head > em {
+  margin-left: auto;
+  color: var(--sc-warning);
+  font-size: 10px;
+  font-style: normal;
+}
+
+#stadtnetzcrm-root .sc-queue-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#stadtnetzcrm-root .sc-queue-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--sc-line);
+  border-radius: 999px;
+  background: var(--sc-surface);
+  color: #44546f;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-queue-chip b {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+#stadtnetzcrm-root .sc-queue-chip.has-waiting {
+  border-color: #f5c26b;
+  background: #fff7e6;
+  color: #7a4a00;
+}
+
+#stadtnetzcrm-root .sc-queue-chip.is-call-group {
+  border-color: var(--sc-blue);
+  box-shadow: 0 0 0 1px var(--sc-blue) inset;
+}
+
+#stadtnetzcrm-root .sc-queue-empty {
+  margin: 0;
+  color: var(--sc-muted);
+  font-size: 11px;
+}
+
+#stadtnetzcrm-root .sc-danger-button {
+  border-color: #f2a99e;
+  color: var(--sc-danger);
+}
+
+#stadtnetzcrm-root .sc-danger-button:hover {
+  border-color: var(--sc-danger);
+  color: var(--sc-danger);
+}
+
+#stadtnetzcrm-root .sc-call-overlay-ticket {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+#stadtnetzcrm-root .sc-call-overlay-ticket strong {
+  font-size: 13px;
+  color: var(--sc-ink);
+}
+
+#stadtnetzcrm-root .sc-call-banner-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#stadtnetzcrm-root .sc-call-banner-status {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--sc-success);
+}
+
+#stadtnetzcrm-root .sc-call-banner.is-mismatch .sc-call-banner-status {
+  color: var(--sc-danger);
+}
+
+#stadtnetzcrm-root .sc-call-banner-main strong {
+  font-size: 13px;
+  color: var(--sc-ink);
+}
+
+#stadtnetzcrm-root .sc-call-banner-timer {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--sc-muted);
+}
+
+#stadtnetzcrm-root .sc-call-banner-details {
+  margin: 3px 0 0;
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-call-banner-warning {
+  margin: 4px 0 0;
+  color: var(--sc-danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-header-actions,
+#stadtnetzcrm-root .sc-inline-actions,
+#stadtnetzcrm-root .sc-section-title-row,
+#stadtnetzcrm-root .sc-badge-row {
+  display: flex;
+  align-items: center;
+}
+
+#stadtnetzcrm-root .sc-header-actions {
+  gap: 4px;
+}
+
+#stadtnetzcrm-root .sc-eyebrow {
+  display: block;
+  color: var(--sc-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#stadtnetzcrm-root .sc-icon-button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sc-muted);
+  font-size: 17px;
+  line-height: 1;
+}
+
+#stadtnetzcrm-root .sc-icon-button:hover {
+  background: #e9f2ff;
+  color: var(--sc-blue);
+}
+
+#stadtnetzcrm-root .sc-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  padding: 7px 8px 0;
+  border-bottom: 1px solid var(--sc-line);
+  background: var(--sc-surface);
+}
+
+#stadtnetzcrm-root .sc-tab {
+  min-height: 35px;
+  padding: 7px 3px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--sc-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-tab:hover {
+  color: var(--sc-blue);
+}
+
+#stadtnetzcrm-root .sc-tab.is-active {
+  border-bottom-color: var(--sc-blue);
+  color: var(--sc-blue);
+}
+
+#stadtnetzcrm-root .sc-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--sc-soft);
+}
+
+#stadtnetzcrm-root .sc-section {
+  margin: 10px;
+  padding: 14px;
+  border: 1px solid var(--sc-line);
+  border-radius: 10px;
+  background: var(--sc-surface);
+}
+
+#stadtnetzcrm-root .sc-section--muted {
+  background: #f9fafc;
+}
+
+#stadtnetzcrm-root .sc-section h2,
+#stadtnetzcrm-root .sc-section h3,
+#stadtnetzcrm-root .sc-section h4,
+#stadtnetzcrm-root .sc-section p {
+  margin-top: 0;
+}
+
+#stadtnetzcrm-root .sc-section h2 {
+  margin-bottom: 7px;
+  font-size: 17px;
+  line-height: 1.32;
+}
+
+#stadtnetzcrm-root .sc-section h3 {
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+#stadtnetzcrm-root .sc-section h4 {
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-section-intro,
+#stadtnetzcrm-root .sc-rule-copy {
+  margin-bottom: 12px;
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-issue-heading h2 {
+  overflow: hidden;
+  margin-top: 3px;
+  text-overflow: ellipsis;
+}
+
+#stadtnetzcrm-root .sc-ticket-key {
+  color: var(--sc-blue);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-badge-row {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+#stadtnetzcrm-root .sc-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e9edf2;
+  color: #44546f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-badge--status.is-open { background: #dbeafe; color: #0747a6; }
+#stadtnetzcrm-root .sc-badge--status.is-progress { background: #e9f2ff; color: #0055cc; }
+#stadtnetzcrm-root .sc-badge--status.is-waiting { background: #fff3cd; color: #7a4a00; }
+#stadtnetzcrm-root .sc-badge--status.is-done { background: #dcfff1; color: #164b35; }
+#stadtnetzcrm-root .sc-badge--priority.is-high { background: #ffebe6; color: #ae2e24; }
+#stadtnetzcrm-root .sc-badge--priority.is-medium { background: #fff7d6; color: #7a4a00; }
+#stadtnetzcrm-root .sc-badge--stale { background: #fff3cd; color: #7a4a00; }
+
+#stadtnetzcrm-root .sc-ticket-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--sc-line);
+  border-radius: 7px;
+  background: var(--sc-line);
+}
+
+#stadtnetzcrm-root .sc-ticket-row {
+  min-width: 0;
+  padding: 8px;
+  background: var(--sc-surface);
+}
+
+#stadtnetzcrm-root .sc-ticket-row span {
+  display: block;
+  overflow: hidden;
+  color: var(--sc-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#stadtnetzcrm-root .sc-ticket-row strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#stadtnetzcrm-root .sc-section-title-row {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#stadtnetzcrm-root .sc-section-title-row h3 {
+  margin-bottom: 0;
+}
+
+#stadtnetzcrm-root .sc-last-info {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 9px 0 0;
+  color: #44546f;
+  font-size: 12px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+#stadtnetzcrm-root .sc-ai-summary {
+  border-color: #9fbcf7;
+  background: linear-gradient(135deg, #f1f6ff 0%, #ffffff 80%);
+}
+
+#stadtnetzcrm-root .sc-ai-message {
+  margin: 10px 0 12px;
+  color: #44546f;
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-ai-result {
+  margin: 10px 0 12px;
+  padding: 10px;
+  border: 1px solid #c7d8f8;
+  border-radius: 7px;
+  background: #fff;
+  color: #172b4d;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#stadtnetzcrm-root .sc-primary-button:disabled {
+  cursor: progress;
+  border-color: #9fbcf7;
+  background: #9fbcf7;
+}
+
+#stadtnetzcrm-root .sc-check-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#stadtnetzcrm-root .sc-check {
+  display: grid;
+  grid-template-columns: 17px 1fr;
+  gap: 6px;
+  align-items: start;
+  color: #44546f;
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-check > span:first-child {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e9edf2;
+  color: #44546f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+#stadtnetzcrm-root .sc-check--ok > span:first-child { background: #dcfff1; color: var(--sc-success); }
+#stadtnetzcrm-root .sc-check--warning > span:first-child { background: #fff3cd; color: var(--sc-warning); }
+#stadtnetzcrm-root .sc-check--blocker > span:first-child { background: #ffebe6; color: var(--sc-danger); }
+
+#stadtnetzcrm-root .sc-empty-state {
+  margin: 0;
+  color: var(--sc-success);
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-template-list,
+#stadtnetzcrm-root .sc-objection-list,
+#stadtnetzcrm-root .sc-email-template-list {
+  display: grid;
+  gap: 8px;
+}
+
+#stadtnetzcrm-root .sc-template-card,
+#stadtnetzcrm-root .sc-objection-card {
+  padding: 10px;
+  border: 1px solid var(--sc-line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+#stadtnetzcrm-root .sc-template-card h3,
+#stadtnetzcrm-root .sc-objection-card h4 {
+  margin-bottom: 4px;
+}
+
+#stadtnetzcrm-root .sc-template-card p,
+#stadtnetzcrm-root .sc-objection-card p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-bottom: 9px;
+  color: var(--sc-muted);
+  font-size: 11px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+#stadtnetzcrm-root .sc-primary-button,
+#stadtnetzcrm-root .sc-secondary-button {
+  min-height: 32px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-primary-button {
+  padding: 7px 10px;
+  border: 1px solid var(--sc-blue);
+  background: var(--sc-blue);
+  color: #fff;
+}
+
+#stadtnetzcrm-root .sc-primary-button:hover {
+  border-color: var(--sc-blue-dark);
+  background: var(--sc-blue-dark);
+}
+
+#stadtnetzcrm-root .sc-secondary-button {
+  padding: 6px 9px;
+  border: 1px solid #b6c2cf;
+  background: #fff;
+  color: #172b4d;
+}
+
+#stadtnetzcrm-root .sc-secondary-button:hover {
+  border-color: var(--sc-blue);
+  color: var(--sc-blue);
+}
+
+#stadtnetzcrm-root .sc-secondary-button.is-active {
+  border-color: var(--sc-blue);
+  background: var(--sc-blue);
+  color: #fff;
+}
+
+#stadtnetzcrm-root .sc-theme-presets {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--sc-line);
+  border-radius: 7px;
+  background: var(--sc-soft);
+}
+
+#stadtnetzcrm-root .sc-theme-preset {
+  padding: 5px 11px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--sc-muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#stadtnetzcrm-root .sc-theme-preset:hover { color: var(--sc-ink); }
+
+#stadtnetzcrm-root .sc-theme-preset:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Statuszeile der CRM-Farbübernahme (opt-in, siehe src/theme.js). */
+#stadtnetzcrm-root .sc-theme-sync {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 6px 0 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--sc-line);
+  border-radius: 7px;
+  background: var(--sc-soft);
+}
+
+#stadtnetzcrm-root .sc-theme-sync-status {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--sc-muted);
+}
+
+#stadtnetzcrm-root .sc-theme-colors input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#stadtnetzcrm-root .sc-theme-preset.is-active {
+  background: var(--sc-surface);
+  color: var(--sc-blue);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+#stadtnetzcrm-root .sc-theme-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+#stadtnetzcrm-root .sc-theme-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 4px;
+  border: 1px solid var(--sc-line);
+  border-radius: 999px;
+  background: var(--sc-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sc-muted);
+  cursor: pointer;
+}
+
+#stadtnetzcrm-root .sc-theme-swatch:hover { color: var(--sc-ink); }
+
+#stadtnetzcrm-root .sc-theme-swatch input[type="color"] {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+#stadtnetzcrm-root .sc-theme-swatch input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+#stadtnetzcrm-root .sc-theme-swatch input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
+
+/* Widget-Anpassung (Phase 3) ------------------------------------------------ */
+#stadtnetzcrm-root .sc-widget-editor {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--sc-blue);
+  border-radius: 8px;
+  background: var(--sc-soft);
+}
+
+#stadtnetzcrm-root .sc-widget-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--sc-muted);
+}
+
+#stadtnetzcrm-root .sc-widget-hidden-tray {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+#stadtnetzcrm-root .sc-widget-readd {
+  padding: 4px 9px;
+  border: 1px solid var(--sc-line);
+  border-radius: 999px;
+  background: var(--sc-surface);
+  color: var(--sc-blue);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#stadtnetzcrm-root .sc-widget-readd:hover { border-color: var(--sc-blue); }
+
+#stadtnetzcrm-root .sc-widget-shell {
+  position: relative;
+  margin-bottom: 10px;
+  border: 1px solid var(--sc-line);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(12, 102, 228, 0.06);
+}
+
+#stadtnetzcrm-root .sc-widget-shell .sc-section { margin-bottom: 0; }
+
+#stadtnetzcrm-root .sc-widget-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  background: var(--sc-soft);
+  border-bottom: 1px solid var(--sc-line);
+}
+
+#stadtnetzcrm-root .sc-widget-name {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--sc-muted);
+}
+
+#stadtnetzcrm-root .sc-widget-tools { display: inline-flex; gap: 4px; }
+
+#stadtnetzcrm-root .sc-widget-tool {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--sc-line);
+  border-radius: 6px;
+  background: var(--sc-surface);
+  color: var(--sc-ink);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#stadtnetzcrm-root .sc-widget-tool:hover { border-color: var(--sc-blue); color: var(--sc-blue); }
+#stadtnetzcrm-root .sc-widget-tool--hide:hover { border-color: var(--sc-danger); color: var(--sc-danger); }
+
+#stadtnetzcrm-root .sc-widget-empty {
+  color: var(--sc-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+#stadtnetzcrm-root .sc-draft-section {
+  border-color: #b6c2cf;
+}
+
+#stadtnetzcrm-root .sc-local-label {
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #e9edf2;
+  color: var(--sc-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-comment-draft {
+  width: 100%;
+  min-height: 155px;
+  margin: 10px 0;
+  padding: 9px;
+  resize: vertical;
+  border: 1px solid #b6c2cf;
+  border-radius: 6px;
+  outline: none;
+  color: var(--sc-ink);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+#stadtnetzcrm-root .sc-comment-draft:focus {
+  border-color: var(--sc-blue);
+  box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.18);
+}
+
+#stadtnetzcrm-root .sc-inline-actions {
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+#stadtnetzcrm-root .sc-quality-results {
+  margin-top: 12px;
+}
+
+#stadtnetzcrm-root .sc-call-list {
+  display: grid;
+  gap: 6px;
+}
+
+/* Call-Typ-Badge (Churn/Welcome) über dem Leitfaden */
+#stadtnetzcrm-root .sc-calltype {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+#stadtnetzcrm-root .sc-calltype-switch {
+  display: inline-flex;
+  border: 1px solid var(--sc-line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+#stadtnetzcrm-root .sc-calltype-toggle {
+  padding: 4px 12px;
+  border: 0;
+  background: #fff;
+  color: #44546f;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#stadtnetzcrm-root .sc-calltype-toggle.is-active {
+  background: var(--sc-blue);
+  color: #fff;
+}
+#stadtnetzcrm-root .sc-calltype-source {
+  color: #44546f;
+  font-size: 11px;
+}
+/* Restzeit der laufenden Schicht — dieselbe Quelle wie das CRM-Dashboard
+   (shift-time.js), damit beide denselben Feierabend anzeigen. */
+#stadtnetzcrm-root .sc-shift-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+}
+#stadtnetzcrm-root .sc-shift-clock-track {
+  position: relative;
+  width: 54px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--sc-line);
+  overflow: hidden;
+}
+#stadtnetzcrm-root .sc-shift-clock-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--sc-blue);
+}
+#stadtnetzcrm-root .sc-shift-clock-text {
+  color: #44546f;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+#stadtnetzcrm-root .sc-checklist-progress {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sc-blue);
+}
+#stadtnetzcrm-root .sc-checklist-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 7px;
+  border: 1.5px solid var(--sc-line);
+  border-radius: 4px;
+  background: #fff;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  vertical-align: middle;
+}
+#stadtnetzcrm-root .sc-checklist-box.is-checked {
+  background: #34c759;
+  border-color: #34c759;
+}
+#stadtnetzcrm-root .sc-call-phase.is-done summary {
+  color: #6b7a90;
+  text-decoration: line-through;
+}
+
+#stadtnetzcrm-root .sc-call-phase {
+  border: 1px solid var(--sc-line);
+  border-radius: 7px;
+  background: #fff;
+}
+
+#stadtnetzcrm-root .sc-call-phase summary {
+  padding: 9px 10px;
+  color: var(--sc-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-call-phase p {
+  margin: 0 10px 8px;
+  color: #44546f;
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-text-button {
+  margin: 0 10px 9px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--sc-blue);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-text-button:hover {
+  text-decoration: underline;
+}
+
+#stadtnetzcrm-root .sc-text-button--danger {
+  color: var(--sc-danger);
+}
+
+#stadtnetzcrm-root .sc-email-section {
+  margin-top: 14px;
+}
+
+#stadtnetzcrm-root .sc-email-template-list {
+  margin-bottom: 11px;
+}
+
+#stadtnetzcrm-root .sc-email-template-card {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--sc-line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+#stadtnetzcrm-root .sc-email-template-card h4,
+#stadtnetzcrm-root .sc-email-template-card p {
+  margin: 0;
+}
+
+#stadtnetzcrm-root .sc-email-template-card h4 {
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-email-template-card p {
+  overflow: hidden;
+  color: var(--sc-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#stadtnetzcrm-root .sc-email-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 7px;
+}
+
+#stadtnetzcrm-root .sc-email-template-actions .sc-text-button {
+  margin: 0;
+}
+
+#stadtnetzcrm-root .sc-email-editor {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 11px;
+  border: 1px solid #9fbcf7;
+  border-radius: 8px;
+  background: #f7faff;
+}
+
+#stadtnetzcrm-root .sc-email-editor h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+#stadtnetzcrm-root .sc-input-label {
+  display: grid;
+  gap: 4px;
+  color: var(--sc-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-text-input {
+  width: 100%;
+  min-height: 32px;
+  padding: 7px 8px;
+  border: 1px solid #b6c2cf;
+  border-radius: 6px;
+  outline: none;
+  background: #fff;
+  color: var(--sc-ink);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+#stadtnetzcrm-root .sc-check-label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  color: var(--sc-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-check-label input {
+  margin-top: 2px;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--sc-blue);
+}
+
+#stadtnetzcrm-root .sc-check-label small {
+  display: block;
+  margin-top: 2px;
+  color: var(--sc-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+#stadtnetzcrm-root .sc-text-input:focus {
+  border-color: var(--sc-blue);
+  box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.18);
+}
+
+#stadtnetzcrm-root .sc-email-body {
+  min-height: 185px;
+  margin: 0;
+  background: #fff;
+}
+
+#stadtnetzcrm-root .sc-placeholder-help {
+  margin: 0;
+  color: var(--sc-muted);
+  font-size: 10px;
+}
+
+#stadtnetzcrm-root .sc-placeholder-help code {
+  color: #0055cc;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
+/* Schnellregel-Block innerhalb der "Nächster Schritt"-Karte. */
+#stadtnetzcrm-root .sc-quickrule {
+  margin-bottom: 4px;
+  padding: 9px 11px;
+  border: 1px solid #9fbcf7;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #eaf2ff 0%, #ffffff 74%);
+}
+
+#stadtnetzcrm-root .sc-quickrule p {
+  margin: 3px 0 6px;
+  color: #44546f;
+  font-size: 12px;
+}
+
+/* Die frühere Fußzeile („verarbeitet alles lokal") ist entfallen: sie stand in
+   jedem Bildschirmfoto, kostete dauerhaft Höhe und sagte nichts, was man
+   während eines Gesprächs braucht. Die Aussage steht jetzt dort, wo man sie
+   sucht – im Einstellungs-Abschnitt „Daten & Datenschutz". */
+
+#stadtnetzcrm-root .sc-toast {
+  position: absolute;
+  right: 12px;
+  bottom: 14px;
+  max-width: 300px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #172b4d;
+  color: #fff;
+  font-size: 11px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+#stadtnetzcrm-root .sc-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#stadtnetzcrm-root .sc-launcher {
+  position: fixed;
+  z-index: 10000;
+  right: 16px;
+  bottom: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 13px;
+  border: 1px solid #0055cc;
+  border-radius: 999px;
+  background: var(--sc-blue);
+  box-shadow: 0 5px 16px rgba(9, 30, 66, 0.3);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  transform: translateY(0);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+#stadtnetzcrm-root .sc-launcher span:first-child {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--sc-blue);
+  font-size: 9px;
+}
+
+#stadtnetzcrm-root .sc-launcher:hover {
+  background: var(--sc-blue-dark);
+  transform: translateY(-1px);
+}
+
+#stadtnetzcrm-root .sc-launcher.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+}
+
+/* --- KI: Banner ---------------------------------------------------------- */
+#stadtnetzcrm-root .sc-ai-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--sc-line);
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-ai-banner.is-checking {
+  color: var(--sc-muted);
+  background: var(--sc-soft);
+}
+
+#stadtnetzcrm-root .sc-ai-banner.is-download {
+  justify-content: space-between;
+  border-color: #9fbcf7;
+  background: linear-gradient(135deg, #f1f6ff 0%, #ffffff 80%);
+}
+
+#stadtnetzcrm-root .sc-ai-banner.is-download strong {
+  display: block;
+  font-size: 13px;
+}
+
+#stadtnetzcrm-root .sc-ai-banner.is-download p {
+  margin: 3px 0 0;
+  color: var(--sc-muted);
+  font-size: 11px;
+}
+
+#stadtnetzcrm-root .sc-ai-banner.is-download .sc-primary-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+#stadtnetzcrm-root .sc-ai-banner.is-warn {
+  border-color: #f5c26b;
+  background: #fff7e6;
+  color: #7a4a00;
+}
+
+#stadtnetzcrm-root .sc-ai-banner.is-warn > span:first-child {
+  display: grid;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 50%;
+  background: #f5c26b;
+  color: #fff;
+  font-weight: 800;
+}
+
+/* --- KI: Karten & Status ------------------------------------------------- */
+#stadtnetzcrm-root .sc-ai-card {
+  border-color: #cdd9ef;
+  background: linear-gradient(180deg, #fbfdff 0%, #ffffff 60%);
+}
+
+#stadtnetzcrm-root .sc-inline-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 12px;
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #c7d8f8;
+  border-top-color: var(--sc-blue);
+  border-radius: 50%;
+  animation: sc-spin 0.7s linear infinite;
+}
+
+@keyframes sc-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --- KI: Triage ---------------------------------------------------------- */
+#stadtnetzcrm-root .sc-triage-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+
+#stadtnetzcrm-root .sc-triage-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #e9edf2;
+  color: #44546f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-triage-chip.is-good { background: #dcfff1; color: #164b35; }
+#stadtnetzcrm-root .sc-triage-chip.is-mid { background: #fff3cd; color: #7a4a00; }
+#stadtnetzcrm-root .sc-triage-chip.is-bad { background: #ffebe6; color: #ae2e24; }
+
+#stadtnetzcrm-root .sc-triage-line {
+  margin: 0 0 6px;
+  color: #44546f;
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-triage-line strong {
+  color: var(--sc-ink);
+}
+
+/* --- Chips (Intents & Ton) ---------------------------------------------- */
+#stadtnetzcrm-root .sc-chip-row,
+#stadtnetzcrm-root .sc-tone-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+
+#stadtnetzcrm-root .sc-chip {
+  padding: 5px 10px;
+  border: 1px solid var(--sc-line);
+  border-radius: 999px;
+  background: #fff;
+  color: #44546f;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-chip:hover {
+  border-color: var(--sc-blue);
+  color: var(--sc-blue);
+}
+
+#stadtnetzcrm-root .sc-chip.is-active {
+  border-color: var(--sc-blue);
+  background: #e9f2ff;
+  color: var(--sc-blue-dark);
+}
+
+#stadtnetzcrm-root .sc-note-input {
+  min-height: 92px;
+}
+
+/* --- Entwurf-Werkzeugleiste --------------------------------------------- */
+#stadtnetzcrm-root .sc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+#stadtnetzcrm-root .sc-tool-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #b6c2cf;
+  border-radius: 6px;
+  background: #fff;
+  color: #172b4d;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-tool-button:hover:not(:disabled) {
+  border-color: var(--sc-blue);
+  color: var(--sc-blue);
+}
+
+#stadtnetzcrm-root .sc-tool-button.is-primary {
+  margin-left: auto;
+  border-color: var(--sc-blue);
+  background: var(--sc-blue);
+  color: #fff;
+}
+
+#stadtnetzcrm-root .sc-tool-button.is-primary:hover:not(:disabled) {
+  background: var(--sc-blue-dark);
+  color: #fff;
+}
+
+#stadtnetzcrm-root .sc-tool-button:disabled,
+#stadtnetzcrm-root .sc-secondary-button:disabled,
+#stadtnetzcrm-root .sc-primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* --- KI-Review ----------------------------------------------------------- */
+#stadtnetzcrm-root .sc-review-improved {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--sc-line);
+}
+
+#stadtnetzcrm-root .sc-review-improved h4 {
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-empty-state--ok {
+  color: var(--sc-success);
+}
+
+/* --- Eskalation ---------------------------------------------------------- */
+#stadtnetzcrm-root .sc-escalation {
+  border-color: #f2a99e;
+  background: linear-gradient(135deg, #fff2ef 0%, #ffffff 80%);
+}
+
+#stadtnetzcrm-root .sc-escalation-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+#stadtnetzcrm-root .sc-escalation-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--sc-danger);
+  color: #fff;
+  font-weight: 800;
+}
+
+#stadtnetzcrm-root .sc-escalation-head strong {
+  display: block;
+  color: var(--sc-danger);
+  font-size: 13px;
+}
+
+#stadtnetzcrm-root .sc-escalation-head p {
+  margin: 3px 0 0;
+  color: #44546f;
+  font-size: 12px;
+}
+
+/* --- Sprachauswahl & kleine Chips --------------------------------------- */
+#stadtnetzcrm-root .sc-lang-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+#stadtnetzcrm-root .sc-lang-label {
+  margin-right: 2px;
+  color: var(--sc-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-chip--sm {
+  padding: 3px 9px;
+  font-size: 11px;
+}
+
+#stadtnetzcrm-root .sc-icon-button.is-active {
+  background: #e9f2ff;
+  color: var(--sc-blue);
+}
+
+/* --- Dark Mode ----------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  #stadtnetzcrm-root {
+    --sc-ink: #e6edf3;
+    --sc-muted: #9aa7b8;
+    --sc-line: #2d333b;
+    --sc-surface: #1c2128;
+    --sc-soft: #14181d;
+    --sc-blue: #4c9aff;
+    --sc-blue-dark: #77b0ff;
+    --sc-success: #7ee2b8;
+    --sc-warning: #f5c26b;
+    --sc-danger: #ff9c8f;
+    --sc-amber: #f0b357;
+    --sc-amber-soft: #2a2116;
+  }
+
+  #stadtnetzcrm-root .sc-panel-header {
+    background: var(--sc-surface);
+  }
+
+  #stadtnetzcrm-root .sc-section--muted { background: #20262e; }
+
+  #stadtnetzcrm-root .sc-ai-result,
+  #stadtnetzcrm-root .sc-comment-draft,
+  #stadtnetzcrm-root .sc-text-input,
+  #stadtnetzcrm-root .sc-email-body {
+    border-color: var(--sc-line);
+    background: #14181d;
+    color: var(--sc-ink);
+  }
+
+  #stadtnetzcrm-root .sc-ai-card {
+    border-color: #2c3a54;
+    background: linear-gradient(180deg, #1b222c 0%, #1c2128 60%);
+  }
+
+  #stadtnetzcrm-root .sc-ai-banner.is-checking { background: var(--sc-soft); }
+  #stadtnetzcrm-root .sc-ai-banner.is-download {
+    border-color: #2c4a7a;
+    background: linear-gradient(135deg, #16202f 0%, #1c2128 80%);
+  }
+  #stadtnetzcrm-root .sc-ai-banner.is-warn {
+    border-color: #6b551f;
+    background: #332a12;
+    color: #f5c26b;
+  }
+
+  #stadtnetzcrm-root .sc-badge,
+  #stadtnetzcrm-root .sc-triage-chip,
+  #stadtnetzcrm-root .sc-check > span:first-child,
+  #stadtnetzcrm-root .sc-local-label {
+    background: #2d333b;
+    color: #cbd5e1;
+  }
+
+  #stadtnetzcrm-root .sc-secondary-button,
+  #stadtnetzcrm-root .sc-tool-button,
+  #stadtnetzcrm-root .sc-chip {
+    border-color: #3a424c;
+    background: #232a33;
+    color: var(--sc-ink);
+  }
+
+  #stadtnetzcrm-root .sc-chip.is-active {
+    border-color: var(--sc-blue);
+    background: #17263d;
+    color: var(--sc-blue-dark);
+  }
+
+  #stadtnetzcrm-root .sc-icon-button.is-active { background: #17263d; }
+
+  #stadtnetzcrm-root .sc-quickrule {
+    border-color: #2c4a7a;
+    background: linear-gradient(135deg, #16202f 0%, #1c2128 74%);
+  }
+
+  #stadtnetzcrm-root .sc-escalation {
+    border-color: #7a3b33;
+    background: linear-gradient(135deg, #2c1a16 0%, #1c2128 80%);
+  }
+  #stadtnetzcrm-root .sc-call-banner {
+    background: linear-gradient(135deg, #123528 0%, #1c2128 85%);
+  }
+  #stadtnetzcrm-root .sc-call-banner.is-mismatch {
+    background: linear-gradient(135deg, #2c1a16 0%, #1c2128 85%);
+  }
+
+  #stadtnetzcrm-root .sc-cockpit-header {
+    background: linear-gradient(135deg, #123528 0%, #1c2128 90%);
+  }
+  #stadtnetzcrm-root .sc-cockpit.is-ringing .sc-cockpit-header {
+    background: linear-gradient(135deg, #332a12 0%, #1c2128 90%);
+  }
+  #stadtnetzcrm-root .sc-cockpit.is-ended .sc-cockpit-header {
+    background: var(--sc-soft);
+  }
+  #stadtnetzcrm-root .sc-cockpit.is-connected { border-color: #2e5c47; }
+  #stadtnetzcrm-root .sc-cockpit.is-ringing { border-color: #6b551f; }
+  #stadtnetzcrm-root .sc-cockpit-mismatch {
+    border-color: #7a3b33;
+    background: #2c1a16;
+  }
+  #stadtnetzcrm-root .sc-queue-chip {
+    border-color: #3a424c;
+    background: #232a33;
+    color: #cbd5e1;
+  }
+  #stadtnetzcrm-root .sc-queue-chip.has-waiting {
+    border-color: #6b551f;
+    background: #332a12;
+    color: #f0cd80;
+  }
+  #stadtnetzcrm-root .sc-cockpit-mini-queue {
+    background: #2d333b;
+    color: #cbd5e1;
+  }
+  #stadtnetzcrm-root .sc-cockpit-mini-queue.has-waiting {
+    background: #3a1f1b;
+    color: #ff9c8f;
+  }
+  #stadtnetzcrm-root .sc-danger-button {
+    border-color: #7a3b33;
+    background: #232a33;
+  }
+  #stadtnetzcrm-root .sc-escalation-head p,
+  #stadtnetzcrm-root .sc-quickrule p,
+  #stadtnetzcrm-root .sc-triage-line,
+  #stadtnetzcrm-root .sc-check,
+  #stadtnetzcrm-root .sc-call-phase p,
+  #stadtnetzcrm-root .sc-ai-message { color: #b6c2d1; }
+
+  #stadtnetzcrm-root .sc-email-editor {
+    border-color: #2c4a7a;
+    background: #16202f;
+  }
+
+  #stadtnetzcrm-root .sc-tabs,
+  #stadtnetzcrm-root .sc-call-phase,
+  #stadtnetzcrm-root .sc-template-card,
+  #stadtnetzcrm-root .sc-objection-card,
+  #stadtnetzcrm-root .sc-email-template-card {
+    background: var(--sc-surface);
+  }
+
+  #stadtnetzcrm-root .sc-badge--status.is-open { background: #16324f; color: #9dc3ff; }
+  #stadtnetzcrm-root .sc-badge--status.is-progress { background: #16324f; color: #9dc3ff; }
+  #stadtnetzcrm-root .sc-badge--status.is-waiting { background: #3a2f12; color: #f0cd80; }
+  #stadtnetzcrm-root .sc-badge--status.is-done { background: #123528; color: #7ee2b8; }
+  #stadtnetzcrm-root .sc-badge--priority.is-high { background: #3a1f1b; color: #ff9c8f; }
+  #stadtnetzcrm-root .sc-badge--priority.is-medium { background: #3a2f12; color: #f0cd80; }
+  #stadtnetzcrm-root .sc-badge--stale { background: #3a2f12; color: #f0cd80; }
+
+  #stadtnetzcrm-root .sc-triage-chip.is-good { background: #123528; color: #7ee2b8; }
+  #stadtnetzcrm-root .sc-triage-chip.is-mid { background: #3a2f12; color: #f0cd80; }
+  #stadtnetzcrm-root .sc-triage-chip.is-bad { background: #3a1f1b; color: #ff9c8f; }
+  #stadtnetzcrm-root .sc-check--ok > span:first-child { background: #123528; color: #7ee2b8; }
+  #stadtnetzcrm-root .sc-check--warning > span:first-child { background: #3a2f12; color: #f0cd80; }
+  #stadtnetzcrm-root .sc-check--blocker > span:first-child { background: #3a1f1b; color: #ff9c8f; }
+}
+
+@media (max-width: 700px) {
+  #stadtnetzcrm-root .sc-panel {
+    top: 54px;
+    right: 8px;
+    bottom: 8px;
+    max-width: calc(100vw - 16px);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Outbound-Modus: Richtungsschalter, Gesprächsvorbereitung, Ergebnis-Erfassung
+   und Rückrufliste. Farben laufen über die Variablen oben, damit heller und
+   dunkler Modus ohne Doppelpflege funktionieren.
+   --------------------------------------------------------------------------- */
+
+#stadtnetzcrm-root .sc-mode-switch {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px 0;
+}
+
+#stadtnetzcrm-root .sc-mode-switch button {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--sc-line);
+  border-radius: 8px;
+  background: var(--sc-soft);
+  color: var(--sc-muted);
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+#stadtnetzcrm-root .sc-mode-switch button:hover {
+  border-color: var(--sc-blue);
+  color: var(--sc-ink);
+}
+
+#stadtnetzcrm-root .sc-mode-switch button.is-active {
+  border-color: var(--sc-blue);
+  background: var(--sc-blue);
+  color: #ffffff;
+}
+
+#stadtnetzcrm-root .sc-mode-switch button[data-mode="outbound"].is-active {
+  border-color: var(--sc-amber);
+  background: var(--sc-amber);
+}
+
+#stadtnetzcrm-root .sc-active-call {
+  border-left: 3px solid var(--sc-success);
+}
+
+#stadtnetzcrm-root .sc-active-call.is-outbound,
+#stadtnetzcrm-root .sc-active-call.is-ringing {
+  border-left-color: var(--sc-amber);
+}
+
+#stadtnetzcrm-root .sc-active-call.is-ended {
+  border-left-color: var(--sc-line);
+}
+
+#stadtnetzcrm-root .sc-input-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--sc-muted);
+  font-size: 11px;
+  /* Zurücksetzen: steht der Hinweis in einem .sc-input-label, erbt er sonst
+     dessen fette Beschriftungsschrift und liest sich wie eine zweite
+     Überschrift statt wie eine Erläuterung. */
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+#stadtnetzcrm-root .sc-input-hint code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--sc-soft);
+  font-size: 10px;
+}
+
+/* --- Kunde & Vorgeschichte (Vorbereitungs-Tab) ---
+ *
+ * Durchweg über die Farbrollen (--sc-*) formuliert, nicht über feste Werte:
+ * dasselbe Markup wird im Jira-Panel, im Schreibtisch-Overlay (hud.css setzt
+ * nur die Rollen um) und unter einem eigenen Theme gezeichnet. */
+
+#stadtnetzcrm-root .sc-prepcust-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+#stadtnetzcrm-root .sc-prepcust-head strong {
+  font-size: 14px;
+}
+
+#stadtnetzcrm-root .sc-prepcust-phone {
+  color: var(--sc-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+#stadtnetzcrm-root .sc-prepcust-counts,
+#stadtnetzcrm-root .sc-prepcust-dates {
+  margin: 3px 0 0;
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-prepcust-block {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--sc-line);
+}
+
+#stadtnetzcrm-root .sc-prepcust-calls {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+#stadtnetzcrm-root .sc-prepcust-call {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-prepcust-call-when {
+  color: var(--sc-ink);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-prepcust-call-meta {
+  color: var(--sc-muted);
+}
+
+/* Der offene Rückruf steht ganz oben und ist die einzige Zeile im Widget, die
+   den Bearbeiter zu einer Entscheidung zwingt (jetzt anrufen oder nicht) —
+   deshalb als einziges Element im Outbound-Akzent statt in Grautönen. */
+#stadtnetzcrm-root .sc-prepcust-callback {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--sc-muted);
+  border-radius: 0 6px 6px 0;
+  background: var(--sc-soft);
+}
+
+#stadtnetzcrm-root .sc-prepcust-callback.is-due {
+  border-left-color: var(--sc-amber);
+  background: var(--sc-amber-soft);
+}
+
+#stadtnetzcrm-root .sc-prepcust-callback strong {
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-prepcust-callback p {
+  margin: 2px 0 0;
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+
+/* Anruftyp, für den die Vorbereitung geschrieben wurde. Bewusst im Akzent und
+   nicht als weiteres graues Etikett: neben „lokale KI" wäre er sonst nicht als
+   die inhaltlich entscheidende Angabe erkennbar. */
+#stadtnetzcrm-root .sc-prep-type {
+  padding: 2px 6px;
+  border: 1px solid var(--sc-amber);
+  border-radius: 3px;
+  color: var(--sc-amber);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* --- Gesprächsvorbereitung --- */
+
+#stadtnetzcrm-root .sc-prep-goal {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--sc-amber);
+  border-radius: 0 6px 6px 0;
+  background: var(--sc-amber-soft);
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-prep-goal span {
+  display: block;
+  color: var(--sc-amber);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#stadtnetzcrm-root .sc-prep-block {
+  margin-bottom: 10px;
+}
+
+#stadtnetzcrm-root .sc-prep-block h4 {
+  margin: 0 0 4px;
+  color: var(--sc-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#stadtnetzcrm-root .sc-prep-block ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+#stadtnetzcrm-root .sc-prep-block li {
+  margin-bottom: 3px;
+}
+
+#stadtnetzcrm-root .sc-prep-objection {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--sc-line);
+  border-radius: 6px;
+  background: var(--sc-soft);
+}
+
+#stadtnetzcrm-root .sc-prep-objection strong {
+  display: block;
+  font-size: 12px;
+}
+
+#stadtnetzcrm-root .sc-prep-objection p {
+  margin: 2px 0 0;
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+
+/* --- Gesprächsergebnis --- */
+
+#stadtnetzcrm-root .sc-outcome {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--sc-amber);
+  border-radius: 8px;
+  background: var(--sc-amber-soft);
+}
+
+#stadtnetzcrm-root .sc-outcome-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--sc-amber);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+#stadtnetzcrm-root .sc-outcome-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+#stadtnetzcrm-root .sc-outcome-button {
+  padding: 5px 9px;
+  border: 1px solid var(--sc-line);
+  border-radius: 999px;
+  background: var(--sc-surface);
+  color: var(--sc-ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-outcome-button:hover {
+  border-color: var(--sc-amber);
+  color: var(--sc-amber);
+}
+
+/* --- Rückrufliste --- */
+
+#stadtnetzcrm-root .sc-callback-list {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+#stadtnetzcrm-root .sc-callback {
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--sc-line);
+  border-left: 3px solid var(--sc-line);
+  border-radius: 8px;
+  background: var(--sc-surface);
+}
+
+#stadtnetzcrm-root .sc-callback.is-due {
+  border-left-color: var(--sc-amber);
+  background: var(--sc-amber-soft);
+}
+
+#stadtnetzcrm-root .sc-callback-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#stadtnetzcrm-root .sc-callback-main strong {
+  font-size: 13px;
+}
+
+#stadtnetzcrm-root .sc-callback-meta,
+#stadtnetzcrm-root .sc-callback-reason {
+  margin: 2px 0 0;
+  color: var(--sc-muted);
+  font-size: 11px;
+}
+
+#stadtnetzcrm-root .sc-callback-due {
+  flex: 0 0 auto;
+  color: var(--sc-muted);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+#stadtnetzcrm-root .sc-callback.is-due .sc-callback-due {
+  color: var(--sc-amber);
+}
+
+#stadtnetzcrm-root .sc-callback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+#stadtnetzcrm-root .sc-callback-actions .sc-secondary-button {
+  padding: 4px 9px;
+  font-size: 11px;
+}
+
+/* --- Cockpit-Ergänzungen --- */
+
+#stadtnetzcrm-root .sc-cockpit.is-outbound {
+  border-color: var(--sc-amber);
+}
+
+#stadtnetzcrm-root .sc-cockpit-prep {
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  border-left: 3px solid var(--sc-amber);
+  border-radius: 0 6px 6px 0;
+  background: var(--sc-amber-soft);
+}
+
+#stadtnetzcrm-root .sc-cockpit-prep-goal {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-cockpit-prep-goal span {
+  margin-right: 5px;
+  color: var(--sc-amber);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#stadtnetzcrm-root .sc-cockpit-prep ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+}
+
+/* Kundenakte aus dem CRM (Stufe 1, KONZEPT-INTEGRATION.md). */
+#stadtnetzcrm-root .sc-cockpit-akte {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--sc-line);
+  border-radius: 8px;
+  background: var(--sc-soft);
+  font-size: 12.5px;
+}
+
+#stadtnetzcrm-root .sc-cockpit-akte-head {
+  margin-bottom: 4px;
+  color: var(--sc-ink);
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-cockpit-akte-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--sc-muted);
+  font-size: 11.5px;
+}
+
+#stadtnetzcrm-root .sc-cockpit-akte-jira {
+  display: block;
+  margin-top: 6px;
+  color: var(--sc-blue);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+#stadtnetzcrm-root .sc-cockpit-akte-jira:hover { text-decoration: underline; }
+
+#stadtnetzcrm-root .sc-cockpit-akte-loading,
+#stadtnetzcrm-root .sc-cockpit-akte-hint {
+  color: var(--sc-muted);
+}
+
+/* Abschluss-Panel (Stufe 3, KONZEPT-INTEGRATION.md). Chip-Buttons nutzen die
+   bestehende .sc-chip-Klasse (Tonalität/Sprache) wieder, keine neue Variante. */
+#stadtnetzcrm-root .sc-closeout {
+  margin-top: 6px;
+  padding: 10px 11px;
+  border: 1px solid var(--sc-line);
+  border-radius: 8px;
+  background: var(--sc-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#stadtnetzcrm-root .sc-closeout-done {
+  margin-top: 6px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: rgba(52, 199, 89, 0.14);
+  color: var(--sc-success);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+#stadtnetzcrm-root .sc-closeout-title {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--sc-muted);
+}
+
+#stadtnetzcrm-root .sc-closeout-chipgroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+#stadtnetzcrm-root .sc-closeout-product-group {
+  margin-bottom: 5px;
+}
+
+#stadtnetzcrm-root .sc-closeout-product-cat {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--sc-muted);
+}
+
+#stadtnetzcrm-root .sc-closeout-product-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+#stadtnetzcrm-root .sc-closeout-commission {
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: rgba(52, 199, 89, 0.14);
+  color: var(--sc-success);
+  font-size: 12.5px;
+}
+
+#stadtnetzcrm-root .sc-link-button {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--sc-blue);
+  font-size: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+#stadtnetzcrm-root .sc-cockpit-search,
+#stadtnetzcrm-root .sc-cockpit-hint-switch {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px dashed var(--sc-amber);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sc-amber);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+}
+
+#stadtnetzcrm-root .sc-cockpit-search:hover,
+#stadtnetzcrm-root .sc-cockpit-hint-switch:hover {
+  background: var(--sc-amber-soft);
+}
+
+/* ---------------------------------------------------------------------------
+   Befehlspalette (Stufe 4, KONZEPT-INTEGRATION.md) — eigener Root
+   #sc-jira-palette, unabhängig vom Panel #stadtnetzcrm-root (die --sc-*-
+   Variablen sind auf dessen Root skopiert und hier nicht sichtbar, deshalb
+   literale Atlassian-Werte). ⌘K jederzeit auslösbar. Funktionales
+   Grundstyling — Feinschliff später.
+   --------------------------------------------------------------------------- */
+
+#sc-jira-palette,
+#sc-jira-palette * {
+  box-sizing: border-box;
+}
+
+#sc-jira-palette .sc-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10010; /* über dem Panel (10002) */
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgba(9, 30, 66, 0.45);
+  color: #172b4d;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+#sc-jira-palette .sc-palette {
+  display: flex;
+  flex-direction: column;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  max-height: 70vh;
+  overflow: hidden;
+  border: 1px solid #dfe1e6;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 14px 40px rgba(9, 30, 66, 0.35);
+}
+
+#sc-jira-palette .sc-palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #dfe1e6;
+}
+
+#sc-jira-palette .sc-palette-input-row input {
+  flex: 1;
+  padding: 7px 9px;
+  border: 1px solid #dfe1e6;
+  border-radius: 6px;
+  font: inherit;
+  color: inherit;
+}
+#sc-jira-palette .sc-palette-input-row input:focus {
+  outline: none;
+  border-color: #0c66e4;
+}
+
+#sc-jira-palette .sc-palette-close {
+  padding: 3px 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #5e6c84;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+#sc-jira-palette .sc-palette-close:hover { background: #f4f5f7; }
+
+#sc-jira-palette [data-tid="palette-results"] {
+  overflow-y: auto;
+  padding: 6px;
+}
+
+#sc-jira-palette .sc-palette-hint {
+  margin: 0;
+  padding: 10px 6px;
+  color: #5e6c84;
+  font-size: 13px;
+}
+
+#sc-jira-palette .sc-palette-group {
+  padding: 8px 6px 4px;
+  color: #5e6c84;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#sc-jira-palette .sc-palette-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#sc-jira-palette .sc-palette-item:hover,
+#sc-jira-palette .sc-palette-item.is-active { background: #e9f2ff; }
+
+#sc-jira-palette .sc-palette-item-label { font-weight: 700; }
+
+#sc-jira-palette .sc-palette-item-sub {
+  color: #5e6c84;
+  font-size: 13px;
+}
+
+/* ── Netz-Auskunft (aktive Dashboard-Abfrage) ─────────────────────────────── */
+
+#stadtnetzcrm-root .sc-local-label--warn {
+  background: var(--sc-amber-soft);
+  color: var(--sc-amber);
+}
+
+#stadtnetzcrm-root .sc-netzauskunft {
+  border-left: 3px solid var(--sc-amber);
+}
+
+#stadtnetzcrm-root .sc-bridge-banner {
+  margin: 8px 14px 0;
+  padding: 7px 10px;
+  border: 1px solid var(--sc-amber);
+  border-radius: 6px;
+  background: var(--sc-amber-soft);
+  color: var(--sc-amber);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Bestätigung vor jedem aktiven Lauf (kritische Aktion). */
+#stadtnetzcrm-root .sc-lookup-confirm {
+  padding: 10px;
+  border: 1px solid var(--sc-amber);
+  border-radius: 8px;
+  background: var(--sc-amber-soft);
+}
+#stadtnetzcrm-root .sc-lookup-confirm p { margin: 0 0 10px; }
+
+/* Fortschritts-Checkliste. */
+#stadtnetzcrm-root .sc-lookup-steps {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+#stadtnetzcrm-root .sc-lookup-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--sc-muted);
+  font-size: 13px;
+}
+#stadtnetzcrm-root .sc-lookup-steps li.is-active {
+  color: var(--sc-ink);
+  font-weight: 600;
+}
+#stadtnetzcrm-root .sc-lookup-steps li.is-done { color: var(--sc-success); }
+#stadtnetzcrm-root .sc-lookup-step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: inherit;
+}
+
+#stadtnetzcrm-root .sc-lookup-error { color: var(--sc-danger); }
+#stadtnetzcrm-root .sc-lookup-ok { color: var(--sc-success); }
+
+#stadtnetzcrm-root .sc-lookup-card {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--sc-line);
+  border-radius: 8px;
+  background: var(--sc-soft);
+}
+#stadtnetzcrm-root .sc-lookup-note {
+  margin: 8px 0;
+  color: var(--sc-ink);
+  font-size: 13px;
+  white-space: pre-line;
+}
+#stadtnetzcrm-root .sc-lookup-contacts { margin-top: 10px; }
+
+#stadtnetzcrm-root .sc-lookup-churn {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+#stadtnetzcrm-root .sc-lookup-churn > li {
+  padding: 8px 0;
+  border-top: 1px solid var(--sc-line);
+}
+#stadtnetzcrm-root .sc-lookup-churn > li:first-child { border-top: none; }
+#stadtnetzcrm-root .sc-lookup-churn-head {
+  color: var(--sc-ink);
+  font-weight: 600;
+}
+#stadtnetzcrm-root .sc-lookup-churn-sub {
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+#stadtnetzcrm-root .sc-lookup-churn-comment {
+  margin-top: 4px;
+  color: var(--sc-ink);
+  font-size: 13px;
+  white-space: pre-line;
+}
+
+/* --- Sprechblase „Auskunft einblenden" -------------------------------------
+ *
+ * Sichtbar nur, solange die Desktop-App läuft. Dann baut sich das Panel in
+ * dieser Seite ab (siehe hud-agent.js) und das Cockpit liegt als Overlay auf
+ * dem Schreibtisch – ausgeblendet wäre es von hier aus sonst nur noch über die
+ * systemweite Tastenkombination erreichbar.
+ *
+ * Steht bewusst außerhalb von #stadtnetzcrm-root: dieses Element gibt es auch
+ * dann, wenn es kein Panel gibt. Alles Erbbare wird deshalb ausgeschrieben,
+ * sonst schlüge Jiras eigenes Schriftbild durch.
+ */
+
+#stadtnetzcrm-hud-launcher {
+  position: fixed;
+  z-index: 10000;
+  right: 16px;
+  bottom: 20px;
+  display: inline-flex;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 10px 11px;
+  border: 1px solid #172b4d;
+  border-radius: 999px;
+  background: #253858;
+  box-shadow: 0 5px 16px rgba(9, 30, 66, 0.3);
+  color: #fff;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  transform: translateY(0);
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+/* Dunkler als der gewohnte blaue Knopf und mit eigenem Zeichen: er führt nicht
+   ins Panel, sondern aus der Seite heraus auf den Schreibtisch. */
+#stadtnetzcrm-hud-launcher > span:first-child {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+#stadtnetzcrm-hud-launcher:hover {
+  background: #344563;
+  transform: translateY(-1px);
+}
+
+#stadtnetzcrm-hud-launcher:focus-visible {
+  outline: 2px solid #0c66e4;
+  outline-offset: 2px;
+}
+
+/* --- Tastenkürzel in den Einstellungen ------------------------------------ */
+
+#stadtnetzcrm-root .sc-hotkey-row {
+  display: grid;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--sc-line);
+  gap: 10px;
+  grid-template-columns: 1fr auto auto;
+}
+
+#stadtnetzcrm-root .sc-hotkey-row:first-of-type { border-top: none; }
+
+#stadtnetzcrm-root .sc-hotkey-text strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#stadtnetzcrm-root .sc-hotkey-text small {
+  display: block;
+  color: var(--sc-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+#stadtnetzcrm-root .sc-hotkey-error { color: var(--sc-danger); }
+
+/* Sieht aus wie eine Taste, ist aber ein Knopf: anklicken und drücken. */
+#stadtnetzcrm-root .sc-hotkey-key {
+  min-width: 74px;
+  padding: 5px 10px;
+  border: 1px solid var(--sc-line);
+  border-radius: 7px;
+  background: var(--sc-soft);
+  color: var(--sc-ink);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: center;
+  white-space: nowrap;
+}
+
+#stadtnetzcrm-root .sc-hotkey-key:hover { border-color: var(--sc-blue); }
+
+#stadtnetzcrm-root .sc-hotkey-key.is-capturing {
+  border-color: var(--sc-blue);
+  background: var(--sc-blue);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Abgeschaltet: sichtbar anders als „belegt", sonst hält man „aus" für eine Taste. */
+#stadtnetzcrm-root .sc-hotkey-key.is-off {
+  border-style: dashed;
+  color: var(--sc-muted);
+  font-weight: 500;
+}
+
+#stadtnetzcrm-root .sc-hotkey-reset {
+  font-size: 13px;
+  line-height: 1;
+}
+
+#stadtnetzcrm-root .sc-hotkey-reset:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+/* Abschluss-Check der Kampagne (Migration 029, Leitfäden v2.0). Optisch vom
+   restlichen Abschluss abgesetzt, weil er eine andere Frage beantwortet:
+   nicht „was trage ich ins CRM ein", sondern „ist der Vorgang abrechenbar". */
+.sc-wrapup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--sc-border, rgba(9, 30, 66, 0.14));
+  border-radius: 8px;
+  background: var(--sc-surface-2, rgba(9, 30, 66, 0.03));
+}
+.sc-wrapup-field { display: flex; flex-direction: column; gap: 5px; }
+.sc-wrapup-status {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.sc-wrapup-status.is-ok { background: rgba(34, 168, 89, 0.14); }
+.sc-wrapup-status.is-open { background: rgba(255, 149, 0, 0.16); }

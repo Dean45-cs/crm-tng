@@ -94,6 +94,23 @@ describe('incentiveStandings', () => {
     expect(standings[0].rank).toBe(1);
     expect(standings[1].rank).toBe(2);
   });
+
+  it('lässt gesperrte Konten aus dem Teilnehmerfeld heraus', () => {
+    const users: Record<string, AuthUser> = {
+      a: user('a', 'Anna'),
+      b: user('b', 'Ben'),
+      z: { ...user('z', 'Alt-Zugang'), isActive: false },
+    };
+    const contracts = [
+      makeContract({ createdBy: 'a', contractDate: today(), products: ['Fibrefamily'] }), // 50
+      // Der gesperrte Zugang hätte mit 80 sonst Platz 1 belegt.
+      makeContract({ createdBy: 'z', contractDate: today(), products: ['Fibrepro'] }),
+    ];
+    const standings = incentiveStandings(baseIncentive, users, contracts, [], testSettings);
+    expect(standings.map((s) => s.key)).toEqual(['a', 'b']);
+    expect(standings).toHaveLength(2);
+    expect(standings[0].rank).toBe(1);
+  });
 });
 
 describe('incentiveReached', () => {

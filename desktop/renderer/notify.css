@@ -1,0 +1,189 @@
+/* Aussehen der Mitteilungen.
+ *
+ * Vorbild ist das Banner der Mitteilungszentrale: eine Materialfläche mit
+ * kräftiger Rundung, links das App-Symbol, daneben fetter Titel und zwei
+ * Zeilen Text, rechts oben die Zeit, beim Überfahren ein Schließen-Kreis in
+ * der oberen linken Ecke.
+ *
+ * Weil das hier HTML ist und keine System-Meldung, sieht es unter Windows
+ * genauso aus wie auf dem Mac — das war der Zweck der Übung (siehe
+ * main/notifications.js).
+ *
+ * Dasselbe Material wie die Mitteilung IM CRM (.push-banner in src/index.css):
+ * milchig helles Glas, flaches Markenblau am Symbol, dieselbe Rundung, dieselbe
+ * Ein-/Ausblendung. Der Grundsatz aus hud.css gilt auch hier — die Auskunft und
+ * alles, was sie einblendet, soll aussehen wie das CRM und nicht wie ein
+ * zweites Programm. (Bis hierher war das Banner dunkles Glas; das war stimmig,
+ * solange auch das Panel dunkel war.)
+ */
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  /* Dieselbe Schrift wie Panel und CRM; die Dateien liegen neben dieser hier
+     (siehe @font-face in hud.css — dieses Fenster lädt hud.css nicht mit). */
+  font-family: "Inter Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-optical-sizing: auto;
+  font-feature-settings: "cv11", "ss01", "kern" on;
+  color: #1d1d1f;
+  -webkit-font-smoothing: antialiased;
+  /* Der Bereich zwischen den Bannern ist Schreibtisch, kein Fenster: Klicks
+     dort gehören dem, was darunter liegt. Die Banner holen sich die Zeiger-
+     Ereignisse einzeln zurück. */
+  cursor: default;
+  user-select: none;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 1px;
+}
+
+.banner {
+  position: relative;
+  border-radius: 17px;
+  /* Etwas deckender als im CRM (dort 0.76): dort liegt das Banner über der
+     eigenen App-Fläche, hier über einem beliebigen fremden Fenster. */
+  background: rgba(250, 250, 252, 0.86);
+  /* Unschärfe plus Sättigung: ohne saturate() wirkt die Fläche grau statt
+     milchig — derselbe Kniff wie im Web-Banner. */
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 12px 34px rgba(0, 0, 0, 0.16),
+    0 3px 10px rgba(0, 0, 0, 0.08),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.7);
+  color: #1d1d1f;
+  animation: banner-in 0.42s cubic-bezier(0.3, 0.7, 0.35, 1) both;
+}
+
+@keyframes banner-in {
+  from { opacity: 0; transform: translateX(24px) scale(0.96); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+.banner.is-leaving {
+  animation: banner-out 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes banner-out {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to   { opacity: 0; transform: translateX(20px) scale(0.97); }
+}
+
+.banner-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 13px 14px;
+  background: none;
+  border: none;
+  border-radius: inherit;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.banner-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  /* Flach statt Verlauf – das CRM hat die Deko-Verläufe abgelegt. */
+  background: #0066b3;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.banner-icon svg { display: block; }
+
+/* Der Farbton sitzt am Symbol, nicht auf der Fläche — sonst wird aus einer
+   Mitteilung ein Warnschild. */
+.banner.tone-success .banner-icon { background: #34c759; }
+.banner.tone-warn .banner-icon { background: #ff9500; }
+.banner.tone-danger .banner-icon { background: #ff3b30; }
+
+.banner-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.banner-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.banner-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.banner-time {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: #8e8e93;
+}
+
+.banner-msg {
+  font-size: 13px;
+  line-height: 1.4;
+  color: #5e5e63;
+  /* Zwei Zeilen wie im Original; alles Weitere steht im Postfach im CRM. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Schließen sitzt in der oberen linken Ecke und erscheint erst beim
+   Überfahren — im Ruhezustand zeigt das Banner nichts als seinen Inhalt. */
+.banner-close {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 0.5px solid rgba(0, 0, 0, 0.1);
+  background: rgba(252, 252, 254, 0.98);
+  color: #5e5e63;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+.banner:hover .banner-close,
+.banner-close:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner,
+  .banner.is-leaving { animation: none; }
+}

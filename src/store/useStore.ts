@@ -7,13 +7,19 @@ import type {
   ProductInfo,
   ProductType,
   TariffCommissionMatrix,
+  Customer,
   CustomerOwnership,
   Incentive,
   Lead,
   LeadActivity,
   CustomerAccessRequest,
+  Campaign,
+  CampaignCallType,
+  AgentCompetency,
+  CompetencyLevel,
 } from '../types';
 import { useAuth } from './useAuth';
+import { useCalls } from './useCalls';
 import { toast } from './useToast';
 import { getSupabase } from '../lib/supabase';
 import { logAudit } from '../lib/audit';
@@ -40,6 +46,11 @@ import {
   insertIncentive,
   updateIncentiveRow,
   deleteIncentiveRow,
+  fetchCampaigns,
+  fetchCompetencies,
+  setCompetency as apiSetCompetency,
+  insertCampaign,
+  updateCampaignRow,
   fetchLeads,
   insertLead,
   updateLeadRow,
@@ -51,6 +62,7 @@ import {
   fetchAccessRequests,
   insertAccessRequest,
   updateAccessRequestStatus,
+  fetchCustomers,
 } from '../lib/supabaseApi';
 
 const currentUserKey = () => useAuth.getState().currentUserKey ?? undefined;
@@ -90,7 +102,9 @@ const DEFAULT_SETTINGS: Settings = {
   products: DEFAULT_PRODUCTS,
   tariffCommission: DEFAULT_TARIFF_COMMISSION,
   monthlyTarget: 500,
-  jiraBaseUrl: 'https://jira.tng.de/browse/',
+  // Muss zur tatsächlich verlinkten Jira-Instanz passen (JiraLink nutzt
+  // diesen Wert; ennit ist der IT-Dienstleister hinter dem TNG-Jira).
+  jiraBaseUrl: 'https://jira.ennit.de/browse/',
   spClientId: '',
   spTenantId: '',
   spFilePath: '',
@@ -101,9 +115,15 @@ interface StoreState {
   contracts: Contract[];
   tariffChanges: TariffChange[];
   notes: Note[];
+  /** Eigenständige Kunden-Entität (Migration 017) – existiert auch ohne Vorgang */
+  customers: Customer[];
   settings: Settings;
   customerOwners: Record<string, CustomerOwnership>;
   incentives: Incentive[];
+  /** Fester Kampagnen-Katalog (Migration 019) — bestimmt in der Extension Skript & Einwandkarten. */
+  campaigns: Campaign[];
+  /** Schulungsstand je Person und Kampagnentyp (Migration 030). */
+  competencies: AgentCompetency[];
   leads: Lead[];
   /** Aktivitäten pro Lead, absteigend nach created_at */
   leadActivities: Record<string, LeadActivity[]>;
@@ -140,10 +160,29 @@ interface StoreState {
   setCustomerOwner: (customerNumber: string, ownerKey: string) => Promise<void>;
   shareCustomer: (customerNumber: string, withUserKey: string) => Promise<void>;
   unshareCustomer: (customerNumber: string, withUserKey: string) => Promise<void>;
+  /**
+   * Besitz an eine andere Person übertragen; die bisherige Besitzer:in bleibt
+   * als geteilte Nutzer:in eingetragen. Ein einzelner Schreibvorgang, damit
+   * RLS (nur aktuelle:r Besitzer:in/Chef:in darf ändern) nicht verletzt wird.
+   */
+  transferCustomer: (customerNumber: string, newOwnerKey: string) => Promise<void>;
 
   addIncentive: (i: Omit<Incentive, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateIncentive: (id: string, i: Partial<Incentive>) => Promise<void>;
   deleteIncentive: (id: string) => Promise<void>;
+
+  addCampaign: (c: Omit<Campaign, 'id' | 'createdAt'>) => Promise<void>;
+  updateCampaign: (id: string, c: Partial<Campaign>) => Promise<void>;
+  /**
+   * Kompetenz setzen oder — mit `level: null` — entfernen (Migration 030).
+   * „Nicht geschult" ist die Abwesenheit einer Zeile, kein eigener Wert.
+   */
+  setCompetency: (
+    userId: string,
+    callType: CampaignCallType,
+    level: CompetencyLevel | null,
+    extra?: { trainedAt?: string; guideVersion?: string; note?: string },
+  ) => Promise<void>;
 
   addLead: (l: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateLead: (id: string, l: Partial<Lead>) => Promise<void>;
@@ -190,8 +229,11 @@ export const useStore = create<StoreState>()((set, get) => ({
   contracts: [],
   tariffChanges: [],
   notes: [],
+  customers: [],
   customerOwners: {},
   incentives: [],
+  campaigns: [],
+  competencies: [],
   leads: [],
   leadActivities: {},
   accessRequests: [],
@@ -201,7 +243,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   loadAll: async () => {
     const uid = useAuth.getState().currentUserKey;
     try {
-      const [contracts, tariffChanges, notes, owners, incentives, leads, activities, accessRequests, settingsRes] = await Promise.all([
+      const [contracts, tariffChanges, notes, owners, incentives, campaigns, competencies, leads, activities, accessRequests, customers, settingsRes] = await Promise.all([
         fetchContracts(),
         fetchTariffChanges(),
         fetchNotes(),
@@ -209,12 +251,18 @@ export const useStore = create<StoreState>()((set, get) => ({
         // Fehlt die Tabelle noch (Migration 003 nicht eingespielt), darf das
         // nicht den ganzen Datenload abbrechen — dann eben keine Incentives.
         fetchIncentives().catch(() => [] as Incentive[]),
+        // Ebenso für Kampagnen (Migration 019).
+        fetchCampaigns().catch(() => [] as Campaign[]),
+        // Ebenso für Kompetenzen (Migration 030).
+        fetchCompetencies().catch(() => [] as AgentCompetency[]),
         // Ebenso für Leads (Migration 005).
         fetchLeads().catch(() => [] as Lead[]),
         // Lead-Aktivitäten (Migration 006).
         fetchLeadActivities().catch(() => [] as LeadActivity[]),
         // Zugriffsanfragen (Migration 013).
         fetchAccessRequests().catch(() => [] as CustomerAccessRequest[]),
+        // Eigenständige Kunden-Entität (Migration 017).
+        fetchCustomers().catch(() => [] as Customer[]),
         uid ? fetchSettings(uid) : Promise.resolve({ user: null, shared: null }),
       ]);
 
@@ -237,6 +285,8 @@ export const useStore = create<StoreState>()((set, get) => ({
               monthlyTarget: settingsRes.user.monthlyTarget,
               spClientId: settingsRes.user.spClientId,
               spTenantId: settingsRes.user.spTenantId,
+              spFilePath: settingsRes.user.spFilePath,
+              spSheetName: settingsRes.user.spSheetName,
             }
           : {}),
       };
@@ -259,8 +309,11 @@ export const useStore = create<StoreState>()((set, get) => ({
         contracts,
         tariffChanges,
         notes,
+        customers,
         customerOwners: owners,
         incentives,
+        campaigns,
+        competencies,
         leads,
         leadActivities,
         accessRequests,
@@ -278,8 +331,11 @@ export const useStore = create<StoreState>()((set, get) => ({
       contracts: [],
       tariffChanges: [],
       notes: [],
+      customers: [],
       customerOwners: {},
       incentives: [],
+      campaigns: [],
+      competencies: [],
       leads: [],
       leadActivities: {},
       accessRequests: [],
@@ -307,6 +363,12 @@ export const useStore = create<StoreState>()((set, get) => ({
     const reloadIncentives = debounce(() => {
       fetchIncentives().then((rows) => set({ incentives: rows })).catch(() => {});
     });
+    const reloadCampaigns = debounce(() => {
+      fetchCampaigns().then((rows) => set({ campaigns: rows })).catch(() => {});
+    });
+    const reloadCompetencies = debounce(() => {
+      fetchCompetencies().then((rows) => set({ competencies: rows })).catch(() => {});
+    });
     const reloadLeads = debounce(() => {
       fetchLeads().then((rows) => set({ leads: rows })).catch(() => {});
     });
@@ -325,6 +387,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     const reloadAccessRequests = debounce(() => {
       fetchAccessRequests().then((rows) => set({ accessRequests: rows })).catch(() => {});
     });
+    const reloadCustomers = debounce(() => {
+      fetchCustomers().then((rows) => set({ customers: rows })).catch(() => {});
+    });
 
     const channel = sb
       .channel('crm-tng-changes')
@@ -333,9 +398,12 @@ export const useStore = create<StoreState>()((set, get) => ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, reloadNotes)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_ownerships' }, reloadOwners)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incentives' }, reloadIncentives)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'campaigns' }, reloadCampaigns)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_competencies' }, reloadCompetencies)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, reloadLeads)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_activities' }, reloadActivities)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_access_requests' }, reloadAccessRequests)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, reloadCustomers)
       .subscribe();
     return () => {
       sb.removeChannel(channel);
@@ -574,13 +642,17 @@ export const useStore = create<StoreState>()((set, get) => ({
 
   shareCustomer: async (kdnr, withUserKey) => {
     const prev = get().customerOwners;
-    const existing = prev[kdnr];
-    if (!existing) return;
-    if (existing.owner === withUserKey) return;
-    if (existing.sharedWith.includes(withUserKey)) return;
+    // Auch implizite Besitzverhältnisse (abgeleitet aus dem ältesten Vorgang)
+    // auflösen und in EINEM Upsert festschreiben — zwei getrennte Writes
+    // („erst Owner anlegen, dann teilen") können sich überholen.
+    const eff = getEffectiveOwnership(kdnr, prev, get().contracts, get().tariffChanges, get().notes);
+    const owner = eff.owner ?? currentUserKey();
+    if (!owner) return;
+    if (owner === withUserKey) return;
+    if (eff.sharedWith.includes(withUserKey)) return;
     const next: CustomerOwnership = {
-      ...existing,
-      sharedWith: [...existing.sharedWith, withUserKey],
+      owner,
+      sharedWith: [...eff.sharedWith.filter((k) => k !== owner), withUserKey],
     };
     set({ customerOwners: { ...prev, [kdnr]: next } });
     try {
@@ -606,6 +678,25 @@ export const useStore = create<StoreState>()((set, get) => ({
       toast.success('Freigabe entfernt.');
     } catch (e) {
       fail('Freigabe konnte nicht entfernt werden.', e);
+      set({ customerOwners: prev });
+    }
+  },
+
+  transferCustomer: async (kdnr, newOwnerKey) => {
+    const prev = get().customerOwners;
+    const eff = getEffectiveOwnership(kdnr, prev, get().contracts, get().tariffChanges, get().notes);
+    const prevOwner = eff.owner ?? currentUserKey();
+    if (!prevOwner || prevOwner === newOwnerKey) return;
+    const sharedWith = Array.from(
+      new Set([...eff.sharedWith, prevOwner]),
+    ).filter((k) => k !== newOwnerKey);
+    const next: CustomerOwnership = { owner: newOwnerKey, sharedWith };
+    set({ customerOwners: { ...prev, [kdnr]: next } });
+    try {
+      await upsertOwnership(kdnr, newOwnerKey, sharedWith);
+      toast.success('Besitz übertragen.');
+    } catch (e) {
+      fail('Besitz konnte nicht übertragen werden.', e);
       set({ customerOwners: prev });
     }
   },
@@ -639,6 +730,58 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (e) {
       fail('Löschen fehlgeschlagen – Incentive wiederhergestellt.', e);
       set({ incentives: prev });
+    }
+  },
+
+  addCampaign: async (c) => {
+    try {
+      const created = await insertCampaign({ ...c, createdBy: c.createdBy ?? currentUserKey() });
+      set((s) => ({ campaigns: [created, ...s.campaigns] }));
+      toast.success('Kampagne erstellt.');
+    } catch (e) {
+      fail('Kampagne konnte nicht erstellt werden.', e);
+    }
+  },
+  updateCampaign: async (id, c) => {
+    const prev = get().campaigns;
+    set({ campaigns: prev.map((x) => (x.id === id ? { ...x, ...c } : x)) });
+    try {
+      await updateCampaignRow(id, c);
+      toast.success('Kampagne aktualisiert.');
+    } catch (e) {
+      fail('Änderung fehlgeschlagen – Kampagne wurde zurückgesetzt.', e);
+      set({ campaigns: prev });
+    }
+  },
+
+  setCompetency: async (userId, callType, level, extra) => {
+    const prev = get().competencies;
+    const others = prev.filter((c) => !(c.userId === userId && c.callType === callType));
+    // Optimistisch: die Matrix in der Team-Verwaltung soll auf den Klick
+    // reagieren, nicht auf die Antwort des Servers.
+    set({
+      competencies:
+        level === null
+          ? others
+          : [
+              ...others,
+              {
+                userId,
+                callType,
+                level,
+                trainedAt: extra?.trainedAt,
+                guideVersion: extra?.guideVersion,
+                note: extra?.note,
+                updatedAt: new Date().toISOString(),
+                updatedBy: currentUserKey(),
+              },
+            ],
+    });
+    try {
+      await apiSetCompetency(userId, callType, level, { ...extra, updatedBy: currentUserKey() });
+    } catch (e) {
+      fail('Kompetenz konnte nicht gespeichert werden.', e);
+      set({ competencies: prev });
     }
   },
 
@@ -813,11 +956,18 @@ export const useStore = create<StoreState>()((set, get) => ({
         contracts: s.contracts.filter((x) => x.customerNumber !== customerNumber),
         tariffChanges: s.tariffChanges.filter((x) => x.customerNumber !== customerNumber),
         notes: s.notes.filter((x) => x.customerNumber !== customerNumber),
+        customers: s.customers.filter((x) => x.customerNumber !== customerNumber),
         customerOwners: Object.fromEntries(
           Object.entries(s.customerOwners).filter(([k]) => k !== customerNumber),
         ),
       }));
-      const total = counts.contracts + counts.tariffChanges + counts.notes;
+      // Anrufe leben in einem eigenen Store (useCalls, hält nur die aktiven
+      // Anrufe) — defensiv mitbereinigen, falls der Kunde ausgerechnet jetzt
+      // einen laufenden Anruf hat.
+      useCalls.setState((s) => ({
+        activeCalls: s.activeCalls.filter((x) => x.customerNumber !== customerNumber),
+      }));
+      const total = counts.contracts + counts.tariffChanges + counts.notes + counts.calls;
       toast.success(`Kunde gelöscht (${total} Einträge entfernt).`);
       logAudit({
         action: 'purge',

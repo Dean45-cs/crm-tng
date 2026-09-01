@@ -6,13 +6,26 @@ import { QuickAddProvider } from './components/QuickAdd';
 import { ToastHost } from './components/ToastHost';
 import { CommandPalette } from './components/CommandPalette';
 import { CustomerSearchBar } from './components/CustomerSearchBar';
+import { StatusBar } from './components/StatusBar';
+import { LiveCallBar } from './components/LiveCallBar';
+import { NotificationBell } from './components/NotificationBell';
+import { PushBannerHost } from './components/PushBanner';
 import { LoginScreen } from './components/LoginScreen';
 import { OnboardingTour } from './components/OnboardingTour';
 import { SupabaseSetup } from './components/SupabaseSetup';
-import { TngMark, TngTile } from './components/TngLogo';
+import { SkeletonPage, SkeletonShell } from './components/Skeleton';
+import { TngMark } from './components/TngLogo';
 import { Router, useRouter, type RouteName } from './router';
 import { useAuth } from './store/useAuth';
+import { useOnboarding, useOnboardingHotkey } from './store/useOnboarding';
 import { useStore } from './store/useStore';
+import { useStatus } from './store/useStatus';
+import { useCalls } from './store/useCalls';
+import { useShifts } from './store/useShifts';
+import { useMonthCalls } from './store/useMonthCalls';
+import { useNotifications } from './store/useNotifications';
+import { useSwaps } from './store/useSwaps';
+import { subscribeAppearance } from './lib/appearanceSync';
 import { isConfigured, onConfigChange } from './lib/supabase';
 
 // Seiten werden bei Bedarf nachgeladen (Code-Splitting). Das hält das
@@ -27,6 +40,7 @@ const Customers = lazy(() => import('./pages/Customers').then((m) => ({ default:
 const CustomerDetail = lazy(() => import('./pages/CustomerDetail').then((m) => ({ default: m.CustomerDetail })));
 const Leaderboard = lazy(() => import('./pages/Leaderboard').then((m) => ({ default: m.Leaderboard })));
 const MonthlyReport = lazy(() => import('./pages/MonthlyReport').then((m) => ({ default: m.MonthlyReport })));
+const Reports = lazy(() => import('./pages/Reports').then((m) => ({ default: m.Reports })));
 const TeamDashboard = lazy(() => import('./pages/TeamDashboard').then((m) => ({ default: m.TeamDashboard })));
 const TeamManagement = lazy(() => import('./pages/TeamManagement').then((m) => ({ default: m.TeamManagement })));
 const TeamReport = lazy(() => import('./pages/TeamReport').then((m) => ({ default: m.TeamReport })));
@@ -35,6 +49,11 @@ const Incentives = lazy(() => import('./pages/Incentives').then((m) => ({ defaul
 const IncentiveManager = lazy(() => import('./pages/IncentiveManager').then((m) => ({ default: m.IncentiveManager })));
 const Leads = lazy(() => import('./pages/Leads').then((m) => ({ default: m.Leads })));
 const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m.AuditLog })));
+const NettoRechner = lazy(() => import('./pages/NettoRechner').then((m) => ({ default: m.NettoRechner })));
+const Schedule = lazy(() => import('./pages/Schedule').then((m) => ({ default: m.Schedule })));
+const CampaignManager = lazy(() => import('./pages/CampaignManager').then((m) => ({ default: m.CampaignManager })));
+const CallWrapups = lazy(() => import('./pages/CallWrapups').then((m) => ({ default: m.CallWrapups })));
+const Postfach = lazy(() => import('./pages/Postfach').then((m) => ({ default: m.Postfach })));
 
 const TITLES: Record<RouteName, string> = {
   dashboard: 'Dashboard',
@@ -46,6 +65,7 @@ const TITLES: Record<RouteName, string> = {
   leaderboard: 'Leaderboard',
   settings: 'Einstellungen',
   report: 'Monatsbericht',
+  reports: 'Berichte',
   teamdashboard: 'Team-Dashboard',
   teammanager: 'Team-Verwaltung',
   teamreport: 'Team-Bericht',
@@ -54,14 +74,57 @@ const TITLES: Record<RouteName, string> = {
   incentivemanager: 'Incentive-Verwaltung',
   leads: 'Leads',
   auditlog: 'Audit-Log',
+  netto: 'Netto-Rechner',
+  schedule: 'Schichtplan',
+  campaignmanager: 'Kampagnen-Verwaltung',
+  postfach: 'Postfach',
+  wrapups: 'Nachbearbeitung',
 };
 
 function PageFallback() {
-  return (
-    <div className="page-fallback">
-      <div className="boot-spinner" />
-    </div>
-  );
+  return <SkeletonPage />;
+}
+
+/**
+ * Lädt alle Seiten-Chunks einmalig im Browser-Leerlauf vor. Seitenwechsel
+ * treffen danach nie mehr aufs Netz — kein Skeleton-Aufblitzen beim ersten
+ * Öffnen einer Seite.
+ */
+let pagesPrefetched = false;
+function prefetchAllPages() {
+  if (pagesPrefetched) return;
+  pagesPrefetched = true;
+  const idle: (cb: () => void) => void =
+    'requestIdleCallback' in window
+      ? (cb) => window.requestIdleCallback(cb, { timeout: 4000 })
+      : (cb) => window.setTimeout(cb, 1500);
+  idle(() => {
+    void Promise.allSettled([
+      import('./pages/Dashboard'),
+      import('./pages/Contracts'),
+      import('./pages/TariffChanges'),
+      import('./pages/Notes'),
+      import('./pages/Settings'),
+      import('./pages/Customers'),
+      import('./pages/CustomerDetail'),
+      import('./pages/Leaderboard'),
+      import('./pages/MonthlyReport'),
+      import('./pages/Reports'),
+      import('./pages/TeamDashboard'),
+      import('./pages/TeamManagement'),
+      import('./pages/TeamReport'),
+      import('./pages/AgentDetail'),
+      import('./pages/Incentives'),
+      import('./pages/IncentiveManager'),
+      import('./pages/Leads'),
+      import('./pages/AuditLog'),
+      import('./pages/NettoRechner'),
+      import('./pages/Schedule'),
+      import('./pages/CampaignManager'),
+      import('./pages/CallWrapups'),
+      import('./pages/Postfach'),
+    ]);
+  });
 }
 
 function Shell() {
@@ -69,14 +132,14 @@ function Shell() {
 
   if (route.name === 'report') {
     return (
-      <Suspense fallback={<LoadingScreen />}>
+      <Suspense fallback={<ReportFallback />}>
         <MonthlyReport />
       </Suspense>
     );
   }
   if (route.name === 'teamreport') {
     return (
-      <Suspense fallback={<LoadingScreen />}>
+      <Suspense fallback={<ReportFallback />}>
         <TeamReport />
       </Suspense>
     );
@@ -99,6 +162,9 @@ function Shell() {
           </div>
           <div className="row" style={{ gap: 14, alignItems: 'center' }}>
             <CustomerSearchBar />
+            <LiveCallBar />
+            <NotificationBell />
+            <StatusBar />
             <span className="muted titlebar-date">
               {new Date().toLocaleDateString('de-DE', {
                 weekday: 'long',
@@ -107,9 +173,6 @@ function Shell() {
                 year: 'numeric',
               })}
             </span>
-            <div className="titlebar-brand" title="TNG Stadtnetz GmbH">
-              <TngMark height={18} color="#0066b3" />
-            </div>
           </div>
         </header>
         <div className="content">
@@ -122,6 +185,7 @@ function Shell() {
               {route.name === 'customers' && <Customers />}
               {route.name === 'customer' && <CustomerDetail kdnr={route.kdnr} />}
               {route.name === 'leaderboard' && <Leaderboard />}
+              {route.name === 'reports' && <Reports />}
               {route.name === 'settings' && <Settings />}
               {route.name === 'teamdashboard' && <TeamDashboard />}
               {route.name === 'teammanager' && <TeamManagement />}
@@ -130,6 +194,11 @@ function Shell() {
               {route.name === 'incentivemanager' && <IncentiveManager />}
               {route.name === 'leads' && <Leads />}
               {route.name === 'auditlog' && <AuditLog />}
+              {route.name === 'netto' && <NettoRechner />}
+              {route.name === 'schedule' && <Schedule />}
+              {route.name === 'campaignmanager' && <CampaignManager />}
+              {route.name === 'wrapups' && <CallWrapups />}
+              {route.name === 'postfach' && <Postfach />}
             </Suspense>
           </div>
         </div>
@@ -138,14 +207,24 @@ function Shell() {
   );
 }
 
-function LoadingScreen({ label = 'Verbinde mit Server …' }: { label?: string }) {
+/** Start-Ansicht: App-Gerüst als Skeleton statt Spinner — wirkt sofort da. */
+function LoadingScreen() {
   return (
-    <div className="boot-screen">
-      <div className="boot-brand">
-        <TngTile size={80} radius={20} />
-      </div>
-      <div className="boot-spinner" />
-      <div className="boot-label">{label}</div>
+    <SkeletonShell
+      brand={
+        <span className="sidebar-brand-mark">
+          <TngMark height={15} color="currentColor" />
+        </span>
+      }
+    />
+  );
+}
+
+/** Fallback für die Druck-/Berichtsansichten (eigenes Layout ohne Sidebar). */
+function ReportFallback() {
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px' }}>
+      <SkeletonPage />
     </div>
   );
 }
@@ -198,7 +277,44 @@ export default function App() {
   const subscribeRealtime = useStore((s) => s.subscribeRealtime);
   const resetStore = useStore((s) => s.reset);
 
+  const loadStatus = useStatus((s) => s.load);
+  const subscribeStatus = useStatus((s) => s.subscribeRealtime);
+  const resetStatus = useStatus((s) => s.reset);
+
+  const loadCalls = useCalls((s) => s.load);
+  const subscribeCalls = useCalls((s) => s.subscribeRealtime);
+  const resetCalls = useCalls((s) => s.reset);
+
+  // Schichten sind wochen-scoped: kein loadAll beim Login, nur die Live-
+  // Subscription. Welche Woche geladen wird, entscheidet die Schichtplan-Seite.
+  const subscribeShifts = useShifts((s) => s.subscribeRealtime);
+  const resetShifts = useShifts((s) => s.reset);
+  const loadShiftContext = useShifts((s) => s.loadContext);
+
+  // Monats-Anrufe (Reporting): beim Login laden + live halten, damit
+  // Dashboard/TeamDashboard/AgentDetail sofort aktuelle Zahlen zeigen.
+  const loadMonthCalls = useMonthCalls((s) => s.load);
+  const subscribeMonthCalls = useMonthCalls((s) => s.subscribeRealtime);
+  const resetMonthCalls = useMonthCalls((s) => s.reset);
+
+  // Postfach: beim Login laden und live halten — die Glocke muss auch dann
+  // zählen, wenn die Postfach-Seite nie geöffnet wird. Offene Tauschanfragen
+  // hängen mit dran, weil die Meldungen dazu Knöpfe tragen.
+  const loadNotifications = useNotifications((s) => s.load);
+  const subscribeNotifications = useNotifications((s) => s.subscribeRealtime);
+  const resetNotifications = useNotifications((s) => s.reset);
+
+  const loadSwaps = useSwaps((s) => s.load);
+  const subscribeSwaps = useSwaps((s) => s.subscribeRealtime);
+  const resetSwaps = useSwaps((s) => s.reset);
+
   const [configured, setConfigured] = useState(isConfigured());
+
+  // Tour-Steuerung: „." + „o" gleichzeitig öffnet die Einführungstour erneut
+  // (aktiv, sobald jemand angemeldet ist und den Datenschutzhinweis bestätigt hat).
+  const tourRequested = useOnboarding((s) => s.open);
+  const signedInUser = currentUserKey ? users[currentUserKey] : null;
+  useOnboardingHotkey(Boolean(configured && signedInUser?.consentGivenAt));
 
   useEffect(() => {
     if (!configured) return;
@@ -209,21 +325,81 @@ export default function App() {
   useEffect(() => {
     if (!configured || !currentUserKey) {
       resetStore();
+      resetStatus();
+      resetCalls();
+      resetShifts();
+      resetMonthCalls();
+      resetNotifications();
+      resetSwaps();
       return;
     }
     loadAll();
+    loadStatus();
+    loadCalls();
+    loadMonthCalls();
+    loadShiftContext(currentUserKey);
+    loadNotifications();
+    loadSwaps();
     const unsub = subscribeRealtime();
-    return () => unsub();
-  }, [configured, currentUserKey, loadAll, subscribeRealtime, resetStore]);
+    const unsubStatus = subscribeStatus();
+    const unsubCalls = subscribeCalls();
+    const unsubShifts = subscribeShifts();
+    const unsubMonthCalls = subscribeMonthCalls();
+    const unsubNotifications = subscribeNotifications();
+    const unsubSwaps = subscribeSwaps();
+    // Optik (Theme/Palette) surface-übergreifend: Pull + Seed + Realtime auf die
+    // eigene user_settings-Zeile. localStorage bleibt der Sofort-Cache.
+    const unsubAppearance = subscribeAppearance(currentUserKey);
+    return () => {
+      unsub();
+      unsubStatus();
+      unsubCalls();
+      unsubShifts();
+      unsubMonthCalls();
+      unsubNotifications();
+      unsubSwaps();
+      unsubAppearance();
+    };
+  }, [
+    configured,
+    currentUserKey,
+    loadAll,
+    subscribeRealtime,
+    resetStore,
+    loadStatus,
+    subscribeStatus,
+    resetStatus,
+    loadCalls,
+    subscribeCalls,
+    resetCalls,
+    subscribeShifts,
+    resetShifts,
+    loadShiftContext,
+    loadMonthCalls,
+    subscribeMonthCalls,
+    resetMonthCalls,
+    loadNotifications,
+    subscribeNotifications,
+    resetNotifications,
+    loadSwaps,
+    subscribeSwaps,
+    resetSwaps,
+  ]);
 
   useEffect(() => onConfigChange(() => setConfigured(isConfigured())), []);
+
+  // Alle Seiten-Chunks im Leerlauf vorladen, sobald das Backend konfiguriert
+  // ist — jeder spätere Seitenwechsel ist dann sofort da.
+  useEffect(() => {
+    if (configured) prefetchAllPages();
+  }, [configured]);
 
   if (!configured) {
     return <SupabaseSetup />;
   }
 
   if (initializing) {
-    return <LoadingScreen label="Verbinde mit Server …" />;
+    return <LoadingScreen />;
   }
 
   if (!currentUserKey) {
@@ -232,7 +408,9 @@ export default function App() {
 
   const user = users[currentUserKey];
   const needsConsent = user && !user.consentGivenAt;
-  const needsOnboarding = user && user.consentGivenAt && !user.onboardingCompleted;
+  // Tour beim ersten Login automatisch, danach jederzeit per „." + „o"
+  // oder über die Einstellungen erneut.
+  const showTour = user && user.consentGivenAt && (!user.onboardingCompleted || tourRequested);
 
   return (
     <Router>
@@ -240,9 +418,10 @@ export default function App() {
         <OfflineBanner />
         <Shell />
         {needsConsent && <PrivacyConsent />}
-        {needsOnboarding && <OnboardingTour />}
+        {showTour && <OnboardingTour />}
         <CommandPalette />
         <ToastHost />
+        <PushBannerHost />
       </QuickAddProvider>
     </Router>
   );
