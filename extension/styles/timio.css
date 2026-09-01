@@ -751,3 +751,24 @@
   color: #5e6c84;
   font-size: 12px;
 }
+
+/* Abschluss-Check der Kampagne — siehe closeoutWrapupMarkup in
+   timio-content.js. Gleiche Aufgabe wie .sc-wrapup im Jira-Panel. */
+.tc-wrapup {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.tc-wrapup-status {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.tc-wrapup-status.is-ok { background: rgba(34, 168, 89, 0.2); }
+.tc-wrapup-status.is-open { background: rgba(255, 149, 0, 0.2); }

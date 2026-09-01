@@ -24,6 +24,7 @@ const { makePanelSandbox, loadScripts } = require("./support/stub-env");
 // Laden einmalig in eine Konstante, also muss der Stub vorher stehen.
 const SCRIPTS_BEFORE_UI = [
   "src/config.js",
+  "src/campaigns.js",
   "src/shared.js",
   "src/ai-cache.js",
   "src/jira-reader.js",

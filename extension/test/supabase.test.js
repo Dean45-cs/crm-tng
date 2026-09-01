@@ -494,8 +494,96 @@ async function runFetchCurrentShift() {
   console.log("supabase.test.js (fetchCurrentShift): alle Szenarien bestanden.");
 }
 
+// patchCallDisposition() mit Abschluss-Check (Migration 029) — die Übersetzung
+// der im Cockpit erfassten Angaben in Spalten. Hier zählt vor allem, dass die
+// Regel „Winbackstatus nur mit Ursache" auch auf dem Schreibweg gilt: die
+// Oberfläche verhindert den Fall vorher, aber die Regel darf nicht davon
+// abhängen, dass sie das tut.
+async function runCallWrapup() {
+  function setup() {
+    const env = makeSandbox();
+    loadScripts(env.sandbox, ["src/config.js", "src/campaigns.js", "src/shared.js", "src/supabase.js"]);
+    const CONFIG = env.sandbox.StadtnetzCRM.CONFIG;
+    env.storage[CONFIG.storageKeys.settings] = { supabaseUrl: "https://x.supabase.co", supabaseAnonKey: "anon-key" };
+    env.storage[CONFIG.storageKeys.supabaseSession] = {
+      accessToken: "at-1", refreshToken: "rt-1", expiresAt: Date.now() + 3600000, userId: "u1", displayName: "Max"
+    };
+    const calls = [];
+    env.sandbox.fetch = async (url, options) => {
+      calls.push({ url, body: options && options.body ? JSON.parse(options.body) : null });
+      return { ok: true, status: 200, json: async () => [] };
+    };
+    return { sb: env.sandbox.StadtnetzCRM.supabaseClient, calls };
+  }
+
+  // Ohne Ursache: der Status landet als „offen" auf der Zeile, nicht als
+  // „erfolgreich" — sonst stünde ein abrechenbarer Fall in der Datenbank, den
+  // niemand begründen kann.
+  {
+    const { sb, calls } = setup();
+    await sb.patchCallDisposition("row-1", {
+      disposition: "gehalten",
+      wrapup: { callType: "churn", outcomeId: "winback-erfolgreich", data: {} }
+    });
+    const body = calls[0].body;
+    assert.strictEqual(body.outcome_code, "winback-erfolgreich");
+    assert.strictEqual(body.winback_status, "offen", "ohne Ursache bleibt der Status offen");
+    assert.strictEqual(body.wrapup_complete, false, "und der Vorgang ist nicht abrechenbar");
+  }
+
+  // Mit Ursache und den übrigen Pflichtangaben: abrechenbar.
+  {
+    const { sb, calls } = setup();
+    await sb.patchCallDisposition("row-2", {
+      disposition: "gehalten",
+      wrapup: {
+        callType: "churn",
+        outcomeId: "winback-erfolgreich",
+        data: {
+          legitimation: "geburtsdatum",
+          variant: "kuendigung",
+          winbackReason: "preis",
+          winbackMeasure: "passung",
+          confirmationSent: true,
+          decision: true,
+          winbackStatus: "erfolgreich",
+          doi: "bestaetigt",
+          documentation: true
+        }
+      }
+    });
+    const body = calls[0].body;
+    assert.strictEqual(body.winback_status, "erfolgreich");
+    assert.strictEqual(body.winback_reason, "preis");
+    assert.strictEqual(body.doi_status, "bestaetigt");
+    assert.ok(body.doi_confirmed_at, "eine bestätigte Einwilligung bekommt ihren Zeitpunkt (§ 7a UWG)");
+    assert.strictEqual(body.wrapup_complete, true);
+  }
+
+  // HomeID: die Art wird aus der Nummer abgeleitet, wenn sie fehlt — ohne Art
+  // lehnt die Datenbank die Zeile ab, und die Rangfolge ist der ganze Punkt.
+  {
+    const { sb, calls } = setup();
+    await sb.patchCallDisposition("row-3", {
+      wrapup: {
+        callType: "courtesy",
+        outcomeId: "aktiviert",
+        data: { homeId: " ne422224ws52 ", homeIdConfirmed: true }
+      }
+    });
+    const body = calls[0].body;
+    assert.strictEqual(body.home_id, "NE422224WS52", "die Nummer wird normalisiert");
+    assert.strictEqual(body.home_id_kind, "homeid", "die Art wird erkannt");
+    assert.strictEqual(body.home_id_confirmed, true);
+  }
+
+  console.log("supabase.test.js (Abschluss-Check): alle Szenarien bestanden.");
+}
+
+
 run();
 runSearchWorkspace();
 runTicketSummaryNote();
 runRefreshMutex();
 runFetchCurrentShift();
+runCallWrapup();

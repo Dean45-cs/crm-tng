@@ -16,6 +16,7 @@ const { makePanelSandbox, loadScripts } = require("./support/stub-env");
 
 const SCRIPTS = [
   "src/config.js",
+  "src/campaigns.js",
   "src/shared.js",
   "src/ai-cache.js",
   "src/jira-reader.js",
@@ -138,7 +139,7 @@ async function run() {
 
     // Ein erfolgreiches Gespräch darf keine Wiedervorlage nach sich ziehen.
     env.click("complete-callback", { callbackId: second[0].id });
-    env.click("call-outcome", { outcome: "reached-done" });
+    env.click("call-outcome", { outcome: "winback-erfolgreich" });
     const items = (env.storage[KEYS.callbacks] || {}).items || [];
     assert.strictEqual(items.length, 0, "ein geklärtes Gespräch legt keine Wiedervorlage an");
   }

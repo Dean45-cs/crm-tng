@@ -1,5 +1,10 @@
 import { getSupabase } from './supabase';
+import type { WrapupPatch } from './campaigns';
 import type {
+  DoiChannel,
+  DoiStatus,
+  HomeIdKind,
+  WinbackStatus,
   Contract,
   TariffChange,
   Note,
@@ -1368,6 +1373,14 @@ interface CustomerRow {
   first_seen_at: string;
   last_contact_at: string;
   created_by: string | null;
+  // Migration 029 — optional, weil ein Client vor der Migration nicht an
+  // fehlenden Spalten scheitern soll.
+  home_id?: string | null;
+  home_id_kind?: HomeIdKind | null;
+  home_id_at?: string | null;
+  doi_status?: DoiStatus | null;
+  doi_confirmed_at?: string | null;
+  fraud_flagged?: boolean | null;
 }
 
 const mapCustomer = (r: CustomerRow): Customer => ({
@@ -1377,6 +1390,12 @@ const mapCustomer = (r: CustomerRow): Customer => ({
   firstSeenAt: r.first_seen_at,
   lastContactAt: r.last_contact_at,
   createdBy: r.created_by ?? undefined,
+  homeId: r.home_id ?? undefined,
+  homeIdKind: r.home_id_kind ?? undefined,
+  homeIdAt: r.home_id_at ?? undefined,
+  doiStatus: r.doi_status ?? undefined,
+  doiConfirmedAt: r.doi_confirmed_at ?? undefined,
+  fraudFlagged: r.fraud_flagged ?? undefined,
 });
 
 export async function fetchCustomers(): Promise<Customer[]> {
@@ -1412,6 +1431,29 @@ interface CallRow {
   answered?: boolean | null;
   end_reason?: string | null;
   disposition_at?: string | null;
+  // Gesprächserfassung nach Leitfaden v2.0 (Migration 029). Optional, weil
+  // Altbestände sie nicht haben — und weil ein Client, der vor der Migration
+  // liest, an fehlenden Spalten nicht scheitern soll.
+  outcome_code?: string | null;
+  winback_status?: WinbackStatus | null;
+  winback_reason?: string | null;
+  winback_measure?: string | null;
+  home_id?: string | null;
+  home_id_kind?: HomeIdKind | null;
+  home_id_confirmed?: boolean | null;
+  doi_status?: DoiStatus | null;
+  doi_channels?: DoiChannel[] | null;
+  doi_sent_at?: string | null;
+  doi_confirmed_at?: string | null;
+  fraud_suspicion?: boolean | null;
+  fraud_markers?: string[] | null;
+  fraud_note?: string | null;
+  sales_partner?: string | null;
+  advice_score?: number | null;
+  advice_protocol?: boolean | null;
+  campaign_data?: Record<string, unknown> | null;
+  wrapup_complete?: boolean | null;
+  wrapup_at?: string | null;
 }
 
 const mapCall = (r: CallRow): Call => ({
@@ -1434,7 +1476,83 @@ const mapCall = (r: CallRow): Call => ({
   answered: r.answered ?? undefined,
   endReason: r.end_reason ?? undefined,
   dispositionAt: r.disposition_at ?? undefined,
+  outcomeCode: r.outcome_code ?? undefined,
+  winbackStatus: r.winback_status ?? undefined,
+  winbackReason: r.winback_reason ?? undefined,
+  winbackMeasure: r.winback_measure ?? undefined,
+  homeId: r.home_id ?? undefined,
+  homeIdKind: r.home_id_kind ?? undefined,
+  // Bewusst ?? und nicht ||: `false` heißt „nicht rückbestätigt" und ist eine
+  // Aussage, kein fehlender Wert — dieselbe Unterscheidung wie bei `answered`.
+  homeIdConfirmed: r.home_id_confirmed ?? undefined,
+  doiStatus: r.doi_status ?? undefined,
+  doiChannels: r.doi_channels ?? undefined,
+  doiSentAt: r.doi_sent_at ?? undefined,
+  doiConfirmedAt: r.doi_confirmed_at ?? undefined,
+  fraudSuspicion: r.fraud_suspicion ?? undefined,
+  fraudMarkers: r.fraud_markers ?? undefined,
+  fraudNote: r.fraud_note ?? undefined,
+  salesPartner: r.sales_partner ?? undefined,
+  adviceScore: r.advice_score ?? undefined,
+  adviceProtocol: r.advice_protocol ?? undefined,
+  campaignData: r.campaign_data ?? undefined,
+  wrapupComplete: r.wrapup_complete ?? undefined,
+  wrapupAt: r.wrapup_at ?? undefined,
 });
+
+/**
+ * Schreibt die Gesprächserfassung auf einen bestehenden Anruf (Migration 029).
+ *
+ * Bewusst ein PATCH auf die vorhandene Zeile statt einer eigenen Tabelle: der
+ * Anruf IST der Vorgang, und eine zweite Tabelle hieße, dass jede Auswertung
+ * joinen müsste, um zu erfahren, was aus dem Gespräch geworden ist.
+ *
+ * `disposition_at` wird nur gesetzt, wenn es noch leer ist — die Extension
+ * stempelt es beim ersten Ergebnis (Migration 028), und ein späteres
+ * Nachtragen im CRM darf die gemessene Nachbearbeitungszeit nicht verfälschen.
+ */
+export async function saveCallWrapup(callId: string, patch: WrapupPatch): Promise<void> {
+  const payload: Record<string, unknown> = {
+    outcome_code: patch.outcomeCode ?? null,
+    winback_status: patch.winbackStatus,
+    winback_reason: patch.winbackReason ?? null,
+    winback_measure: patch.winbackMeasure ?? null,
+    home_id: patch.homeId ?? null,
+    home_id_kind: patch.homeIdKind ?? null,
+    home_id_confirmed: patch.homeIdConfirmed,
+    doi_status: patch.doiStatus ?? null,
+    doi_channels: patch.doiChannels ?? null,
+    fraud_suspicion: patch.fraudSuspicion,
+    fraud_markers: patch.fraudMarkers ?? null,
+    fraud_note: patch.fraudNote ?? null,
+    sales_partner: patch.salesPartner ?? null,
+    advice_score: patch.adviceScore ?? null,
+    advice_protocol: patch.adviceProtocol ?? null,
+    campaign_data: patch.campaignData,
+    wrapup_complete: patch.wrapupComplete,
+    wrapup_at: patch.wrapupAt,
+  };
+  // Disposition und Kündigungsgrund nur überschreiben, wenn die Erfassung
+  // wirklich eine liefert: die Extension hat sie beim Auflegen schon gesetzt,
+  // und ein Nachtrag ohne Ergebnis (z.B. nur die HomeID) darf sie nicht löschen.
+  if (patch.disposition) payload.disposition = patch.disposition;
+  if (patch.cancellationReason !== undefined) payload.cancellation_reason = patch.cancellationReason ?? null;
+  // Zeitstempel der Einwilligung nur vorwärts: eine einmal dokumentierte
+  // Bestätigung behält ihren Zeitpunkt, sonst wäre der Nachweis nach § 7a UWG
+  // beim nächsten Speichern verschoben.
+  if (patch.doiSentAt) payload.doi_sent_at = patch.doiSentAt;
+  if (patch.doiConfirmedAt) payload.doi_confirmed_at = patch.doiConfirmedAt;
+
+  const { error } = await getSupabase().from('calls').update(payload).eq('id', callId);
+  if (error) throw error;
+
+  const { error: stampError } = await getSupabase()
+    .from('calls')
+    .update({ disposition_at: patch.wrapupAt })
+    .eq('id', callId)
+    .is('disposition_at', null);
+  if (stampError) throw stampError;
+}
 
 /** Anrufe, die noch nicht beendet sind — Grundlage der Live-Anrufleiste. */
 export async function fetchActiveCalls(): Promise<Call[]> {

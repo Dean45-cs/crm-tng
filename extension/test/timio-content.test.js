@@ -12,7 +12,8 @@ const { makeSandbox, loadScripts } = require("./support/stub-env");
 
 function run() {
   const env = makeSandbox();
-  loadScripts(env.sandbox, ["src/config.js", "src/shared.js", "src/timio-content.js"]);
+  loadScripts(env.sandbox, ["src/config.js",
+  "src/campaigns.js", "src/shared.js", "src/timio-content.js"]);
 
   // 1) Idle, noch keine Wartefeld-Daten bekannt -> kein Overlay.
   env.setPageText("Portal Willkommen");
@@ -202,12 +203,12 @@ function run() {
   env.tick();
   const inboundOverlay = env.getOverlay().innerHTML;
   assert.ok(inboundOverlay.includes("Ergebnis festhalten"), "eingehend erscheint die Ergebnis-Leiste");
-  assert.ok(inboundOverlay.includes("data-outcome=\"reached-done\""), "das Ergebnis mit Gesprächsinhalt steht auch eingehend bereit");
+  assert.ok(inboundOverlay.includes("data-outcome=\"winback-erfolgreich\""), "das Ergebnis mit Gesprächsinhalt steht auch eingehend bereit");
   assert.ok(!inboundOverlay.includes("data-outcome=\"mailbox\""), "eingehend fehlt \"Mailbox\" – ohne eigenen Wählversuch sinnlos");
   env.storage[KEYS.callOutcome] = null;
-  env.clickControl("outcome", { outcome: "reached-done" });
+  env.clickControl("outcome", { outcome: "winback-erfolgreich" });
   assert.strictEqual(
-    (env.storage[KEYS.callOutcome] || {}).outcomeId, "reached-done",
+    (env.storage[KEYS.callOutcome] || {}).outcomeId, "winback-erfolgreich",
     "auch eingehend wird das Ergebnis für die Jira-Seite hinterlegt"
   );
   env.clickControl("mode-outbound");
@@ -285,7 +286,8 @@ function run() {
 // (die Extension schreibt fire-and-forget, ohne auf die Antwort zu warten).
 async function runCallsWritePath() {
   const env = makeSandbox();
-  loadScripts(env.sandbox, ["src/config.js", "src/shared.js"]);
+  loadScripts(env.sandbox, ["src/config.js",
+  "src/campaigns.js", "src/shared.js"]);
 
   const startCalls = [];
   const endCalls = [];
@@ -416,7 +418,8 @@ async function runCallsWritePath() {
 // runCallsWritePath() oben.
 async function runCloseoutWritePath() {
   const env = makeSandbox();
-  loadScripts(env.sandbox, ["src/config.js", "src/commission.js", "src/shared.js"]);
+  loadScripts(env.sandbox, ["src/config.js",
+  "src/campaigns.js", "src/commission.js", "src/shared.js"]);
 
   const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
   const sharedSettingsFixture = {
@@ -463,9 +466,9 @@ async function runCloseoutWritePath() {
   env.clickControl("outcome", { outcome: "mailbox" });
   assert.ok(!env.getOverlay().innerHTML.includes("tc-closeout"), "Mailbox hat keinen Gesprächsinhalt und öffnet kein Abschluss-Panel");
 
-  // 2) Outbound "Erreicht & geklärt" -> Panel öffnet mit Notiz vorausgewählt.
-  env.clickControl("outcome", { outcome: "reached-done" });
-  assert.ok(env.getOverlay().innerHTML.includes("tc-closeout"), "\"Erreicht & geklärt\" öffnet das Abschluss-Panel");
+  // 2) Outbound "Winback erfolgreich" -> Panel öffnet mit Notiz vorausgewählt.
+  env.clickControl("outcome", { outcome: "winback-erfolgreich" });
+  assert.ok(env.getOverlay().innerHTML.includes("tc-closeout"), "\"Winback erfolgreich\" öffnet das Abschluss-Panel");
   assert.ok(env.getOverlay().innerHTML.includes('data-role="closeout-title"'), "Notiz ist der Standard-Eintragstyp");
 
   // 3) Inbound-Anruf ohne jeden Klick -> Panel öffnet automatisch.
@@ -518,7 +521,8 @@ async function runCloseoutWritePath() {
 async function runPaletteFlow() {
   const PALETTE_ID = "sc-timio-palette";
   const env = makeSandbox();
-  loadScripts(env.sandbox, ["src/config.js", "src/commission.js", "src/shared.js"]);
+  loadScripts(env.sandbox, ["src/config.js",
+  "src/campaigns.js", "src/commission.js", "src/shared.js"]);
 
   const searchCalls = [];
   let searchResult = {

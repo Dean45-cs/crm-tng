@@ -19,7 +19,8 @@ const PALETTE_ID = "sc-jira-palette";
 
 async function mountPanel(searchImpl) {
   const env = makePanelSandbox();
-  loadScripts(env.sandbox, ["src/config.js", "src/commission.js", "src/shared.js"]);
+  loadScripts(env.sandbox, ["src/config.js",
+  "src/campaigns.js", "src/commission.js", "src/shared.js"]);
   env.sandbox.StadtnetzCRM.supabaseClient = {
     customerCard: async () => ({ ok: false, reason: "not-configured" }),
     searchWorkspace: searchImpl

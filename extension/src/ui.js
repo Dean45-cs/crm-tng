@@ -2256,8 +2256,31 @@
   // Eingehend und ausgehend haben eigene Wortschätze (Stufe 3,
   // KONZEPT-INTEGRATION.md) — "Mailbox"/"Falsche Nummer" ergeben bei einem
   // eingehenden Anruf keinen Sinn.
+  function campaignsApi() {
+    return (globalThis.StadtnetzCRM && globalThis.StadtnetzCRM.campaigns) || null;
+  }
+
+  // Der Kampagnen-Katalog (campaigns.js) ist die Quelle: welche Ergebnisse zur
+  // Auswahl stehen, hängt an der Kampagne der laufenden Schicht — ein
+  // Postrückläufer endet nicht mit „gekündigt", sondern mit „Adresse korrigiert".
+  // Fehlt der Katalog (alte Installation ohne campaigns.js im Manifest), bleibt
+  // die frühere generische Liste aus CONFIG als Rückfallebene.
   function activeOutcomes() {
+    const api = campaignsApi();
+    if (api) return api.outcomesFor(activeCallType());
     return (CONFIG.outbound && CONFIG.outbound.outcomes) || [];
+  }
+
+  // Was der Abschluss-Check der Kampagne noch vermisst. Leere Liste = der
+  // Vorgang ist vollständig erfasst und damit abrechenbar.
+  function closeoutMissing() {
+    const api = campaignsApi();
+    if (!api || !state.closeout || !state.closeout.outcomeId) return [];
+    return api.missingRequirements(
+      state.closeout.callType || activeCallType(),
+      state.closeout.outcomeId,
+      state.closeout.wrapup || {}
+    );
   }
 
   // Erscheint nach dem Auflegen. Ein Klick füllt die Gesprächsnotiz vor, lässt
@@ -2282,12 +2305,20 @@
   // timio-content.js schreibt (siehe persistCall dort). Best-effort: schlägt es
   // fehl, bleibt der Anruf ohne Disposition — der CRM-Eintrag entsteht trotzdem.
   function recordOutcomeDisposition(outcome, call) {
-    if (!supabaseClient || !outcome || !outcome.disposition) return;
+    // Anders als früher zählt nicht nur `disposition`: ein kampagnenspezifisches
+    // Ergebnis ohne Roll-up (z.B. „Irrläufer" beim Postrückläufer) ist trotzdem
+    // ein Ergebnis und gehört an den Anruf.
+    if (!supabaseClient || !outcome) return;
     const rowId = call && call.dbCallId;
     if (!rowId) return;
     supabaseClient.patchCallDisposition(rowId, {
-      disposition: outcome.disposition,
-      campaignId: (state.shift && state.shift.campaignId) || undefined
+      disposition: outcome.disposition || undefined,
+      campaignId: (state.shift && state.shift.campaignId) || undefined,
+      wrapup: {
+        callType: activeCallType(),
+        outcomeId: outcome.id,
+        data: (state.closeout && state.closeout.wrapup) || {}
+      }
     }).catch(() => {});
   }
 
@@ -2319,7 +2350,16 @@
       // angelegt bzw. beibehalten, deshalb ohne weiteren Abgleich.
       if (state.closeout) {
         state.closeout.disposition = outcome.disposition || null;
-        state.closeout.needsReason = Boolean(outcome.needsReason);
+        state.closeout.callType = activeCallType();
+        state.closeout.outcomeId = outcome.id;
+        // Die Pflichtangaben stehen am Ergebnis (campaigns.js `requires`) und
+        // nicht mehr an einem einzelnen Sonderfall „gekündigt". needsReason
+        // bleibt als abgeleiteter Wert erhalten, damit das Kündigungsgrund-Feld
+        // weiter erscheint, wo es gebraucht wird.
+        const requires = outcome.requires || [];
+        state.closeout.needsReason =
+          requires.indexOf("rejectionReason") >= 0 || requires.indexOf("winbackReason") >= 0;
+        if (!state.closeout.wrapup) state.closeout.wrapup = {};
       }
     } else {
       state.activeTab = "talk";
@@ -2478,14 +2518,19 @@
     // wird der hier erfasste Grund zusätzlich auf den calls-Datensatz
     // geschrieben. Best-effort, unabhängig vom Erfolg des CRM-Eintrags —
     // spiegelt submitCloseout() im timio-Cockpit.
-    if (state.closeout && state.closeout.needsReason && supabaseClient) {
-      const rowId = (currentActiveCall() || {}).dbCallId;
+    if (state.closeout && state.closeout.outcomeId && supabaseClient) {
+      const rowId = (callForCloseout() || {}).dbCallId;
       const reason = (fields.cancellationReason || "").trim();
-      if (rowId && reason) {
+      if (rowId) {
         supabaseClient.patchCallDisposition(rowId, {
-          disposition: state.closeout.disposition || "gekuendigt",
-          cancellationReason: reason,
-          campaignId: (state.shift && state.shift.campaignId) || undefined
+          disposition: state.closeout.disposition || undefined,
+          cancellationReason: reason || undefined,
+          campaignId: (state.shift && state.shift.campaignId) || undefined,
+          wrapup: {
+            callType: state.closeout.callType || activeCallType(),
+            outcomeId: state.closeout.outcomeId,
+            data: state.closeout.wrapup || {}
+          }
         }).catch(() => {});
       }
     }
@@ -2619,6 +2664,77 @@
     return "";
   }
 
+  // Pflichtangaben des Abschluss-Checks, direkt im Cockpit erfassbar.
+  //
+  // Bewusst nur die drei Dinge, die in JEDEM Leitfaden vorkommen und die man
+  // nur WÄHREND des Gesprächs bekommt: die Ursache, die HomeID und die
+  // Einwilligung. Alles Kampagnenspezifische (Gebäudedetails, Ausbaubedingung,
+  // Adressursache) gehört ins CRM — hier wäre es eine Formularwand, die
+  // niemand mit dem Kunden am Ohr ausfüllt. Der Kasten am Ende sagt deshalb
+  // ehrlich, was noch offen ist und wo es hingehört.
+  function closeoutWrapupMarkup() {
+    const api = campaignsApi();
+    if (!api || !state.closeout || !state.closeout.outcomeId) return "";
+    const callType = state.closeout.callType || activeCallType();
+    const conf = api.campaign(callType);
+    const chosen = api.outcome(callType, state.closeout.outcomeId);
+    if (!chosen) return "";
+    const requires = chosen.requires || [];
+    const wrapup = state.closeout.wrapup || {};
+    const wants = (id) => requires.indexOf(id) >= 0;
+
+    const parts = [];
+
+    // Ursache — der Punkt, an dem „Winbackstatus nur mit Ursache" hängt.
+    const reasonField = wants("winbackReason") ? "winbackReason" : wants("rejectionReason") ? "rejectionReason" : "";
+    if (reasonField) {
+      const catalog = (conf.catalogs && conf.catalogs[reasonField]) || [];
+      parts.push(`
+        <div class="sc-wrapup-field">
+          <span class="sc-input-label">${reasonField === "winbackReason" ? "Winback-Ursache" : "Ablehnungsgrund"} *</span>
+          <div class="sc-closeout-chipgroup">${catalog.map((entry) =>
+            `<button type="button" class="sc-chip ${wrapup[reasonField] === entry.id ? "is-active" : ""}" data-action="closeout-wrapup-reason" data-field="${escapeHtml(reasonField)}" data-value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</button>`
+          ).join("")}</div>
+        </div>`);
+    }
+
+    // HomeID — „zwingend erforderlich und vergütungsrelevant", sobald ausgebaut.
+    if (wants("homeId") || conf.requiresHomeId) {
+      const kind = wrapup.homeIdKind || (api.detectHomeIdKind(wrapup.homeId || "") || {}).id || "";
+      parts.push(`
+        <div class="sc-wrapup-field">
+          <label class="sc-input-label">HomeID${conf.requiresHomeId ? " *" : ""}
+            <input class="sc-text-input" data-role="closeout-home-id" value="${escapeHtml(wrapup.homeId || "")}" placeholder="HomeID vor ONT-Seriennummer vor AD-Nummer">
+          </label>
+          <p class="sc-callback-meta">${kind ? `Erkannt als ${escapeHtml(api.labelOf(api.HOME_ID_KINDS, kind))}. ` : ""}Nummer wiederholen und bestätigen lassen — 0/O und 1/I werden am häufigsten verwechselt.</p>
+          <div class="sc-closeout-chipgroup">
+            <button type="button" class="sc-chip ${wrapup.homeIdConfirmed ? "is-active" : ""}" data-action="closeout-wrapup-toggle" data-field="homeIdConfirmed">Vom Kunden bestätigt</button>
+          </div>
+        </div>`);
+    }
+
+    // Double-Opt-In — in jedem positiven oder neutralen Abschluss anzukündigen.
+    parts.push(`
+      <div class="sc-wrapup-field">
+        <span class="sc-input-label">Double-Opt-In *</span>
+        <div class="sc-closeout-chipgroup">${api.DOI_STATUS.map((entry) =>
+          `<button type="button" class="sc-chip ${wrapup.doi === entry.id ? "is-active" : ""}" data-action="closeout-wrapup-doi" data-value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</button>`
+        ).join("")}</div>
+      </div>`);
+
+    const missing = closeoutMissing();
+    const status = missing.length === 0
+      ? `<p class="sc-wrapup-status is-ok">Abschluss-Check vollständig — der Vorgang ist abrechenbar.</p>`
+      : `<p class="sc-wrapup-status is-open">Noch offen: ${escapeHtml(missing.map((m) => m.label).join(", "))}. Im CRM unter „Nachbearbeitung" abschließen.</p>`;
+
+    return `
+      <div class="sc-wrapup">
+        <div class="sc-closeout-head"><span class="sc-closeout-title">Abschluss-Check · ${escapeHtml(conf.title)}</span></div>
+        ${parts.join("")}
+        ${status}
+      </div>`;
+  }
+
   function renderCloseoutPanel(call) {
     if (!state.closeout || state.closeout.callId !== callIdOf(call)) return "";
     const { entryType, fields, status, error } = state.closeout;
@@ -2649,9 +2765,10 @@
           <input class="sc-text-input" data-role="closeout-customer-number" value="${escapeHtml(fields.customerNumber)}">
         </label>
         ${fieldsMarkup}
+        ${closeoutWrapupMarkup()}
         ${state.closeout.needsReason ? `
-        <label class="sc-input-label">Kündigungsgrund
-          <input class="sc-text-input" data-role="closeout-cancellation-reason" value="${escapeHtml(fields.cancellationReason || "")}" placeholder="z.B. zu teuer, Umzug, Wettbewerber">
+        <label class="sc-input-label">Kündigungsgrund (Freitext, optional)
+          <input class="sc-text-input" data-role="closeout-cancellation-reason" value="${escapeHtml(fields.cancellationReason || "")}" placeholder="Ergänzung zur gewählten Ursache">
         </label>` : ""}
         <label class="sc-input-label">Jira-Ticket
           <input class="sc-text-input" data-role="closeout-jira-ticket" value="${escapeHtml(fields.jiraTicket)}">
@@ -4720,6 +4837,31 @@
       case "closeout-set-tarif-context":
         if (state.closeout) { state.closeout.fields.context = control.dataset.value; render(); }
         return;
+      case "closeout-wrapup-reason":
+        if (state.closeout) {
+          const field = control.dataset.field;
+          const wrapup = state.closeout.wrapup || (state.closeout.wrapup = {});
+          // Erneuter Klick hebt die Wahl auf — eine versehentlich gesetzte
+          // Ursache ließe sich sonst nur durch Neuladen korrigieren.
+          wrapup[field] = wrapup[field] === control.dataset.value ? "" : control.dataset.value;
+          render();
+        }
+        return;
+      case "closeout-wrapup-doi":
+        if (state.closeout) {
+          const wrapup = state.closeout.wrapup || (state.closeout.wrapup = {});
+          wrapup.doi = wrapup.doi === control.dataset.value ? "" : control.dataset.value;
+          render();
+        }
+        return;
+      case "closeout-wrapup-toggle":
+        if (state.closeout) {
+          const wrapup = state.closeout.wrapup || (state.closeout.wrapup = {});
+          const field = control.dataset.field;
+          wrapup[field] = !wrapup[field];
+          render();
+        }
+        return;
       case "closeout-refresh-settings": maybeLoadSharedSettings({ forceRefresh: true }); return;
       case "closeout-submit": await submitCloseout(); return;
       case "lookup-baustatus": promptLookup("baustatus"); return;
@@ -4778,6 +4920,15 @@
       else if (role === "closeout-notes") f.notes = value;
       else if (role === "closeout-jira-ticket") f.jiraTicket = value;
       else if (role === "closeout-cancellation-reason") f.cancellationReason = value;
+      else if (role === "closeout-home-id") {
+        const api = campaignsApi();
+        const wrapup = state.closeout.wrapup || (state.closeout.wrapup = {});
+        wrapup.homeId = api ? api.normalizeHomeId(value) : value;
+        // Art mitführen: die Datenbank lehnt eine Nummer ohne Art ab, und die
+        // Rangfolge (HomeID vor ONT vor AD) ist der Punkt der Erhebung.
+        const kind = api && api.detectHomeIdKind(wrapup.homeId);
+        if (kind) wrapup.homeIdKind = kind.id;
+      }
       else if (role === "closeout-old-product") f.oldProduct = value;
       else if (role === "closeout-new-product") f.newProduct = value;
       else if (role === "closeout-followup-date") f.followUpDate = value;

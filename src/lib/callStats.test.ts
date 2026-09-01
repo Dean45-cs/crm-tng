@@ -241,6 +241,56 @@ describe('campaignPerformance', () => {
   });
 });
 
+describe('campaignPerformance — Abschluss-Check', () => {
+  it('misst jede Kampagne an ihrem eigenen Leitfaden', () => {
+    // Save-Rate allein passt nur auf Churn. Der Courtesy Call verlangt eine
+    // HomeID, der Dubletten-Check nicht — deshalb hat nur einer der beiden
+    // eine HomeID-Quote.
+    const campaigns = [
+      makeCampaign({ id: 'c-courtesy', name: 'Courtesy', callType: 'courtesy' }),
+      makeCampaign({ id: 'c-dupe', name: 'Dupe', callType: 'dupe' }),
+    ];
+    const rows = campaignPerformance(
+      [
+        makeCall({
+          campaignId: 'c-courtesy',
+          disposition: 'gehalten',
+          homeId: 'NE1',
+          homeIdConfirmed: true,
+          doiStatus: 'versendet',
+          wrapupComplete: true,
+        }),
+        makeCall({ campaignId: 'c-courtesy', disposition: 'gehalten', wrapupComplete: false }),
+        makeCall({ campaignId: 'c-dupe', disposition: 'gehalten', wrapupComplete: true }),
+      ],
+      campaigns,
+    );
+
+    const courtesy = rows.find((r) => r.campaignId === 'c-courtesy')!;
+    expect(courtesy.homeIdPct).toBe(50);
+    expect(courtesy.doiPct).toBe(50);
+    expect(courtesy.openWrapups).toBe(1);
+
+    const dupe = rows.find((r) => r.campaignId === 'c-dupe')!;
+    // Kein HomeID-Zwang, also auch keine Quote — eine 0 % stünde hier für
+    // „nichts zu erheben" und wäre schlicht falsch.
+    expect(dupe.homeIdPct).toBeNull();
+    expect(dupe.openWrapups).toBe(0);
+  });
+
+  it('rechnet die Winback-Quote aus den entschiedenen Fällen', () => {
+    const rows = campaignPerformance(
+      [
+        makeCall({ campaignId: 'camp-1', winbackStatus: 'erfolgreich' }),
+        makeCall({ campaignId: 'camp-1', winbackStatus: 'nicht_erfolgreich' }),
+        makeCall({ campaignId: 'camp-1', winbackStatus: 'offen' }),
+      ],
+      [makeCampaign()],
+    );
+    expect(rows[0].winbackQuotePct).toBe(50);
+  });
+});
+
 describe('dispositionBreakdown', () => {
   it('zählt gesetzte Dispositionen, ignoriert leere', () => {
     const rows = dispositionBreakdown([

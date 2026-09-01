@@ -22,6 +22,7 @@ export type Route =
   | { name: 'netto' }
   | { name: 'schedule' }
   | { name: 'campaignmanager' }
+  | { name: 'wrapups' }
   | { name: 'postfach' };
 
 export type RouteName = Route['name'];

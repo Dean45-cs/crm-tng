@@ -452,7 +452,7 @@ export function TeamDashboard() {
             <div className="widget">
               <div className="row between" style={{ marginBottom: 10 }}>
                 <h3 className="widget-title" style={{ margin: 0 }}>
-                  Save-Rate je Kampagne
+                  Kampagnen nach Abschluss-Check
                 </h3>
                 <span className="muted">aktueller Monat</span>
               </div>
@@ -467,8 +467,18 @@ export function TeamDashboard() {
                       <tr>
                         <th>Kampagne</th>
                         <th style={{ textAlign: 'right' }}>Anrufe</th>
-                        <th style={{ textAlign: 'right' }}>Gehalten</th>
-                        <th style={{ textAlign: 'right' }}>Save-Rate</th>
+                        <th style={{ textAlign: 'right' }} title="Anteil gehaltener an den entschiedenen Winbacks">
+                          Winback
+                        </th>
+                        <th style={{ textAlign: 'right' }} title="Bestätigte HomeIDs, nur wo der Leitfaden sie verlangt">
+                          HomeID
+                        </th>
+                        <th style={{ textAlign: 'right' }} title="Gespräche mit angekündigter Double-Opt-In Permission">
+                          DOI
+                        </th>
+                        <th style={{ textAlign: 'right' }} title="Erfassungen ohne vollständigen Abschluss-Check — nicht abrechenbar">
+                          Offen
+                        </th>
                         <th style={{ textAlign: 'right' }}>Ø Dauer</th>
                       </tr>
                     </thead>
@@ -477,9 +487,21 @@ export function TeamDashboard() {
                         <tr key={c.campaignId}>
                           <td>{c.campaignName}</td>
                           <td style={{ textAlign: 'right' }}>{c.totalCalls}</td>
-                          <td style={{ textAlign: 'right' }}>{c.saved}</td>
                           <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                            {c.saveRatePct == null ? '–' : `${c.saveRatePct} %`}
+                            {c.winbackQuotePct == null ? '–' : `${c.winbackQuotePct} %`}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            {c.homeIdPct == null ? '–' : `${c.homeIdPct} %`}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            {c.doiPct == null ? '–' : `${c.doiPct} %`}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            {c.openWrapups > 0 ? (
+                              <span className="badge badge-orange">{c.openWrapups}</span>
+                            ) : (
+                              '–'
+                            )}
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             {c.avgDurationS > 0 ? `${Math.round(c.avgDurationS / 60)} min` : '–'}

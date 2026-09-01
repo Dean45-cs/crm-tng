@@ -17,11 +17,15 @@ import {
   Eraser,
   Phone,
   PhoneOutgoing,
+  Tag,
+  MailCheck,
+  MailX,
+  ClipboardList,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../store/useAuth';
 import { useRouter } from '../router';
-import type { Call } from '../types';
+import type { Call, Campaign, Customer } from '../types';
 import { fetchCallsForCustomer } from '../lib/supabaseApi';
 import { formatClock, formatDuration } from '../lib/statusBoard';
 import {
@@ -40,6 +44,10 @@ import { CustomerShareDialog } from '../components/CustomerShareDialog';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { AccessRequestInbox, AccessRequestBanner } from '../components/AccessRequests';
 import { SkeletonPage } from '../components/Skeleton';
+import { CallWrapupForm } from '../components/CallWrapupForm';
+import { saveCallWrapup } from '../lib/supabaseApi';
+import { advertisingAllowed, campaignFor, labelOf, outcomeOf, DOI_STATUS, HOME_ID_KINDS } from '../lib/campaigns';
+import { useToast } from '../store/useToast';
 
 interface Props {
   kdnr: string;
@@ -52,9 +60,12 @@ export function CustomerDetail({ kdnr }: Props) {
   const { navigate } = useRouter();
   const { openNewContract, openNewTariff, openNewNote, editContract, editTariff, editNote } =
     useQuickAdd();
+  const { campaigns } = useStore();
+  const toast = useToast((t) => t.push);
   const [shareOpen, setShareOpen] = useState(false);
   const [purgeConfirmStep, setPurgeConfirmStep] = useState(0);
   const [purging, setPurging] = useState(false);
+  const [wrapupCall, setWrapupCall] = useState<Call | null>(null);
 
   const ownership = useMemo(
     () => getEffectiveOwnership(kdnr, customerOwners, contracts, tariffChanges, notes),
@@ -253,6 +264,12 @@ export function CustomerDetail({ kdnr }: Props) {
         />
       )}
 
+      {/* Was aus den Gesprächen bleibt (Migration 029). Steht bewusst weit oben:
+          ob werblich angesprochen werden darf und ob eine HomeID vorliegt, muss
+          man sehen, BEVOR man zum Hörer greift — nicht nach dem Durchblättern
+          der Anrufhistorie. */}
+      <CustomerComplianceStrip customer={customerRow} calls={callsList} />
+
       <ActivityTimeline
         contracts={contractsList}
         tariffChanges={tariffList}
@@ -441,7 +458,9 @@ export function CustomerDetail({ kdnr }: Props) {
                   <th>Anrufer</th>
                   <th>Bearbeiter:in</th>
                   <th>Gruppe</th>
+                  <th>Ergebnis</th>
                   <th style={{ textAlign: 'right' }}>Dauer</th>
+                  <th style={{ textAlign: 'right' }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -463,8 +482,19 @@ export function CustomerDetail({ kdnr }: Props) {
                     <td>{call.callerName || call.callerNumber || '–'}</td>
                     <td>{users[call.agentId]?.displayName ?? '–'}</td>
                     <td>{call.queueGroup || '–'}</td>
+                    <td>
+                      <CallOutcomeCell call={call} campaigns={campaigns} />
+                    </td>
                     <td style={{ textAlign: 'right' }}>
                       {call.durationS != null ? formatDuration(call.durationS) : '–'}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {canEdit && (
+                        <button className="btn btn-sm" onClick={() => setWrapupCall(call)}>
+                          <ClipboardList size={13} />
+                          {call.wrapupComplete ? 'Ansehen' : 'Dokumentieren'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -528,7 +558,105 @@ export function CustomerDetail({ kdnr }: Props) {
           </div>
         </section>
       )}
+
+      {wrapupCall && (
+        <CallWrapupForm
+          key={wrapupCall.id}
+          call={wrapupCall}
+          campaign={campaigns.find((c) => c.id === wrapupCall.campaignId)}
+          onClose={() => setWrapupCall(null)}
+          onSave={async (patch) => {
+            await saveCallWrapup(wrapupCall.id, patch);
+            // Die Anrufhistorie hängt hier an einem gezielten Fetch, nicht am
+            // Realtime-Kanal — nach dem Speichern deshalb selbst nachladen.
+            const rows = await fetchCallsForCustomer(kdnr).catch(() => null);
+            if (rows) setCalls({ kdnr, rows });
+            toast(
+              patch.wrapupComplete ? 'success' : 'info',
+              patch.wrapupComplete
+                ? 'Erfassung abgeschlossen — der Vorgang ist abrechenbar.'
+                : 'Erfassung gespeichert, es fehlen noch Pflichtangaben.',
+            );
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Was aus den Gesprächen dieses Kunden bleibt: HomeID, Einwilligung,
+ * Fraud-Markierung.
+ *
+ * Die Werte stehen auf dem Kunden (Migration 029 führt sie per Trigger nach) —
+ * fehlt der Kundensatz noch, wird als Rückfallebene der jüngste Anruf gelesen,
+ * damit die Angabe nicht erst nach dem nächsten Trigger-Lauf erscheint.
+ */
+function CustomerComplianceStrip({ customer, calls }: { customer: Customer | null; calls: Call[] }) {
+  const latest = useMemo(() => {
+    const withHomeId = calls.find((c) => c.homeId && c.homeIdConfirmed);
+    const withDoi = calls.find((c) => c.doiStatus && c.doiStatus !== 'offen');
+    return { withHomeId, withDoi };
+  }, [calls]);
+
+  const homeId = customer?.homeId ?? latest.withHomeId?.homeId;
+  const homeIdKind = customer?.homeIdKind ?? latest.withHomeId?.homeIdKind;
+  const doi = customer?.doiStatus ?? latest.withDoi?.doiStatus;
+  const fraud = customer?.fraudFlagged || calls.some((c) => c.fraudSuspicion);
+
+  // Nichts erfasst, nichts zu zeigen — ein Streifen aus lauter Strichen sagt
+  // weniger als gar keiner.
+  if (!homeId && !doi && !fraud) return null;
+
+  const mayAdvertise = advertisingAllowed(doi);
+
+  return (
+    <div className="compliance-strip">
+      {homeId && (
+        <span className="compliance-item">
+          <Tag size={13} />
+          <span>
+            <strong>{homeId}</strong>
+            <span className="muted"> · {labelOf(HOME_ID_KINDS, homeIdKind ?? '')}</span>
+          </span>
+        </span>
+      )}
+      {doi && (
+        <span className={`compliance-item ${mayAdvertise ? 'is-ok' : 'is-blocked'}`}>
+          {mayAdvertise ? <MailCheck size={13} /> : <MailX size={13} />}
+          <span>
+            Permission: {labelOf(DOI_STATUS, doi)}
+            <span className="muted">
+              {' '}
+              · {mayAdvertise ? 'werbliche Ansprache erlaubt' : 'keine werbliche Ansprache (§ 7 Abs. 2 UWG)'}
+            </span>
+          </span>
+        </span>
+      )}
+      {fraud && (
+        <span className="compliance-item is-flagged">
+          <ShieldAlert size={13} />
+          <span>Fraud-Verdacht dokumentiert — Prüfung in der Nachbearbeitung</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Ergebnis eines Anrufs im Klartext, plus offener Abschluss-Check. */
+function CallOutcomeCell({ call, campaigns }: { call: Call; campaigns: Campaign[] }) {
+  if (!call.outcomeCode && !call.disposition) return <span className="muted">–</span>;
+  const callType = campaigns.find((c) => c.id === call.campaignId)?.callType;
+  const outcome = call.outcomeCode ? outcomeOf(callType, call.outcomeCode) : null;
+  return (
+    <span className="row" style={{ gap: 6 }}>
+      <span>{outcome?.label ?? call.disposition}</span>
+      {call.disposition && !call.wrapupComplete && (
+        <span className="badge badge-orange" title={`Abschluss-Check ${campaignFor(callType).title} unvollständig`}>
+          offen
+        </span>
+      )}
+    </span>
   );
 }
 

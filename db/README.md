@@ -88,6 +88,17 @@ bereits — Migrationen sind dann nicht nötig.
   bleiben vorerst leer. Die Aufbewahrungsfrist/automatische Anonymisierung
   der Rufnummer ist bewusst noch nicht Teil dieser Migration — offener
   Punkt, siehe `KONZEPT-INTEGRATION.md`.
+- `019`–`028` — Outbound-Umbau: Kampagnen, Schichtplan, Dispositionen,
+  Benachrichtigungen, Themes, Rufnummern-Auflösung und echte Gesprächszeiten.
+  Die Dateien im Ordner tragen ihre Begründung jeweils im Kopf.
+- `029_call_wrapup.sql` — die Gesprächserfassung nach den Gesprächsleitfäden
+  v2.0: HomeID, Double-Opt-In, Fraud-Verdacht, Beratungsnote, Winbackstatus und
+  das kampagnenspezifische `campaign_data`. Enthält die Regel „Winbackstatus nur
+  mit Ursache" als Check-Constraint — die Leitfäden markieren sie als
+  vergütungsrelevant, deshalb steht sie in der Datenbank und nicht nur in der
+  Oberfläche. Ein Trigger führt HomeID, Einwilligung und Fraud-Markierung auf
+  die `customers`-Zeile nach, damit die Kundenakte sie ohne Durchsuchen der
+  Anrufhistorie zeigen kann.
 
 > **Erster Zugang (frische Installation):** Beim allerersten Start bietet der
 > Login-Screen automatisch „Erstes Konto einrichten" an — dieses Konto wird der
@@ -139,3 +150,14 @@ Jonas Schmidt, PIN **1234**) samt gefüllten Team-Dashboards, Leaderboard,
 Leads und Berichten an. Es räumt vorher alte Demo-Daten weg, ist also beliebig
 oft wiederholbar. Zum Entfernen genügt der Abschnitt „(1) Aufräumen" im Skript.
 
+## Die sechs Kampagnen anlegen
+
+Die Kampagnen sind Daten, die der Chef pflegt (Migration 019) — die
+Gesprächsleitfäden v2.0 setzen aber voraus, dass es sie gibt und dass ihr
+`call_type` stimmt: er verbindet die Kampagne mit Leitfaden, Ergebnisliste und
+Pflichtfeldern in `extension/src/campaigns.js`.
+
+[`seed_campaigns.sql`](./seed_campaigns.sql) legt die sechs produktiven
+Kampagnen an (Welcome, Churn, Postrückläufer, Dubletten-Check, Bauverweigerer,
+Courtesy) und zieht bei bereits vorhandenen Kampagnen den Call-Typ nach. Namen
+bleiben änderbar — das Skript legt nur an, was fehlt.

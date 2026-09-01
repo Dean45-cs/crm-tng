@@ -9521,3 +9521,206 @@ table.crm-table tbody tr:hover td:first-child {
   background: var(--orange-bg);
   color: var(--text);
 }
+
+/* ---------- Gesprächsdokumentation (Leitfaden v2.0) ---------- */
+/* Das Formular baut sich aus dem Kampagnen-Katalog und wird dadurch je nach
+   Ergebnis unterschiedlich lang. Die Abschnitte sind deshalb optisch klar
+   getrennt, statt in einem durchlaufenden Raster zu verschwimmen. */
+.wrapup { display: flex; flex-direction: column; gap: 14px; }
+
+.wrapup-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.wrapup-context span { display: inline-flex; align-items: center; gap: 5px; }
+.wrapup-context-warn { color: #aa5f00; font-weight: 550; }
+
+.wrapup-privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  background: var(--orange-bg);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.wrapup-privacy svg { flex: none; margin-top: 2px; }
+
+.wrapup-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--separator);
+}
+.wrapup-section:first-of-type { border-top: 0; padding-top: 0; }
+.wrapup-section > h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* „Pflicht" ist die Kernaussage der Leitfäden (vergütungsrelevant) — deshalb
+   ein eigener, ruhiger Marker statt eines Sternchens, das man übersieht. */
+.wrapup-req {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--tng-blue-50);
+  color: var(--tng-blue-dark);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+:root[data-theme='dark'] .wrapup-req { background: rgba(58, 141, 209, 0.2); color: #6cbef0; }
+
+.wrapup-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.wrapup-choice {
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.wrapup-choice:hover { border-color: var(--border-strong); color: var(--text); }
+.wrapup-choice.is-active {
+  border-color: var(--tng-blue);
+  background: var(--tng-blue-50);
+  color: var(--tng-blue-dark);
+  font-weight: 550;
+}
+:root[data-theme='dark'] .wrapup-choice.is-active {
+  background: rgba(58, 141, 209, 0.16);
+  color: #6cbef0;
+}
+
+.wrapup-scores { display: flex; gap: 6px; }
+.wrapup-score {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-card);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.wrapup-score.is-active { border-color: var(--tng-blue); background: var(--tng-blue-50); color: var(--tng-blue-dark); }
+/* 5 und 6 sind die Noten, bei denen der Leitfaden eine Begründung verlangt. */
+.wrapup-score.is-bad.is-active { border-color: var(--orange); background: var(--orange-bg); color: #aa5f00; }
+
+.wrapup-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  cursor: pointer;
+}
+.wrapup-check input { margin-top: 2px; flex: none; accent-color: var(--tng-blue); }
+
+.wrapup-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+.wrapup-note.inline { display: inline; }
+
+.wrapup-markers { display: flex; flex-direction: column; gap: 12px; }
+.wrapup-markers > div { display: flex; flex-direction: column; gap: 6px; }
+.wrapup-markers-head {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+
+.wrapup-toggle {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  color: var(--tng-blue);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Der Statuskasten ist die Antwort auf „kann ich abschließen?" — er steht
+   deshalb unmittelbar über den Knöpfen und nennt die offenen Punkte namentlich
+   statt nur zu sperren. */
+.wrapup-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.wrapup-status svg { flex: none; margin-top: 2px; }
+.wrapup-status.is-ok { background: var(--green-bg); color: #157a3a; }
+.wrapup-status.is-open { background: var(--orange-bg); color: #8a4d00; }
+.wrapup-status ul { margin: 4px 0 0; padding-left: 18px; }
+.wrapup-status li { margin-bottom: 2px; }
+:root[data-theme='dark'] .wrapup-status.is-ok { color: #6ddc95; }
+:root[data-theme='dark'] .wrapup-status.is-open { color: #ffb84d; }
+
+/* Beschriftung einer Knopfgruppe — sieht aus wie ein Feldlabel, ist aber
+   keines (kein zugehöriges Eingabefeld, siehe Kommentar in CallWrapupForm). */
+.field-label {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+}
+
+.wrapup-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+/* Was aus den Gesprächen eines Kunden bleibt — HomeID, Einwilligung,
+   Fraud-Markierung. Ein schmaler Streifen statt eigener Karten: die Angaben
+   sind Vorbedingungen für den nächsten Anruf, kein eigener Inhalt. */
+.compliance-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 0 0 14px;
+  padding: 10px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-card);
+  font-size: 12.5px;
+}
+.compliance-item { display: inline-flex; align-items: center; gap: 7px; color: var(--text); }
+.compliance-item svg { flex: none; }
+.compliance-item.is-ok { color: #157a3a; }
+.compliance-item.is-blocked { color: #aa5f00; }
+.compliance-item.is-flagged { color: #b8261d; }
+:root[data-theme='dark'] .compliance-item.is-ok { color: #6ddc95; }
+:root[data-theme='dark'] .compliance-item.is-blocked { color: #ffb84d; }
+:root[data-theme='dark'] .compliance-item.is-flagged { color: #ff8a80; }

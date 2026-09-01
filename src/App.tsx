@@ -52,6 +52,7 @@ const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m
 const NettoRechner = lazy(() => import('./pages/NettoRechner').then((m) => ({ default: m.NettoRechner })));
 const Schedule = lazy(() => import('./pages/Schedule').then((m) => ({ default: m.Schedule })));
 const CampaignManager = lazy(() => import('./pages/CampaignManager').then((m) => ({ default: m.CampaignManager })));
+const CallWrapups = lazy(() => import('./pages/CallWrapups').then((m) => ({ default: m.CallWrapups })));
 const Postfach = lazy(() => import('./pages/Postfach').then((m) => ({ default: m.Postfach })));
 
 const TITLES: Record<RouteName, string> = {
@@ -77,6 +78,7 @@ const TITLES: Record<RouteName, string> = {
   schedule: 'Schichtplan',
   campaignmanager: 'Kampagnen-Verwaltung',
   postfach: 'Postfach',
+  wrapups: 'Nachbearbeitung',
 };
 
 function PageFallback() {
@@ -119,6 +121,7 @@ function prefetchAllPages() {
       import('./pages/NettoRechner'),
       import('./pages/Schedule'),
       import('./pages/CampaignManager'),
+      import('./pages/CallWrapups'),
       import('./pages/Postfach'),
     ]);
   });
@@ -194,6 +197,7 @@ function Shell() {
               {route.name === 'netto' && <NettoRechner />}
               {route.name === 'schedule' && <Schedule />}
               {route.name === 'campaignmanager' && <CampaignManager />}
+              {route.name === 'wrapups' && <CallWrapups />}
               {route.name === 'postfach' && <Postfach />}
             </Suspense>
           </div>

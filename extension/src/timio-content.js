@@ -707,8 +707,20 @@
   // weiter, die die Gegenseite wiederfinden muss. Eingehend werden nur die
   // Ergebnisse ausgeblendet, die einen eigenen Wählversuch voraussetzen
   // (outboundOnly) — die Ids bleiben dieselben.
+  function campaignsApi() {
+    return (globalThis.StadtnetzCRM && globalThis.StadtnetzCRM.campaigns) || null;
+  }
+
+  /** Call-Typ der laufenden Schicht; ohne Zuordnung bleibt es bei churn. */
+  function activeCallType() {
+    return shiftState.callType || "churn";
+  }
+
   function activeOutcomes() {
-    const outcomes = (CONFIG.outbound && CONFIG.outbound.outcomes) || [];
+    const api = campaignsApi();
+    const outcomes = api
+      ? api.outcomesFor(activeCallType())
+      : (CONFIG.outbound && CONFIG.outbound.outcomes) || [];
     if (isOutbound(callMode)) return outcomes;
     return outcomes.filter((outcome) => !outcome.outboundOnly);
   }
@@ -750,10 +762,15 @@
     // die strukturierte disposition + Kampagne fürs Team-Dashboard. Nur bei
     // Ergebnissen mit disposition und einem bereits angelegten Anruf (dbCallId);
     // Kündigungsgrund folgt ggf. beim Abschluss (submitCloseout, needsReason).
-    if (outcome.disposition && dbCallId && supabaseClient) {
+    if (dbCallId && supabaseClient) {
       supabaseClient.patchCallDisposition(dbCallId, {
-        disposition: outcome.disposition,
-        campaignId: shiftState.campaignId || undefined
+        disposition: outcome.disposition || undefined,
+        campaignId: shiftState.campaignId || undefined,
+        wrapup: {
+          callType: activeCallType(),
+          outcomeId: outcome.id,
+          data: (closeoutState && closeoutState.wrapup) || {}
+        }
       }).catch(() => {});
     }
     // "Ergebnis festhalten" öffnet für Optionen mit echtem Gesprächsinhalt
@@ -764,7 +781,12 @@
       openCloseout("notiz", call, outcome.seed);
       if (closeoutState && closeoutState.callId === callId) {
         closeoutState.disposition = outcome.disposition || null;
-        closeoutState.needsReason = Boolean(outcome.needsReason);
+        closeoutState.callType = activeCallType();
+        closeoutState.outcomeId = outcome.id;
+        const requires = outcome.requires || [];
+        closeoutState.needsReason =
+          requires.indexOf("rejectionReason") >= 0 || requires.indexOf("winbackReason") >= 0;
+        if (!closeoutState.wrapup) closeoutState.wrapup = {};
       }
     }
     lastOverlaySignature = null;
@@ -906,18 +928,21 @@
     else if (entryType === "tarifwechsel") res = await supabaseClient.insertTariffChange(fields);
     else return;
 
-    // Kündigungsgrund nachtragen (Migration 021): war das Ergebnis „gekündigt",
-    // wird der im Panel erfasste Grund zusätzlich auf den calls-Datensatz
-    // geschrieben. Best-effort, unabhängig vom Erfolg des CRM-Eintrags.
-    if (closeoutState && closeoutState.needsReason && dbCallId && supabaseClient) {
+    // Abschluss-Check nachtragen (Migration 029): die im Panel erfassten
+    // Pflichtangaben — Ursache, HomeID, Einwilligung — landen zusätzlich auf
+    // dem calls-Datensatz. Best-effort, unabhängig vom Erfolg des CRM-Eintrags.
+    if (closeoutState && closeoutState.outcomeId && dbCallId && supabaseClient) {
       const reason = (fields.cancellationReason || "").trim();
-      if (reason) {
-        supabaseClient.patchCallDisposition(dbCallId, {
-          disposition: closeoutState.disposition || "gekuendigt",
-          cancellationReason: reason,
-          campaignId: shiftState.campaignId || undefined
-        }).catch(() => {});
-      }
+      supabaseClient.patchCallDisposition(dbCallId, {
+        disposition: closeoutState.disposition || undefined,
+        cancellationReason: reason || undefined,
+        campaignId: shiftState.campaignId || undefined,
+        wrapup: {
+          callType: closeoutState.callType || activeCallType(),
+          outcomeId: closeoutState.outcomeId,
+          data: closeoutState.wrapup || {}
+        }
+      }).catch(() => {});
     }
 
     // Anruf ist inzwischen vorbei oder ein neuer hat begonnen — das Ergebnis
@@ -1049,6 +1074,59 @@
     return "";
   }
 
+  /**
+   * Abschluss-Check der Kampagne, kompakt fürs Cockpit.
+   *
+   * Dieselben drei Angaben wie im Jira-Panel (siehe closeoutWrapupMarkup in
+   * ui.js) und aus demselben Katalog: Ursache, HomeID, Einwilligung. Es sind
+   * die Dinge, die man nur im Gespräch bekommt — der Rest gehört ins CRM.
+   */
+  function closeoutWrapupMarkup() {
+    const api = campaignsApi();
+    if (!api || !closeoutState || !closeoutState.outcomeId) return "";
+    const callType = closeoutState.callType || activeCallType();
+    const conf = api.campaign(callType);
+    const chosen = api.outcome(callType, closeoutState.outcomeId);
+    if (!chosen) return "";
+    const requires = chosen.requires || [];
+    const wrapup = closeoutState.wrapup || {};
+    const wants = (id) => requires.indexOf(id) >= 0;
+    const parts = [];
+
+    const reasonField = wants("winbackReason") ? "winbackReason" : wants("rejectionReason") ? "rejectionReason" : "";
+    if (reasonField) {
+      const catalog = (conf.catalogs && conf.catalogs[reasonField]) || [];
+      parts.push(`
+        <span class="tc-closeout-label">${reasonField === "winbackReason" ? "Winback-Ursache" : "Ablehnungsgrund"} *</span>
+        <div class="tc-closeout-chipgroup">${catalog.map((entry) =>
+          `<button type="button" class="tc-chip-btn ${wrapup[reasonField] === entry.id ? "is-active" : ""}" data-act="closeout-wrapup-reason" data-field="${escapeHtml(reasonField)}" data-value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</button>`
+        ).join("")}</div>`);
+    }
+
+    if (wants("homeId") || conf.requiresHomeId) {
+      parts.push(`
+        <label class="tc-closeout-label">HomeID${conf.requiresHomeId ? " *" : ""}
+          <input type="text" data-role="closeout-home-id" value="${escapeHtml(wrapup.homeId || "")}" placeholder="HomeID vor ONT-Nr. vor AD-Nr.">
+        </label>
+        <div class="tc-closeout-chipgroup">
+          <button type="button" class="tc-chip-btn ${wrapup.homeIdConfirmed ? "is-active" : ""}" data-act="closeout-wrapup-toggle" data-field="homeIdConfirmed">Vom Kunden bestätigt</button>
+        </div>`);
+    }
+
+    parts.push(`
+      <span class="tc-closeout-label">Double-Opt-In *</span>
+      <div class="tc-closeout-chipgroup">${api.DOI_STATUS.map((entry) =>
+        `<button type="button" class="tc-chip-btn ${wrapup.doi === entry.id ? "is-active" : ""}" data-act="closeout-wrapup-doi" data-value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</button>`
+      ).join("")}</div>`);
+
+    const missing = api.missingRequirements(callType, closeoutState.outcomeId, wrapup);
+    parts.push(missing.length === 0
+      ? `<p class="tc-wrapup-status is-ok">Abschluss-Check vollständig — abrechenbar.</p>`
+      : `<p class="tc-wrapup-status is-open">Noch offen: ${escapeHtml(missing.map((m) => m.label).join(", "))}. Im CRM unter „Nachbearbeitung“ abschließen.</p>`);
+
+    return `<div class="tc-wrapup"><span class="tc-closeout-title">Abschluss-Check · ${escapeHtml(conf.title)}</span>${parts.join("")}</div>`;
+  }
+
   function closeoutPanelMarkup() {
     if (!closeoutState || closeoutState.callId !== callId) return "";
     const { entryType, fields, status, error } = closeoutState;
@@ -1079,9 +1157,10 @@
           <input type="text" data-role="closeout-customer-number" value="${escapeHtml(fields.customerNumber)}">
         </label>
         ${fieldsMarkup}
+        ${closeoutWrapupMarkup()}
         ${closeoutState && closeoutState.needsReason ? `
-        <label class="tc-closeout-label">Kündigungsgrund
-          <input type="text" data-role="closeout-cancellation-reason" value="${escapeHtml(fields.cancellationReason || "")}" placeholder="z.B. zu teuer, Umzug, Wettbewerber">
+        <label class="tc-closeout-label">Kündigungsgrund (Freitext, optional)
+          <input type="text" data-role="closeout-cancellation-reason" value="${escapeHtml(fields.cancellationReason || "")}" placeholder="Ergänzung zur gewählten Ursache">
         </label>` : ""}
         <label class="tc-closeout-label">Jira-Ticket
           <input type="text" data-role="closeout-jira-ticket" value="${escapeHtml(fields.jiraTicket)}">
@@ -1471,6 +1550,21 @@
     }
     if (act === "closeout-set-tarif-changetype") { setCloseoutField("changeType", control.dataset.value); return; }
     if (act === "closeout-set-tarif-context") { setCloseoutField("context", control.dataset.value); return; }
+    if (act === "closeout-wrapup-reason" || act === "closeout-wrapup-doi" || act === "closeout-wrapup-toggle") {
+      if (!closeoutState) return;
+      const wrapup = closeoutState.wrapup || (closeoutState.wrapup = {});
+      if (act === "closeout-wrapup-toggle") {
+        const field = control.dataset.field;
+        wrapup[field] = !wrapup[field];
+      } else {
+        const field = act === "closeout-wrapup-doi" ? "doi" : control.dataset.field;
+        // Erneuter Klick hebt die Wahl auf.
+        wrapup[field] = wrapup[field] === control.dataset.value ? "" : control.dataset.value;
+      }
+      lastOverlaySignature = null;
+      renderOverlay(lastDetails || { status: STATUS.IDLE });
+      return;
+    }
     if (act === "closeout-refresh-settings") { maybeLoadSharedSettings({ forceRefresh: true }); return; }
     if (act === "closeout-submit") { submitCloseout(); return; }
     if (control.dataset.act === "close") {
@@ -1560,10 +1654,15 @@
   function closeoutSignaturePart() {
     if (!closeoutState || closeoutState.callId !== callId) return null;
     const f = closeoutState.fields;
+    const w = closeoutState.wrapup || {};
     return [
       closeoutState.entryType, closeoutState.status, closeoutState.error,
       f.products, f.status, f.priority, f.contractStatus, f.laufzeitMonate, f.changeType, f.context,
-      sharedSettingsState.status
+      sharedSettingsState.status,
+      // Der Abschluss-Check gehört in die Signatur: ohne ihn bliebe ein
+      // geklickter Chip optisch unverändert stehen. Die HomeID fehlt bewusst —
+      // sie kommt aus einem Textfeld, das sich selbst zeichnet.
+      closeoutState.outcomeId, w.winbackReason, w.rejectionReason, w.doi, w.homeIdConfirmed
     ];
   }
 
@@ -1587,6 +1686,14 @@
       case "closeout-notes": f.notes = value; break;
       case "closeout-jira-ticket": f.jiraTicket = value; break;
       case "closeout-cancellation-reason": f.cancellationReason = value; break;
+      case "closeout-home-id": {
+        const api = campaignsApi();
+        const wrapup = closeoutState.wrapup || (closeoutState.wrapup = {});
+        wrapup.homeId = api ? api.normalizeHomeId(value) : value;
+        const kind = api && api.detectHomeIdKind(wrapup.homeId);
+        if (kind) wrapup.homeIdKind = kind.id;
+        break;
+      }
       case "closeout-old-product": f.oldProduct = value; break;
       case "closeout-new-product": f.newProduct = value; break;
       case "closeout-followup-date": f.followUpDate = value; break;

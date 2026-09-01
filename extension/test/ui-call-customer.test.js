@@ -39,7 +39,8 @@ function makeStub(recorded, options) {
 
 async function mountPanel(recorded, options) {
   const env = makePanelSandbox();
-  loadScripts(env.sandbox, ["src/config.js", "src/commission.js", "src/shared.js"]);
+  loadScripts(env.sandbox, ["src/config.js",
+  "src/campaigns.js", "src/commission.js", "src/shared.js"]);
   env.sandbox.StadtnetzCRM.supabaseClient = makeStub(recorded, options);
   loadScripts(env.sandbox, ["src/ai-cache.js", "src/jira-reader.js", "src/rules.js", "src/theme.js", "src/ui.js"]);
   await env.sandbox.StadtnetzCRM.ui.mount();
@@ -198,7 +199,7 @@ async function run() {
     env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: stale });
     env.sandbox.StadtnetzCRM.ui.rerender();
 
-    env.click("call-outcome", { outcome: "reached-done" });
+    env.click("call-outcome", { outcome: "winback-erfolgreich" });
     await flush();
 
     assert.strictEqual(recorded.patched.length, 1,

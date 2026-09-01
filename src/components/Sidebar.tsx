@@ -20,6 +20,7 @@ import {
   Megaphone,
   FileChartColumn,
   Inbox,
+  ClipboardList,
   ChevronRight,
   MoreHorizontal,
 } from 'lucide-react';
@@ -64,6 +65,7 @@ function buildSections(showChef: boolean): NavSection[] {
         { id: 'reports', label: 'Berichte', icon: <FileChartColumn size={16} /> },
         { id: 'schedule', label: 'Schichtplan', icon: <CalendarDays size={16} /> },
         { id: 'postfach', label: 'Postfach', icon: <Inbox size={16} /> },
+        { id: 'wrapups', label: 'Nachbearbeitung', icon: <ClipboardList size={16} /> },
       ],
       more: [
         { id: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={16} /> },

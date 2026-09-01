@@ -45,7 +45,8 @@ function makeStub(inserted) {
 
 async function mountPanel(inserted, options) {
   const env = makePanelSandbox(options);
-  loadScripts(env.sandbox, ["src/config.js", "src/commission.js", "src/shared.js"]);
+  loadScripts(env.sandbox, ["src/config.js",
+  "src/campaigns.js", "src/commission.js", "src/shared.js"]);
   env.sandbox.StadtnetzCRM.supabaseClient = makeStub(inserted);
   loadScripts(env.sandbox, ["src/ai-cache.js", "src/jira-reader.js", "src/rules.js", "src/theme.js", "src/ui.js"]);
   await env.sandbox.StadtnetzCRM.ui.mount();
@@ -79,13 +80,13 @@ async function run() {
     assert.ok(!env.html().includes("sc-closeout"), "Mailbox hat keinen Gesprächsinhalt und öffnet kein Abschluss-Panel");
   }
 
-  // --- Outbound "Erreicht & geklärt" öffnet das Panel mit Notiz --------------
+  // --- Outbound "Winback erfolgreich" öffnet das Panel mit Notiz --------------
   {
     const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
     const { env, KEYS } = await mountPanel(inserted);
     env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall() });
-    env.click("call-outcome", { outcome: "reached-done" });
-    assert.ok(env.html().includes("sc-closeout"), "Outcome \"Erreicht & geklärt\" öffnet das Abschluss-Panel");
+    env.click("call-outcome", { outcome: "winback-erfolgreich" });
+    assert.ok(env.html().includes("sc-closeout"), "Outcome \"Winback erfolgreich\" öffnet das Abschluss-Panel");
     assert.ok(env.html().includes('data-role="closeout-title"'), "Notiz ist der Standard-Eintragstyp");
   }
 
@@ -103,7 +104,7 @@ async function run() {
     const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
     const { env, KEYS } = await mountPanel(inserted);
     env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall() });
-    env.click("call-outcome", { outcome: "reached-done" });
+    env.click("call-outcome", { outcome: "winback-erfolgreich" });
 
     env.click("closeout-type", { value: "vertrag" });
     await flush();
@@ -123,7 +124,7 @@ async function run() {
     const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
     const { env, KEYS } = await mountPanel(inserted);
     env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall({ customerNumber: "99999" }) });
-    env.click("call-outcome", { outcome: "reached-callback" });
+    env.click("call-outcome", { outcome: "callback" });
     env.click("closeout-type", { value: "lead" });
     env.click("closeout-submit");
     await flush();
@@ -139,15 +140,36 @@ async function run() {
     const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
     const { env, KEYS } = await mountPanel(inserted);
     env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall({ dbCallId: "call-row-1" }) });
-    env.click("call-outcome", { outcome: "cancelled" });
+    env.click("call-outcome", { outcome: "winback-gescheitert" });
     await flush();
 
     assert.strictEqual(inserted.patched.length, 1, "das Ergebnis wird auf den Anruf-Datensatz geschrieben");
     assert.strictEqual(inserted.patched[0].id, "call-row-1", "und zwar auf die vom timio-Cockpit gemeldete Zeile");
     assert.strictEqual(inserted.patched[0].disposition, "gekuendigt");
-    // „gekündigt" verlangt zusätzlich einen Grund — dasselbe Feld wie im
-    // timio-Cockpit, damit die Auswertung nicht davon abhängt, wo geklickt wurde.
-    assert.ok(env.html().includes('data-role="closeout-cancellation-reason"'), "das Kündigungsgrund-Feld erscheint");
+    // Zusätzlich das kampagnenspezifische Ergebnis (Migration 029): erst damit
+    // ist im Nachhinein erkennbar, welcher Leitfaden gelaufen ist. Die
+    // Übersetzung in Spalten passiert in supabase.js (dort getestet) — hier
+    // zählt, dass Call-Typ und Ergebnis-Id überhaupt mitgereicht werden.
+    assert.strictEqual(inserted.patched[0].wrapup.outcomeId, "winback-gescheitert");
+    assert.strictEqual(inserted.patched[0].wrapup.callType, "churn");
+    // Der Ablehnungsgrund wird als Katalog angeboten, nicht als Freitext —
+    // strukturiert erfassen ist die Vorgabe des Leitfadens.
+    assert.ok(
+      env.html().includes('data-action="closeout-wrapup-reason"'),
+      "der Ablehnungsgrund erscheint als Katalog-Auswahl"
+    );
+    // „Winbackstatus nur mit Ursache": solange keine gewählt ist, sagt der
+    // Abschluss-Check das offen an, statt stillschweigend abzuschließen.
+    assert.ok(env.html().includes("Noch offen:"), "die fehlenden Pflichtangaben werden benannt");
+
+    // Ursache wählen + Einwilligung setzen -> die Angaben gehen mit.
+    env.click("closeout-wrapup-reason", { field: "rejectionReason", value: "preis" });
+    env.click("closeout-wrapup-doi", { value: "versendet" });
+    env.click("closeout-submit");
+    await flush();
+    const last = inserted.patched[inserted.patched.length - 1];
+    assert.strictEqual(last.wrapup.data.rejectionReason, "preis", "die gewählte Ursache geht mit");
+    assert.strictEqual(last.wrapup.data.doi, "versendet", "der Stand der Einwilligung geht mit");
   }
 
   // --- Ohne bekannte Zeilen-ID wird nichts geschrieben ------------------------
@@ -155,7 +177,7 @@ async function run() {
     const inserted = { notiz: [], lead: [], vertrag: [], tarifwechsel: [] };
     const { env, KEYS } = await mountPanel(inserted);
     env.sandbox.chrome.storage.local.set({ [KEYS.activeCall]: endedCall() });
-    env.click("call-outcome", { outcome: "cancelled" });
+    env.click("call-outcome", { outcome: "winback-gescheitert" });
     await flush();
     assert.strictEqual(inserted.patched.length, 0, "ohne dbCallId gibt es keinen Datensatz zum Beschriften");
   }
@@ -168,7 +190,7 @@ async function run() {
     // Staffelstab, wie ihn timio-content.js hinterlegt — dort ist die
     // Disposition bereits geschrieben.
     env.sandbox.chrome.storage.local.set({
-      [KEYS.callOutcome]: { outcomeId: "cancelled", callId: 1, customerNumber: "12345", createdAt: Date.now() }
+      [KEYS.callOutcome]: { outcomeId: "winback-gescheitert", callId: 1, customerNumber: "12345", createdAt: Date.now() }
     });
     await flush();
     assert.strictEqual(inserted.patched.length, 0, "kein doppelter Schreibvorgang für dasselbe Ergebnis");

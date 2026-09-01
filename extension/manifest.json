@@ -29,6 +29,7 @@
         "src/config.js",
         "src/commission.js",
         "src/shift-time.js",
+        "src/campaigns.js",
         "src/shared.js",
         "src/supabase.js",
         "src/ai-cache.js",
@@ -49,6 +50,7 @@
         "src/config.js",
         "src/commission.js",
         "src/shift-time.js",
+        "src/campaigns.js",
         "src/shared.js",
         "src/supabase.js",
         "src/timio-content.js"

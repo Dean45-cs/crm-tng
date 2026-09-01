@@ -720,6 +720,42 @@
     }
   }
 
+  /**
+   * Der Abschluss-Check der Kampagne als Spalten (Migration 029).
+   *
+   * Übersetzt die im Cockpit erfassten Werte in die Datenbankform. Die harte
+   * Regel „Winbackstatus nur mit Ursache" wird hier NICHT nachgebaut, sondern
+   * über campaigns.js beantwortet — es gibt genau eine Stelle, die sie kennt,
+   * und die Datenbank hält als letzte Instanz dagegen.
+   */
+  function wrapupColumns(wrapup) {
+    const api = (globalThis.StadtnetzCRM && globalThis.StadtnetzCRM.campaigns) || null;
+    const out = {};
+    if (!api || !wrapup || !wrapup.outcomeId) return out;
+
+    const callType = wrapup.callType;
+    const data = wrapup.data || {};
+    out.outcome_code = wrapup.outcomeId;
+    out.winback_status = api.effectiveWinbackStatus(callType, wrapup.outcomeId, data);
+    const reason = data.winbackReason || data.rejectionReason || "";
+    if (reason) out.winback_reason = reason;
+    if (data.winbackMeasure) out.winback_measure = data.winbackMeasure;
+    if (data.homeId) {
+      out.home_id = api.normalizeHomeId(data.homeId);
+      const kind = data.homeIdKind || (api.detectHomeIdKind(out.home_id) || {}).id;
+      if (kind) out.home_id_kind = kind;
+      out.home_id_confirmed = Boolean(data.homeIdConfirmed);
+    }
+    if (data.doi) {
+      out.doi_status = data.doi;
+      if (data.doi === "versendet" || data.doi === "bestaetigt") out.doi_sent_at = new Date().toISOString();
+      if (data.doi === "bestaetigt") out.doi_confirmed_at = new Date().toISOString();
+    }
+    out.wrapup_complete = api.isBillable(callType, wrapup.outcomeId, data);
+    out.wrapup_at = new Date().toISOString();
+    return out;
+  }
+
   // Gesprächsergebnis auf einen bereits angelegten Anruf schreiben (Migration
   // 021): disposition (gehalten/gekündigt/…), Kündigungsgrund und Kampagne.
   // Ergänzt endCall() um die strukturierten Auswertungsfelder — bewusst
@@ -727,7 +763,7 @@
   // feststeht, endCall() aber schon beim Auflegen läuft. Best-effort wie
   // endCall(): scheitert es, bleibt der Anruf ohne Disposition (zählt dann in
   // der Auswertung als „nicht entschieden"), stört aber nichts.
-  async function patchCallDisposition(callId, { disposition, cancellationReason, campaignId }) {
+  async function patchCallDisposition(callId, { disposition, cancellationReason, campaignId, wrapup }) {
     if (!callId) return { ok: false, reason: "error", error: "Keine Anruf-ID." };
     const config = await getEffectiveSupabaseConfig();
     if (!config) return { ok: false, reason: "not-configured" };
@@ -739,6 +775,7 @@
     if (disposition !== undefined) body.disposition = disposition || null;
     if (cancellationReason !== undefined) body.cancellation_reason = cancellationReason || null;
     if (campaignId !== undefined) body.campaign_id = campaignId || null;
+    if (wrapup) Object.assign(body, wrapupColumns(wrapup));
 
     try {
       const res = await fetch(`${config.url}/rest/v1/calls?id=eq.${encodeURIComponent(callId)}`, {

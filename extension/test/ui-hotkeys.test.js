@@ -20,6 +20,7 @@ const { makePanelSandbox, loadScripts } = require("./support/stub-env");
 
 const SCRIPTS = [
   "src/config.js",
+  "src/campaigns.js",
   "src/shared.js",
   "src/ai-cache.js",
   "src/jira-reader.js",
@@ -48,14 +49,16 @@ function press(key, mods) {
 
 async function mountPanel(storageSeed) {
   const env = makePanelSandbox();
-  loadScripts(env.sandbox, ["src/config.js", "src/commission.js", "src/shared.js"]);
+  loadScripts(env.sandbox, ["src/config.js",
+  "src/campaigns.js", "src/commission.js", "src/shared.js"]);
   // Die Palette ist der sichtbare Beweis, dass ein Kürzel wirkt – dafür braucht
   // sie eine Suchquelle (wie in ui-palette.test.js).
   env.sandbox.StadtnetzCRM.supabaseClient = {
     customerCard: async () => ({ ok: false, reason: "not-configured" }),
     searchWorkspace: async () => ({ ok: true, groups: [] })
   };
-  loadScripts(env.sandbox, SCRIPTS.filter((file) => ["src/config.js", "src/shared.js"].indexOf(file) < 0));
+  loadScripts(env.sandbox, SCRIPTS.filter((file) => ["src/config.js",
+  "src/campaigns.js", "src/shared.js"].indexOf(file) < 0));
   const KEYS = env.sandbox.StadtnetzCRM.CONFIG.storageKeys;
   if (storageSeed) Object.assign(env.storage, storageSeed(KEYS));
   await env.sandbox.StadtnetzCRM.ui.mount();

@@ -1,4 +1,5 @@
 import type { Call, Contract, TariffChange, Lead, Note, Campaign, CallDisposition } from '../types';
+import { campaignFor, doiStats, winbackStats } from './campaigns';
 
 export interface CallVolumeStats {
   /** Anrufe im übergebenen Zeitraum (Aufrufer filtert die calls-Liste bereits nach Datum) */
@@ -186,6 +187,19 @@ export interface CampaignPerformance {
   cancelled: number;
   saveRatePct: number | null;
   avgDurationS: number;
+
+  // --- Abschluss-Check der Kampagne (Migration 029) ------------------------
+  // Die Save-Rate allein passt nur auf den Churn-Leitfaden. Was die übrigen
+  // fünf Kampagnen messbar macht, steht hier daneben.
+
+  /** Anteil gehaltener an den entschiedenen Winbacks, in %. */
+  winbackQuotePct: number | null;
+  /** Erfassungen, die noch Pflichtangaben vermissen — nicht abrechenbar. */
+  openWrapups: number;
+  /** Anteil bestätigter HomeIDs, nur wo die Kampagne sie verlangt. */
+  homeIdPct: number | null;
+  /** Anteil der Gespräche mit angekündigter Double-Opt-In Permission. */
+  doiPct: number | null;
 }
 
 /**
@@ -206,6 +220,14 @@ export function campaignPerformance(calls: Call[], campaigns: Campaign[]): Campa
   for (const [campaignId, group] of byCampaign) {
     const campaign = campaigns.find((k) => k.id === campaignId);
     const rate = saveRateStats(group);
+    const winback = winbackStats(group);
+    const doi = doiStats(group);
+    // Der HomeID-Nenner ist kampagnenabhängig: wo der Leitfaden sie nicht
+    // verlangt, gibt es auch keine Quote — eine 0 % stünde dort für „nichts zu
+    // erheben" und wäre schlicht falsch.
+    const needsHomeId = campaign ? Boolean(campaignFor(campaign.callType).requiresHomeId) : false;
+    const decided = group.filter((c) => c.disposition);
+    const withHomeId = decided.filter((c) => c.homeId && c.homeIdConfirmed).length;
     rows.push({
       campaignId,
       campaignName: campaign?.name ?? 'Unbekannte Kampagne',
@@ -215,6 +237,11 @@ export function campaignPerformance(calls: Call[], campaigns: Campaign[]): Campa
       cancelled: rate.cancelled,
       saveRatePct: rate.saveRatePct,
       avgDurationS: callVolumeStats(group).avgDurationS,
+      winbackQuotePct: winback.quotePct,
+      openWrapups: group.filter((c) => c.disposition && !c.wrapupComplete).length,
+      homeIdPct:
+        needsHomeId && decided.length > 0 ? Math.round((withHomeId / decided.length) * 100) : null,
+      doiPct: doi.announcedPct,
     });
   }
   return rows.sort((a, b) => b.totalCalls - a.totalCalls);

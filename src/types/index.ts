@@ -123,6 +123,21 @@ export interface Customer {
   firstSeenAt: string;
   lastContactAt: string;
   createdBy?: string;
+
+  // --- Aus der Gesprächserfassung nachgeführt (Migration 029) --------------
+  // Erhoben wird im Gespräch, gehört aber zum Kunden: die Akte soll ohne
+  // Durchsuchen der Anrufhistorie zeigen, ob eine HomeID vorliegt und ob
+  // werblich angesprochen werden darf.
+
+  /** Belastbarste bestätigte Kennung (HomeID vor ONT vor AD vor Genexis). */
+  homeId?: string;
+  homeIdKind?: HomeIdKind;
+  homeIdAt?: string;
+  /** Stand der Double-Opt-In Permission — werblich erst ab 'bestaetigt'. */
+  doiStatus?: DoiStatus;
+  doiConfirmedAt?: string;
+  /** Einmal gesetzt, nicht durch einen späteren unauffälligen Anruf zurückgenommen. */
+  fraudFlagged?: boolean;
 }
 
 /** Gesprächsergebnis, vom Abschluss-Panel der Extension gesetzt (Migration 021) */
@@ -164,6 +179,99 @@ export interface Call {
   endReason?: string;
   /** Wann das Gesprächsergebnis erfasst wurde — Grundlage der Nachbearbeitungszeit. */
   dispositionAt?: string;
+
+  // --- Gesprächserfassung nach Leitfaden v2.0 (Migration 029) ---------------
+  // Alles, was der Abschluss-Check der jeweiligen Kampagne verlangt. Siehe
+  // src/lib/campaigns.ts für den Katalog, aus dem die Ids stammen.
+
+  /** Kampagnenspezifisches Ergebnis, z.B. 'adresse-korrigiert' (PRL). */
+  outcomeCode?: string;
+  /** Winbackstatus. 'erfolgreich'/'nicht_erfolgreich' nur mit Ursache. */
+  winbackStatus?: WinbackStatus;
+  /** Ursache des Winback-Ergebnisses — Id aus dem Katalog der Kampagne. */
+  winbackReason?: string;
+  /** Eingesetzte Stufe des Winback-Baukastens. */
+  winbackMeasure?: string;
+  /** Aufgenommene Anschlusskennung. */
+  homeId?: string;
+  homeIdKind?: HomeIdKind;
+  /** Wurde die Nummer wiederholt und vom Kunden bestätigt? */
+  homeIdConfirmed?: boolean;
+  doiStatus?: DoiStatus;
+  /** Getrennt erfasste Kontaktarten der Einwilligung. */
+  doiChannels?: DoiChannel[];
+  doiSentAt?: string;
+  doiConfirmedAt?: string;
+  fraudSuspicion?: boolean;
+  /** Ids der beobachteten Merkmale (wertfreie Beobachtung, keine Bewertung). */
+  fraudMarkers?: string[];
+  fraudNote?: string;
+  /** Aufnehmender Mitarbeiter bzw. Vertriebspartner — Grundlage der Mustererkennung. */
+  salesPartner?: string;
+  /** Beratungsnote 1–6 (Welcome Call). */
+  adviceScore?: number;
+  /** Wurde beim Abschluss ein Beratungsprotokoll ausgehändigt? */
+  adviceProtocol?: boolean;
+  /** Kampagnenspezifische Felder (Gebäudedetails, Adressursache, …). */
+  campaignData?: Record<string, unknown>;
+  /** War der Abschluss-Check zum Erfassungszeitpunkt vollständig? */
+  wrapupComplete?: boolean;
+  wrapupAt?: string;
+}
+
+/**
+ * Winbackstatus (Migration 029). Die beiden abrechenbaren Zustände verlangen
+ * zwingend eine Ursache — ohne sie bleibt der Fall auf 'offen' stehen und ist
+ * weder abrechenbar noch auswertbar (Vorgabe aus dem BVW-Leitfaden, in der
+ * Datenbank als Check-Constraint hinterlegt).
+ */
+export type WinbackStatus = 'offen' | 'erfolgreich' | 'nicht_erfolgreich' | 'irrelevant';
+
+/**
+ * Art der aufgenommenen Anschlusskennung. Die Reihenfolge ist Vorgabe, nicht
+ * Vorliebe: eine ausgewiesene HomeID hat immer Vorrang, danach die
+ * ONT-Seriennummer, zuletzt die AD-Nummer der Dose.
+ */
+export type HomeIdKind = 'homeid' | 'ont' | 'ad' | 'genexis';
+
+/**
+ * Stand der Double-Opt-In Permission. Werblich angesprochen werden darf erst
+ * bei 'bestaetigt' (§ 7 Abs. 2 UWG); der Nachweis ist fünf Jahre aufzubewahren
+ * (§ 7a UWG).
+ */
+export type DoiStatus = 'offen' | 'angekuendigt' | 'versendet' | 'bestaetigt' | 'abgelehnt';
+
+/** Kontaktarten werden laut Leitfaden getrennt erfasst. */
+export type DoiChannel = 'email' | 'telefon' | 'mobil';
+
+/**
+ * Die erfassten Werte einer Gesprächsdokumentation — was die Oberfläche
+ * sammelt, bevor daraus die Spalten oben werden. Schlüssel entsprechen den Ids
+ * in WRAPUP_FIELDS (extension/src/campaigns.js), deshalb bewusst offen
+ * gehalten: der Katalog kennt mehr Felder, als hier einzeln stehen können.
+ */
+export interface CallWrapup {
+  outcomeCode?: string;
+  legitimation?: string;
+  winbackStatus?: WinbackStatus;
+  winbackReason?: string;
+  winbackMeasure?: string;
+  rejectionReason?: string;
+  homeId?: string;
+  homeIdKind?: HomeIdKind;
+  homeIdConfirmed?: boolean;
+  doi?: DoiStatus;
+  doiChannels?: DoiChannel[];
+  fraudSuspicion?: boolean;
+  fraudMarkers?: string[];
+  fraudNote?: string;
+  salesPartner?: string;
+  adviceScore?: number;
+  adviceProtocol?: boolean;
+  note?: string;
+  followUpAt?: string;
+  /** Alles Weitere je Kampagne — Gebäudedetails, PRL-Ursache, Ausbaubedingung … */
+  [field: string]: unknown;
 }
 
 // ============================================================================

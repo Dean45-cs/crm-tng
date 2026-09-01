@@ -12,7 +12,8 @@
 const assert = require("assert");
 const { makeSandbox, loadScripts, createBus } = require("./support/stub-env");
 
-const SCRIPTS = ["src/config.js", "src/shared.js", "src/timio-content.js"];
+const SCRIPTS = ["src/config.js",
+  "src/campaigns.js", "src/shared.js", "src/timio-content.js"];
 
 function portalText(waiting) {
   return [
