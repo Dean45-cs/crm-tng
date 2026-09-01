@@ -99,6 +99,13 @@ bereits — Migrationen sind dann nicht nötig.
   Oberfläche. Ein Trigger führt HomeID, Einwilligung und Fraud-Markierung auf
   die `customers`-Zeile nach, damit die Kundenakte sie ohne Durchsuchen der
   Anrufhistorie zeigen kann.
+- `030_agent_competencies.sql` — Kompetenzen je Kampagne: eine Zeile je
+  (Person, Kampagnentyp) mit Stufe (Einarbeitung / einsatzbereit / Trainer:in),
+  Schulungsdatum und der Leitfaden-Fassung, auf die geschult wurde. KEINE Zeile
+  heißt „nicht geschult" — es gibt bewusst keine Stufe „keine". Der Schichtplan
+  prüft dagegen und warnt, bevor jemand eine Kampagne fährt, für die er nicht
+  geschult ist; ein hartes Verbot gibt es bewusst nicht (Begründung im Kopf der
+  Migration).
 
 > **Erster Zugang (frische Installation):** Beim allerersten Start bietet der
 > Login-Screen automatisch „Erstes Konto einrichten" an — dieses Konto wird der

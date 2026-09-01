@@ -9724,3 +9724,93 @@ table.crm-table tbody tr:hover td:first-child {
 :root[data-theme='dark'] .compliance-item.is-ok { color: #6ddc95; }
 :root[data-theme='dark'] .compliance-item.is-blocked { color: #ffb84d; }
 :root[data-theme='dark'] .compliance-item.is-flagged { color: #ff8a80; }
+
+/* ---------- Kompetenzen je Kampagne (Migration 030) ---------- */
+/* Matrix Person × Kampagne. Die Zelle ist ein Schalter: ein Klick schaltet die
+   Stufe weiter — bei 11 Personen × 6 Kampagnen wären Dropdowns 66 Auswahlfelder
+   für eine Angabe mit drei Werten. */
+.comp-matrix td:not(:first-child),
+.comp-matrix th:not(:first-child) { width: 1%; white-space: nowrap; }
+
+.comp-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  color: var(--text-quaternary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+button.comp-cell:hover { border-color: var(--border-strong); }
+button.comp-cell:disabled { opacity: 0.5; }
+
+.comp-cell.is-einarbeitung { background: var(--orange-bg); border-color: transparent; color: #aa5f00; }
+.comp-cell.is-einsatzbereit { background: var(--green-bg); border-color: transparent; color: #157a3a; }
+.comp-cell.is-trainer { background: var(--tng-blue-50); border-color: transparent; color: var(--tng-blue-dark); }
+/* Auf eine ältere Leitfaden-Fassung geschult: gilt weiter, ist aber nachzuziehen. */
+.comp-cell.is-stale { box-shadow: inset 0 0 0 2px var(--orange); }
+
+:root[data-theme='dark'] .comp-cell.is-einarbeitung { color: #ffb84d; }
+:root[data-theme='dark'] .comp-cell.is-einsatzbereit { color: #6ddc95; }
+:root[data-theme='dark'] .comp-cell.is-trainer { background: rgba(58, 141, 209, 0.2); color: #6cbef0; }
+
+.comp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.comp-legend-item { display: inline-flex; align-items: center; gap: 7px; }
+
+.comp-readiness { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.comp-readiness.is-uncovered { color: var(--red); }
+
+.comp-warning {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  background: var(--orange-bg);
+  font-size: 12.5px;
+}
+
+/* Kompetenz-Beanstandung an der Planzelle. Absichtlich zurückhaltend: der Plan
+   bleibt lesbar, aber eine Zuteilung ohne passende Schulung ist auf einen Blick
+   erkennbar — der Marker sitzt an der Kampagne, nicht an der Schichtart. */
+.shift-cell.comp-block { box-shadow: inset 0 0 0 1.5px var(--red); }
+.shift-cell.comp-warn { box-shadow: inset 0 0 0 1.5px var(--orange); }
+.shift-comp-flag { flex: none; margin-left: 3px; }
+.shift-comp-flag.is-block { color: var(--red); }
+.shift-comp-flag.is-warn { color: var(--orange); }
+
+.schedule-comp-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 13px;
+  border-radius: var(--r-sm);
+  background: var(--orange-bg);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.schedule-comp-summary svg { flex: none; margin-top: 2px; color: #aa5f00; }
+
+.link-button {
+  padding: 0;
+  background: none;
+  color: var(--tng-blue);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

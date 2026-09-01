@@ -170,6 +170,51 @@ function run() {
     "gegenüber Person A wird der Vertrag von Person B nicht offengelegt"
   );
 
+  // --- Kompetenzen ----------------------------------------------------------
+  // Jede Kampagne hat eine eigene Schulungsunterlage — wer den Dubletten-Check
+  // kann, kennt deshalb noch nicht den Bauverweigerer-Prozess.
+  assert.deepStrictEqual(
+    c.COMPETENCY_LEVELS.map((l) => l.id),
+    ["einarbeitung", "einsatzbereit", "trainer"],
+    "drei Stufen in aufsteigender Ordnung"
+  );
+  assert.strictEqual(c.competencyLevel("einarbeitung").needsSupervision, true);
+  assert.strictEqual(c.competencyLevel("einsatzbereit").needsSupervision, false);
+  assert.strictEqual(c.competencyLevel("trainer").canTrain, true);
+  assert.strictEqual(c.competencyLevel("gibtsnicht"), null);
+
+  // Ohne Eintrag darf niemand auf eine Kampagne.
+  assert.strictEqual(c.isQualified("bvw", null), false);
+  assert.strictEqual(c.isQualified("bvw", "einarbeitung"), true, "Einarbeitung ist zuweisbar");
+  // 'other' hat keinen eigenen Leitfaden und deshalb auch keine Schulung.
+  assert.strictEqual(c.isQualified("other", null), true);
+
+  assert.deepStrictEqual(
+    c.competencyIssues("bvw", null, {}).map((i) => i.id),
+    ["nicht-geschult"]
+  );
+  assert.deepStrictEqual(
+    c.competencyIssues("bvw", { level: "einarbeitung" }, { hasSupervisor: false }).map((i) => i.id),
+    ["ohne-begleitung"]
+  );
+  assert.deepStrictEqual(
+    c.competencyIssues("bvw", { level: "einarbeitung" }, { hasSupervisor: true }),
+    [],
+    "mit Begleitung ist die Einarbeitung in Ordnung"
+  );
+  assert.deepStrictEqual(
+    c.competencyIssues("bvw", { level: "einsatzbereit", guideVersion: "1.0" }, {}).map((i) => i.id),
+    ["veraltete-schulung"],
+    "auf eine ältere Leitfaden-Fassung geschult"
+  );
+  assert.deepStrictEqual(
+    c.competencyIssues("bvw", { level: "einsatzbereit" }, {}),
+    [],
+    "ein fehlender Versionsvermerk gilt nicht als veraltet"
+  );
+  assert.strictEqual(c.worstSeverity([{ severity: "warn" }, { severity: "block" }]), "block");
+  assert.strictEqual(c.worstSeverity([]), null);
+
   // --- Beschriftung ---------------------------------------------------------
   assert.strictEqual(c.labelOf(c.CHURN_REASONS, "preis"), "Preis zu hoch");
   assert.strictEqual(c.labelOf(c.CHURN_REASONS, "gibtsnicht"), "gibtsnicht", "unbekannte Id bleibt lesbar");

@@ -14,6 +14,9 @@ import type {
   LeadActivity,
   CustomerAccessRequest,
   Campaign,
+  CampaignCallType,
+  AgentCompetency,
+  CompetencyLevel,
 } from '../types';
 import { useAuth } from './useAuth';
 import { useCalls } from './useCalls';
@@ -44,6 +47,8 @@ import {
   updateIncentiveRow,
   deleteIncentiveRow,
   fetchCampaigns,
+  fetchCompetencies,
+  setCompetency as apiSetCompetency,
   insertCampaign,
   updateCampaignRow,
   fetchLeads,
@@ -117,6 +122,8 @@ interface StoreState {
   incentives: Incentive[];
   /** Fester Kampagnen-Katalog (Migration 019) — bestimmt in der Extension Skript & Einwandkarten. */
   campaigns: Campaign[];
+  /** Schulungsstand je Person und Kampagnentyp (Migration 030). */
+  competencies: AgentCompetency[];
   leads: Lead[];
   /** Aktivitäten pro Lead, absteigend nach created_at */
   leadActivities: Record<string, LeadActivity[]>;
@@ -166,6 +173,16 @@ interface StoreState {
 
   addCampaign: (c: Omit<Campaign, 'id' | 'createdAt'>) => Promise<void>;
   updateCampaign: (id: string, c: Partial<Campaign>) => Promise<void>;
+  /**
+   * Kompetenz setzen oder — mit `level: null` — entfernen (Migration 030).
+   * „Nicht geschult" ist die Abwesenheit einer Zeile, kein eigener Wert.
+   */
+  setCompetency: (
+    userId: string,
+    callType: CampaignCallType,
+    level: CompetencyLevel | null,
+    extra?: { trainedAt?: string; guideVersion?: string; note?: string },
+  ) => Promise<void>;
 
   addLead: (l: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateLead: (id: string, l: Partial<Lead>) => Promise<void>;
@@ -216,6 +233,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   customerOwners: {},
   incentives: [],
   campaigns: [],
+  competencies: [],
   leads: [],
   leadActivities: {},
   accessRequests: [],
@@ -225,7 +243,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   loadAll: async () => {
     const uid = useAuth.getState().currentUserKey;
     try {
-      const [contracts, tariffChanges, notes, owners, incentives, campaigns, leads, activities, accessRequests, customers, settingsRes] = await Promise.all([
+      const [contracts, tariffChanges, notes, owners, incentives, campaigns, competencies, leads, activities, accessRequests, customers, settingsRes] = await Promise.all([
         fetchContracts(),
         fetchTariffChanges(),
         fetchNotes(),
@@ -235,6 +253,8 @@ export const useStore = create<StoreState>()((set, get) => ({
         fetchIncentives().catch(() => [] as Incentive[]),
         // Ebenso für Kampagnen (Migration 019).
         fetchCampaigns().catch(() => [] as Campaign[]),
+        // Ebenso für Kompetenzen (Migration 030).
+        fetchCompetencies().catch(() => [] as AgentCompetency[]),
         // Ebenso für Leads (Migration 005).
         fetchLeads().catch(() => [] as Lead[]),
         // Lead-Aktivitäten (Migration 006).
@@ -293,6 +313,7 @@ export const useStore = create<StoreState>()((set, get) => ({
         customerOwners: owners,
         incentives,
         campaigns,
+        competencies,
         leads,
         leadActivities,
         accessRequests,
@@ -314,6 +335,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       customerOwners: {},
       incentives: [],
       campaigns: [],
+      competencies: [],
       leads: [],
       leadActivities: {},
       accessRequests: [],
@@ -343,6 +365,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     });
     const reloadCampaigns = debounce(() => {
       fetchCampaigns().then((rows) => set({ campaigns: rows })).catch(() => {});
+    });
+    const reloadCompetencies = debounce(() => {
+      fetchCompetencies().then((rows) => set({ competencies: rows })).catch(() => {});
     });
     const reloadLeads = debounce(() => {
       fetchLeads().then((rows) => set({ leads: rows })).catch(() => {});
@@ -374,6 +399,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_ownerships' }, reloadOwners)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incentives' }, reloadIncentives)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'campaigns' }, reloadCampaigns)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_competencies' }, reloadCompetencies)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, reloadLeads)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_activities' }, reloadActivities)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_access_requests' }, reloadAccessRequests)
@@ -725,6 +751,37 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (e) {
       fail('Änderung fehlgeschlagen – Kampagne wurde zurückgesetzt.', e);
       set({ campaigns: prev });
+    }
+  },
+
+  setCompetency: async (userId, callType, level, extra) => {
+    const prev = get().competencies;
+    const others = prev.filter((c) => !(c.userId === userId && c.callType === callType));
+    // Optimistisch: die Matrix in der Team-Verwaltung soll auf den Klick
+    // reagieren, nicht auf die Antwort des Servers.
+    set({
+      competencies:
+        level === null
+          ? others
+          : [
+              ...others,
+              {
+                userId,
+                callType,
+                level,
+                trainedAt: extra?.trainedAt,
+                guideVersion: extra?.guideVersion,
+                note: extra?.note,
+                updatedAt: new Date().toISOString(),
+                updatedBy: currentUserKey(),
+              },
+            ],
+    });
+    try {
+      await apiSetCompetency(userId, callType, level, { ...extra, updatedBy: currentUserKey() });
+    } catch (e) {
+      fail('Kompetenz konnte nicht gespeichert werden.', e);
+      set({ competencies: prev });
     }
   },
 

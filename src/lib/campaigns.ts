@@ -112,6 +112,19 @@ interface DoiStatusDef extends CatalogEntry {
   advertisingAllowed: boolean;
 }
 
+/** Kompetenzstufe je Kampagne (Migration 030) — Details in competencies.ts. */
+interface CompetencyLevelEntry extends CatalogEntry {
+  short: string;
+  rank: number;
+  assignable: boolean;
+  needsSupervision: boolean;
+  canTrain: boolean;
+}
+
+interface CompetencyIssueEntry extends CatalogEntry {
+  severity: 'block' | 'warn';
+}
+
 interface CampaignsShared {
   CONTACT_WINDOW: { weekdays: number[]; startMin: number; endMin: number; label: string };
   LEGITIMATION_METHODS: CatalogEntry[];
@@ -162,11 +175,30 @@ interface CampaignsShared {
   ) => WinbackStatus;
   advertisingAllowed: (doiStatus: DoiStatus | null | undefined) => boolean;
   labelOf: (list: CatalogEntry[] | undefined, id: string | null | undefined) => string;
+
+  // --- Kompetenzen (Migration 030) -----------------------------------------
+  COMPETENCY_LEVELS: CompetencyLevelEntry[];
+  COMPETENCY_ISSUES: CompetencyIssueEntry[];
+  competencyLevel: (levelId: string | null | undefined) => CompetencyLevelEntry | null;
+  isQualified: (callType: CampaignCallType | undefined, levelId: string | null | undefined) => boolean;
+  competencyIssues: (
+    callType: CampaignCallType | undefined,
+    competency: { level?: string; guideVersion?: string } | null,
+    context?: { hasSupervisor?: boolean },
+  ) => CompetencyIssueEntry[];
+  worstSeverity: (issues: { severity: string }[]) => 'block' | 'warn' | null;
 }
 
 const shared = (
   globalThis as unknown as { StadtnetzCRM: { campaigns: CampaignsShared } }
 ).StadtnetzCRM.campaigns;
+
+/**
+ * Der geteilte Katalog als Ganzes. Nur für Module, die mehr davon brauchen als
+ * die benannten Exporte unten hergeben — src/lib/competencies.ts arbeitet
+ * darüber, statt jede Kompetenz-Funktion hier einzeln durchzureichen.
+ */
+export const campaignsShared = shared;
 
 // ── Durchgereicht ───────────────────────────────────────────────────────────
 

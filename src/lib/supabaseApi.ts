@@ -1,6 +1,8 @@
 import { getSupabase } from './supabase';
 import type { WrapupPatch } from './campaigns';
 import type {
+  AgentCompetency,
+  CompetencyLevel,
   DoiChannel,
   DoiStatus,
   HomeIdKind,
@@ -774,6 +776,80 @@ export async function updateCampaignRow(id: string, patch: Partial<Campaign>): P
 
 export async function setCampaignActive(id: string, active: boolean): Promise<void> {
   await updateCampaignRow(id, { active });
+}
+
+// ============================================================================
+// Kompetenzen (Migration 030) — wer darf welche Kampagne fahren
+// ============================================================================
+// Eine Zeile je (Person, Kampagnentyp). KEINE Zeile heißt „nicht geschult" —
+// deshalb löscht setCompetency() die Zeile, statt eine Stufe „keine" zu
+// schreiben: ein Zustand, den es in zwei Formen gibt, muss überall doppelt
+// geprüft werden.
+
+interface CompetencyRow {
+  user_id: string;
+  call_type: CampaignCallType;
+  level: CompetencyLevel;
+  trained_at: string | null;
+  guide_version: string | null;
+  note: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+const mapCompetency = (r: CompetencyRow): AgentCompetency => ({
+  userId: r.user_id,
+  callType: r.call_type,
+  level: r.level,
+  trainedAt: r.trained_at ?? undefined,
+  guideVersion: r.guide_version ?? undefined,
+  note: r.note ?? undefined,
+  updatedAt: r.updated_at,
+  updatedBy: r.updated_by ?? undefined,
+});
+
+export async function fetchCompetencies(): Promise<AgentCompetency[]> {
+  const { data, error } = await getSupabase().from('agent_competencies').select('*');
+  if (error) throw error;
+  return (data as CompetencyRow[]).map(mapCompetency);
+}
+
+/**
+ * Kompetenz setzen oder — mit `level: null` — entfernen.
+ *
+ * Das Entfernen ist ein echtes DELETE: „nicht geschult" ist die Abwesenheit
+ * einer Zeile, nicht ein eigener Wert (siehe Migration 030).
+ */
+export async function setCompetency(
+  userId: string,
+  callType: CampaignCallType,
+  level: CompetencyLevel | null,
+  extra?: { trainedAt?: string; guideVersion?: string; note?: string; updatedBy?: string },
+): Promise<void> {
+  const sb = getSupabase();
+  if (level === null) {
+    const { error } = await sb
+      .from('agent_competencies')
+      .delete()
+      .eq('user_id', userId)
+      .eq('call_type', callType);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await sb.from('agent_competencies').upsert(
+    {
+      user_id: userId,
+      call_type: callType,
+      level,
+      trained_at: extra?.trainedAt ?? null,
+      guide_version: extra?.guideVersion ?? null,
+      note: extra?.note ?? null,
+      updated_at: new Date().toISOString(),
+      updated_by: extra?.updatedBy ?? null,
+    },
+    { onConflict: 'user_id,call_type' },
+  );
+  if (error) throw error;
 }
 
 // ============================================================================

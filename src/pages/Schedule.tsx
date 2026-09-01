@@ -20,6 +20,7 @@ import {
   Phone,
   FileSignature,
 } from 'lucide-react';
+import { useRouter } from '../router';
 import { useAuth } from '../store/useAuth';
 import { useStore } from '../store/useStore';
 import { useShifts } from '../store/useShifts';
@@ -56,11 +57,19 @@ import {
   type ShiftOutcome,
   type DayCoverage,
 } from '../lib/shifts';
+import { campaignFor } from '../lib/campaigns';
+import {
+  campaignsForUser,
+  checkPlan,
+  indexCompetencies,
+  type CompetencyIndex,
+  type ShiftCompetencyCheck,
+} from '../lib/competencies';
 import { toast } from '../store/useToast';
 import { SkeletonTable } from '../components/Skeleton';
 import { Modal } from '../components/Modal';
 import { SwapActions } from '../components/SwapActions';
-import type { Call, Shift, ShiftType, ShiftSwapRequest, StaffingTarget } from '../types';
+import type { Call, Campaign, Shift, ShiftType, ShiftSwapRequest, StaffingTarget } from '../types';
 
 const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
@@ -150,8 +159,9 @@ interface CellOp {
  */
 export function Schedule() {
   const { isManager, getCurrentUser } = useAuth();
+  const { navigate } = useRouter();
   const users = useAuth((s) => s.users);
-  const { campaigns, contracts, settings } = useStore();
+  const { campaigns, competencies, contracts, settings } = useStore();
   const manager = isManager();
 
   const swaps = useSwaps((s) => s.requests);
@@ -231,6 +241,15 @@ export function Schedule() {
     shifts?.find((s) => s.userId === userId && s.shiftDate === dk);
 
   const activeCampaigns = useMemo(() => campaigns.filter((c) => c.active), [campaigns]);
+
+  // Kompetenz-Prüfung (Migration 030): welche Zuteilung im angezeigten Plan
+  // passt nicht zum Schulungsstand? Einmal über den ganzen Zeitraum statt je
+  // Zelle — die Begleitungs-Frage muss ohnehin den ganzen Tag ansehen.
+  const competencyIndex = useMemo(() => indexCompetencies(competencies), [competencies]);
+  const planIssues = useMemo(
+    () => (shifts ? checkPlan(shifts, competencyIndex, campaigns) : new Map()),
+    [shifts, competencyIndex, campaigns],
+  );
   const campaignById = useMemo(() => new Map(campaigns.map((c) => [c.id, c])), [campaigns]);
   const campaignColor = (id?: string) => {
     if (!id) return undefined;
@@ -842,6 +861,7 @@ export function Schedule() {
                             outcome={outcomes.get(outcomeKey(u.key, dk))}
                             campaignName={s?.campaignId ? campaignById.get(s.campaignId)?.name : undefined}
                             campaignColor={campaignColor(s?.campaignId)}
+                            competency={planIssues.get(`${u.key}|${dk}`)}
                             manager={manager}
                             painting={canPaint}
                             swappable={swappable}
@@ -895,8 +915,34 @@ export function Schedule() {
         </div>
       )}
 
+      {/* Kompetenz-Beanstandungen des angezeigten Zeitraums, gebündelt. Die
+          Marker in den Zellen sagen WO — diese Zeile sagt, ob es überhaupt
+          etwas gibt, ohne dass man den Plan absuchen muss. */}
+      {planIssues.size > 0 && (
+        <div className="schedule-comp-summary">
+          <AlertTriangle size={14} />
+          <span>
+            {planIssues.size}{' '}
+            {planIssues.size === 1 ? 'Zuteilung passt' : 'Zuteilungen passen'} nicht zum
+            Schulungsstand:{' '}
+            {competencySummary(planIssues)}
+            {manager && (
+              <>
+                {' '}
+                Kompetenzen werden in der{' '}
+                <button className="link-button" onClick={() => navigate({ name: 'teammanager' })}>
+                  Team-Verwaltung
+                </button>{' '}
+                gepflegt.
+              </>
+            )}
+          </span>
+        </div>
+      )}
+
       {editTarget && (
         <ShiftEditPopover
+          competencyIndex={competencyIndex}
           target={editTarget}
           campaigns={activeCampaigns}
           onSave={saveShift}
@@ -967,6 +1013,7 @@ function ShiftCell({
   outcome,
   campaignName,
   campaignColor,
+  competency,
   manager,
   painting,
   swappable,
@@ -979,6 +1026,8 @@ function ShiftCell({
   outcome?: ShiftOutcome;
   campaignName?: string;
   campaignColor?: string;
+  /** Beanstandung der Kompetenz-Prüfung, falls es eine gibt (Migration 030). */
+  competency?: ShiftCompetencyCheck;
   manager: boolean;
   painting: boolean;
   swappable: boolean;
@@ -1003,19 +1052,25 @@ function ShiftCell({
         swappable ? 'swappable' : '',
         pendingSwap ? 'has-swap' : '',
         shift ? `has-shift tone-${meta!.tone}` : 'is-empty-cell',
+        competency?.severity ? `comp-${competency.severity}` : '',
       ]
         .filter(Boolean)
         .join(' ')}
       onClick={onClick}
       disabled={disabled}
       title={
-        pendingSwap
-          ? `Tauschanfrage läuft — ${SWAP_STATUS_LABEL[pendingSwap.status]}`
-          : swappable
-            ? 'Diese Schicht zum Tausch anbieten'
-            : shift && time
-              ? `${meta!.label} ${time}`
-              : undefined
+        // Die Kompetenz-Beanstandung hat Vorrang vor allen anderen Hinweisen:
+        // sie ist der einzige Grund, aus dem diese Zuteilung nicht laufen
+        // sollte, und sie muss ohne Umweg lesbar sein.
+        competency?.severity
+          ? competency.issues.map((i) => `${i.label}: ${i.hint}`).join('\n')
+          : pendingSwap
+            ? `Tauschanfrage läuft — ${SWAP_STATUS_LABEL[pendingSwap.status]}`
+            : swappable
+              ? 'Diese Schicht zum Tausch anbieten'
+              : shift && time
+                ? `${meta!.label} ${time}`
+                : undefined
       }
     >
       {shift ? (
@@ -1028,7 +1083,13 @@ function ShiftCell({
             <span className="shift-campaign">
               <span className="shift-campaign-dot" style={{ background: campaignColor }} />
               {campaignName}
+              {competency?.severity && (
+                <AlertTriangle size={9} className={`shift-comp-flag is-${competency.severity}`} />
+              )}
             </span>
+          )}
+          {compact && competency?.severity && (
+            <AlertTriangle size={9} className={`shift-comp-flag is-${competency.severity}`} />
           )}
           {showOutcome && (
             <span className="shift-outcome">
@@ -1397,12 +1458,14 @@ function SwapDialog({
 function ShiftEditPopover({
   target,
   campaigns,
+  competencyIndex,
   onSave,
   onClear,
   onClose,
 }: {
   target: EditTarget;
-  campaigns: { id: string; name: string }[];
+  campaigns: Campaign[];
+  competencyIndex: CompetencyIndex;
   onSave: (shiftType: ShiftType, campaignId: string) => void;
   onClear?: () => void;
   onClose: () => void;
@@ -1410,6 +1473,13 @@ function ShiftEditPopover({
   const [shiftType, setShiftType] = useState<ShiftType>(target.existing?.shiftType ?? 'frueh');
   const [campaignId, setCampaignId] = useState(target.existing?.campaignId ?? '');
   const time = shiftTimeLabel(shiftType);
+
+  // Kompetenzen dieser Person (Migration 030). Nicht geschulte Kampagnen
+  // bleiben wählbar, sind aber gekennzeichnet: der Plan wird oft unter
+  // Zeitdruck gebaut, und ein hartes Verbot führt nur dazu, dass die Kampagne
+  // gar nicht eingetragen wird — dann sieht das Cockpit keinen Leitfaden mehr.
+  const options = campaignsForUser(campaigns, competencyIndex, target.userId);
+  const chosen = options.find((o) => o.campaign.id === campaignId);
 
   return (
     <Modal
@@ -1452,13 +1522,46 @@ function ShiftEditPopover({
             <label>Kampagne</label>
             <select autoFocus value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
               <option value="">— keine —</option>
-              {campaigns.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+              {options.map((o) => (
+                <option key={o.campaign.id} value={o.campaign.id}>
+                  {o.campaign.name}
+                  {o.level ? ` · ${o.level.label}` : o.qualified ? '' : ' · nicht geschult'}
+                </option>
               ))}
             </select>
+            {chosen && !chosen.qualified && (
+              <div className="field-warning">
+                {target.userName} ist für {campaignFor(chosen.campaign.callType).title} nicht
+                geschult. Zuteilung ist möglich, wird im Plan aber als Warnung markiert.
+              </div>
+            )}
+            {chosen?.level?.needsSupervision && (
+              <div className="field-warning">
+                In Einarbeitung — es muss an diesem Tag jemand Erfahrenes für dieselbe Kampagne
+                eingeteilt sein.
+              </div>
+            )}
           </div>
         )}
       </div>
     </Modal>
   );
+}
+
+/**
+ * „2× nicht geschult, 1× ohne Begleitung" — die Beanstandungen nach Art
+ * gezählt statt einzeln aufgezählt. Bei einem Monatsplan wären es sonst
+ * dreißig gleichlautende Zeilen.
+ */
+function competencySummary(issues: Map<string, ShiftCompetencyCheck>): string {
+  const counts = new Map<string, number>();
+  for (const check of issues.values()) {
+    for (const issue of check.issues) {
+      counts.set(issue.label, (counts.get(issue.label) ?? 0) + 1);
+    }
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, n]) => `${n}× ${label.toLowerCase()}`)
+    .join(', ');
 }

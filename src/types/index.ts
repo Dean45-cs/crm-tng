@@ -292,6 +292,31 @@ export interface Campaign {
 }
 
 /**
+ * Kompetenzstufe einer Person für einen Kampagnentyp (Migration 030).
+ * Es gibt bewusst kein 'keine' — eine fehlende Zeile IST „nicht geschult".
+ */
+export type CompetencyLevel = 'einarbeitung' | 'einsatzbereit' | 'trainer';
+
+/**
+ * Schulungsstand einer Person für einen Kampagnentyp (Migration 030).
+ *
+ * Bezug ist der Kampagnen-TYP, nicht die einzelne Kampagne: geschult wird auf
+ * den Leitfaden, nicht auf „Kündigerrückgewinnung Q3".
+ */
+export interface AgentCompetency {
+  userId: string;
+  callType: CampaignCallType;
+  level: CompetencyLevel;
+  /** Wann die Schulung stattfand. */
+  trainedAt?: string;
+  /** Auf welche Fassung des Leitfadens geschult wurde, z.B. '2.0'. */
+  guideVersion?: string;
+  note?: string;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
+/**
  * Schichtart eines Tages. 'frueh'/'spaet' sind Arbeit, alles andere nicht —
  * aber der Grund macht für die Planung den Unterschied (Migration 024):
  * 'frei' ist eingeplant, 'krank' ist Ausfall, 'urlaub' ist lange bekannt und

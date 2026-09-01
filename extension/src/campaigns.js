@@ -157,6 +157,82 @@
   ];
 
   /**
+   * Kompetenzstufen je Kampagne — der Schulungsstand einer Person.
+   *
+   * Warum es das braucht: jede der sechs Kampagnen hat eine eigene
+   * Schulungsunterlage und einen eigenen Leitfaden. Wer für den Dubletten-Check
+   * geschult ist, kennt deshalb noch lange nicht den Bauverweigerer-Prozess mit
+   * § 156 TKG und dem Schadenersatz-Hinweis — und genau dort richtet ein
+   * ungeschultes Gespräch echten Schaden an. Der Schichtplan teilt Kampagnen zu;
+   * ohne Kompetenzen weiß er nicht, wem er sie zutrauen darf.
+   *
+   *   rank             Ordnung, höher = mehr. Für Vergleiche „mindestens".
+   *   assignable       Darf im Schichtplan auf diese Kampagne gesetzt werden.
+   *   needsSupervision Nur mit erfahrener Begleitung in derselben Schicht.
+   *   canTrain         Kann andere einarbeiten (zählt als Begleitung).
+   */
+  const COMPETENCY_LEVELS = [
+    {
+      id: "einarbeitung",
+      label: "In Einarbeitung",
+      short: "E",
+      rank: 1,
+      assignable: true,
+      needsSupervision: true,
+      canTrain: false,
+      hint: "Geschult, aber noch nicht allein — es muss jemand mit Erfahrung in derselben Schicht sein."
+    },
+    {
+      id: "einsatzbereit",
+      label: "Einsatzbereit",
+      short: "✓",
+      rank: 2,
+      assignable: true,
+      needsSupervision: false,
+      canTrain: false,
+      hint: "Schulung abgeschlossen, führt die Kampagne selbstständig."
+    },
+    {
+      id: "trainer",
+      label: "Trainer:in",
+      short: "★",
+      rank: 3,
+      assignable: true,
+      needsSupervision: false,
+      canTrain: true,
+      hint: "Kann die Kampagne selbst und arbeitet andere darin ein."
+    }
+  ];
+
+  /**
+   * Gründe, warum eine Zuteilung im Schichtplan hakt. Bewusst als Katalog: die
+   * Oberfläche soll den Grund benennen können, nicht nur ein Warndreieck zeigen.
+   *
+   *   severity "block"  darf so nicht laufen
+   *            "warn"   läuft, aber jemand muss es wissen
+   */
+  const COMPETENCY_ISSUES = [
+    {
+      id: "nicht-geschult",
+      severity: "block",
+      label: "Nicht geschult",
+      hint: "Für diese Kampagne ist keine Kompetenz hinterlegt."
+    },
+    {
+      id: "ohne-begleitung",
+      severity: "warn",
+      label: "Ohne Begleitung",
+      hint: "In Einarbeitung, aber an diesem Tag ist niemand Erfahrenes für diese Kampagne eingeteilt."
+    },
+    {
+      id: "veraltete-schulung",
+      severity: "warn",
+      label: "Schulung veraltet",
+      hint: "Geschult auf eine ältere Fassung des Leitfadens — Auffrischung nötig."
+    }
+  ];
+
+  /**
    * JIRA-Komponenten, die die Leitfäden namentlich nennen. Als Liste, weil die
    * Oberfläche sie zur Auswahl stellt statt sie tippen zu lassen — ein
    * vertippter Komponentenname heißt, dass das Ticket in keinem Filter
@@ -1113,6 +1189,61 @@
     return Boolean(entry && entry.advertisingAllowed);
   }
 
+  // ── Kompetenzen ───────────────────────────────────────────────────────────
+
+  /** Stufe nachschlagen. null für „keine Kompetenz hinterlegt". */
+  function competencyLevel(levelId) {
+    return COMPETENCY_LEVELS.find((l) => l.id === levelId) || null;
+  }
+
+  /**
+   * Darf diese Person die Kampagne fahren? Ohne Eintrag: nein.
+   * `other` ist ausgenommen — eine Kampagne ohne eigenen Leitfaden hat auch
+   * keine eigene Schulung, und ein Schulungszwang für „Sonstige" hieße nur,
+   * dass niemand sie je fahren dürfte.
+   */
+  function isQualified(callType, levelId) {
+    if (!callType || callType === "other") return true;
+    const level = competencyLevel(levelId);
+    return Boolean(level && level.assignable);
+  }
+
+  /**
+   * Was spricht gegen diese Zuteilung?
+   *
+   * @param {string} callType Kampagnentyp der Schicht.
+   * @param {object|null} competency Eintrag der Person: { level, guideVersion }.
+   * @param {object} [context] { hasSupervisor: bool } — ist an diesem Tag
+   *   jemand Erfahrenes für dieselbe Kampagne eingeteilt?
+   * @returns {{id, severity, label, hint}[]} leer = alles in Ordnung.
+   */
+  function competencyIssues(callType, competency, context) {
+    if (!callType || callType === "other") return [];
+    const issue = (id) => COMPETENCY_ISSUES.find((i) => i.id === id);
+    const level = competency && competencyLevel(competency.level);
+
+    if (!level || !level.assignable) return [issue("nicht-geschult")];
+
+    const found = [];
+    if (level.needsSupervision && !(context && context.hasSupervisor)) {
+      found.push(issue("ohne-begleitung"));
+    }
+    // Schulungsstand gegen die aktuelle Fassung des Leitfadens. Eine fehlende
+    // Angabe gilt bewusst NICHT als veraltet: Altbestände hätten sonst über
+    // Nacht lauter Warnungen, ohne dass sich etwas geändert hätte.
+    const current = campaign(callType).version;
+    if (competency.guideVersion && current && competency.guideVersion !== current) {
+      found.push(issue("veraltete-schulung"));
+    }
+    return found;
+  }
+
+  /** Höchste Warnstufe einer Liste: "block" > "warn" > null. */
+  function worstSeverity(issues) {
+    if (!issues || issues.length === 0) return null;
+    return issues.some((i) => i.severity === "block") ? "block" : "warn";
+  }
+
   /** Klartext-Label aus einem Katalog, mit der Id als Rückfallebene. */
   function labelOf(list, id) {
     const entry = (list || []).find((e) => e.id === id);
@@ -1128,6 +1259,8 @@
     DOI_RETENTION_YEARS,
     FRAUD_MARKERS,
     WINBACK_STATUS,
+    COMPETENCY_LEVELS,
+    COMPETENCY_ISSUES,
     JIRA_COMPONENTS,
     DOC_SYSTEMS,
     DOC_STANDARD_4W,
@@ -1160,6 +1293,10 @@
     isBillable,
     effectiveWinbackStatus,
     advertisingAllowed,
+    competencyLevel,
+    isQualified,
+    competencyIssues,
+    worstSeverity,
     labelOf
   };
 
