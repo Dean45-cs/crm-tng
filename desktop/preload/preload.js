@@ -67,5 +67,12 @@ contextBridge.exposeInMainWorld("hud", {
 
   // Was ein Gespräch von außen unterbricht: gesperrter Bildschirm, Ruhezustand,
   // Herunterfahren. Braucht keinen Beweis – dort spricht niemand mehr.
-  onCallInterrupt: subscribe("hud:call-interrupt")
+  onCallInterrupt: subscribe("hud:call-interrupt"),
+
+  // Der Gesprächsverlauf aus dem Protokoll von myApps (main/call-trace.js):
+  // { at, kind: "alerting"|"connected"|"ended", id, reason }. Die maßgebliche
+  // Quelle — sie kennt als einzige den Unterschied zwischen Klingeln und
+  // Sprechen. `id` ist die Conference-ID, dieselbe, die als $c in der
+  // Anruf-Adresse steht.
+  onCallTrace: subscribe("hud:call-trace")
 });

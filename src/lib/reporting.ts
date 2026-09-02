@@ -25,7 +25,9 @@ import {
   saveRateStats,
   type CampaignPerformance,
   callTimingStats,
+  endReasonStats,
   type CallTimingStats,
+  type EndReasonStats,
 } from './callStats';
 import {
   bucketKeyOf,
@@ -163,6 +165,15 @@ export interface CallSummary {
    * beide nebeneinander sieht, soll das merken statt es zu verwechseln.
    */
   timing: CallTimingStats;
+  /**
+   * Woran die Gespräche geendet haben, nach Verlässlichkeit gruppiert.
+   *
+   * Gehört neben die Zeiten und nicht in eine Fußnote: eine Durchschnittsdauer
+   * ohne Angabe darüber, woher ihre Ränder stammen, lädt dazu ein, ihr zu
+   * glauben. Steht darunter „6 % erst vom nächsten Anruf beendet", weiß man,
+   * wie weit man das tun darf.
+   */
+  endReasons: EndReasonStats;
 }
 
 export interface ReportSeriesPoint {
@@ -411,6 +422,7 @@ function buildCalls(
     hourly,
     busiestHour: peak.count > 0 ? peak.hour : null,
     timing: callTimingStats(calls),
+    endReasons: endReasonStats(calls),
   };
 }
 

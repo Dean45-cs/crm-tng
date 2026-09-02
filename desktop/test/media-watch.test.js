@@ -105,7 +105,7 @@ function run() {
   // --- Der Wächter: Entprellung -------------------------------------------
   {
     const gesehen = [];
-    const wächter = createMediaWatcher({ onChange: (s) => gesehen.push(s), stableTicks: 3 });
+    const wächter = createMediaWatcher({ onChange: (s) => gesehen.push(s), stableTicks: 3, idleTicks: 3 });
 
     wächter.settle("media");
     wächter.settle("media");
@@ -127,13 +127,48 @@ function run() {
   // --- Eine misslungene Messung ist kein Auflegen --------------------------
   {
     const gesehen = [];
-    const wächter = createMediaWatcher({ onChange: (s) => gesehen.push(s), stableTicks: 3 });
+    const wächter = createMediaWatcher({ onChange: (s) => gesehen.push(s), stableTicks: 3, idleTicks: 3 });
     ["media", "media", "media"].forEach(wächter.settle);
     assert.deepStrictEqual(gesehen, ["media"]);
 
     wächter.settle("unknown");
-    assert.deepStrictEqual(gesehen, ["media", "unknown"],
-      "unbekannt gilt sofort – aber es ist ausdrücklich NICHT idle, und call-session.js beendet daran kein Gespräch");
+    assert.deepStrictEqual(gesehen, ["media"],
+      "eine misslungene Messung meldet gar nichts – sie beendet kein Gespräch");
+    assert.strictEqual(wächter.state(), "media", "und ändert den bekannten Zustand nicht");
+    assert.strictEqual(wächter.unknownStreak(), 1, "gezählt wird sie trotzdem");
+  }
+
+  // --- DER FEHLER: unknown darf keine Messungen vergessen machen -----------
+  //
+  // Läuft lsof gelegentlich ins Zeitlimit, wechseln sich unknown und idle ab.
+  // Solange unknown als eigener Zustand galt, setzte es den Zähler zurück –
+  // die drei aufeinanderfolgenden idle, die das Auflegen ausmachen, kamen nie
+  // zustande. Das Gespräch blieb stehen, ohne dass irgendwo ein Fehler auflief.
+  {
+    const gesehen = [];
+    const wächter = createMediaWatcher({ onChange: (s) => gesehen.push(s), stableTicks: 3, idleTicks: 3 });
+    ["media", "media", "media"].forEach(wächter.settle);
+    assert.deepStrictEqual(gesehen, ["media"], "Gespräch läuft");
+
+    // Aufgelegt – aber jede zweite Messung schlägt fehl.
+    wächter.settle("idle");
+    wächter.settle("unknown");
+    wächter.settle("idle");
+    wächter.settle("unknown");
+    wächter.settle("idle");
+    assert.deepStrictEqual(gesehen, ["media", "idle"],
+      "drei gemessene idle beenden das Gespräch, auch mit Aussetzern dazwischen");
+  }
+
+  // --- myApps ist weg: das ist eine Auskunft, keine misslungene Messung -----
+  {
+    const gesehen = [];
+    const wächter = createMediaWatcher({ onChange: (s) => gesehen.push(s), stableTicks: 3, idleTicks: 3 });
+    assert.strictEqual(wächter.classify({ gone: true }), "idle",
+      "ohne myApps gibt es keine Sprachverbindung – das ist bekannt, nicht unbekannt");
+    assert.strictEqual(wächter.classify({ ok: false }), "unknown",
+      "eine fehlgeschlagene Messung bleibt dagegen unbekannt");
+    void gesehen;
   }
 
   // --- Der ganze Weg: messen, einsortieren, melden -------------------------
@@ -143,7 +178,8 @@ function run() {
     const wächter = createMediaWatcher({
       probe: async () => ({ ok: true, sockets: parseLsof(ausgabe) }),
       onChange: (s) => gesehen.push(s),
-      stableTicks: 3
+      stableTicks: 3,
+      idleTicks: 3
     });
 
     return (async () => {
@@ -170,7 +206,37 @@ function run() {
       await leer.tick();
       assert.strictEqual(leer.state(), "unknown", "ok:false ergibt unknown, nicht idle");
 
-      console.log("media-watch.test.js: alle Szenarien bestanden.");
+      // --- Die Schwellen sind mit Absicht ungleich -----------------------------
+  //
+  // Gemessen am 02.09.2026: die Medien-Sockets verschwinden auch MITTEN in
+  // einer laufenden Sitzung und kommen wieder — beobachtet neun Sekunden, bei
+  // durchgehend bestehenden Fenster-Verbindungen von myApps. Mit symmetrischen
+  // drei Messungen hätte diese Lücke ein laufendes Gespräch beendet: dem
+  // Menschen verschwindet die Kundenakte mitten im Satz.
+  {
+    const gesehen = [];
+    const wächter = createMediaWatcher({ onChange: (s) => gesehen.push(s) });
+    assert.strictEqual(wächter.STABLE_TICKS, 3, "Medien gelten schnell");
+    assert.strictEqual(wächter.IDLE_TICKS, 15, "ihr Ausbleiben braucht deutlich länger");
+
+    for (let i = 0; i < 3; i++) wächter.settle("media");
+    assert.deepStrictEqual(gesehen, ["media"]);
+
+    // Die gemessene Lücke: neun Sekunden ohne Medien, dann wieder da.
+    for (let i = 0; i < 9; i++) wächter.settle("idle");
+    assert.deepStrictEqual(gesehen, ["media"],
+      "eine Lücke von neun Sekunden beendet das Gespräch NICHT");
+    assert.strictEqual(wächter.state(), "media", "es gilt weiter als laufend");
+
+    for (let i = 0; i < 3; i++) wächter.settle("media");
+    assert.deepStrictEqual(gesehen, ["media"], "und die Rückkehr ist kein neues Ereignis");
+
+    // Echtes Auflegen: die Sockets bleiben weg.
+    for (let i = 0; i < 15; i++) wächter.settle("idle");
+    assert.deepStrictEqual(gesehen, ["media", "idle"], "erst dauerhaftes Ausbleiben ist ein Auflegen");
+  }
+
+  console.log("media-watch.test.js: alle Szenarien bestanden.");
     })();
   }
 }

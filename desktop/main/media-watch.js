@@ -35,11 +35,31 @@
 // child_process, kein Timer. Alles kommt als Rückruf herein, damit man das hier
 // ohne laufendes Fenster prüfen kann.
 
-// So viele gleichlautende Messungen, bevor ein Wechsel gilt. Gemessen war der
-// Übergang verzugsfrei — drei Messungen sind also nicht nötig, um ihn zu sehen,
-// sondern um eine einzelne verunglückte Messung nicht für eine Tatsache zu
-// halten. Bei einem Takt von 1 s heißt das: das Auflegen steht nach ~3 s fest.
-const STABLE_TICKS = 3;
+// Wie viele gleichlautende Messungen einen Wechsel ausmachen — und warum die
+// beiden Richtungen NICHT gleich behandelt werden.
+//
+// Ein fälschlich erkanntes „Medien da" ist harmlos: es schaltet die
+// Ende-Erkennung für dieses Gespräch nur scharf. Ein fälschlich erkanntes
+// „Medien weg" beendet ein laufendes Gespräch — dem Menschen verschwindet
+// mitten im Satz die Kundenakte vom Bildschirm. Die Schwellen folgen deshalb
+// dem Schaden, nicht der Symmetrie.
+const MEDIA_TICKS = 3;
+
+// ZWEITE MESSUNG (02.09.2026), die die erste korrigiert hat: die Medien-Sockets
+// verschwinden auch MITTEN in einer laufenden Sitzung und kommen wieder —
+// beobachtet war eine Lücke von neun Sekunden, während die Fenster-Verbindungen
+// von myApps durchgehend bestanden. Die erste Messung hatte nur saubere
+// Übergänge gezeigt und mich zu drei Sekunden verleitet; damit hätte diese
+// Lücke ein laufendes Gespräch beendet.
+//
+// Fünfzehn Sekunden überbrücken das mit Reserve. Der Preis ist, dass ein
+// Auflegen erst nach ~15 s feststeht statt nach 3. Das ist die richtige
+// Richtung des Irrtums: ein Gespräch, das zu spät endet, ist lästig; eines,
+// das zu früh endet, kostet die Kundenakte im Gespräch.
+const IDLE_TICKS = 15;
+
+// Rückwärtskompatibler Name für die Tests und die Voreinstellung.
+const STABLE_TICKS = MEDIA_TICKS;
 
 // UDP-Ziele, die nie eine Sprachverbindung sind. Heute macht myApps davon
 // nichts – aber ein Namensauflöser im Programm soll nicht wie ein Gespräch
@@ -136,19 +156,45 @@ function createMediaWatcher(deps) {
   const onChange = typeof options.onChange === "function" ? options.onChange : function () {};
   const stableTicks = typeof options.stableTicks === "number" && options.stableTicks > 0
     ? options.stableTicks
-    : STABLE_TICKS;
+    : MEDIA_TICKS;
+  const idleTicks = typeof options.idleTicks === "number" && options.idleTicks > 0
+    ? options.idleTicks
+    : Math.max(stableTicks, IDLE_TICKS);
 
   let reported = "unknown";
   let candidate = null;
   let candidateCount = 0;
+  // Wie viele Messungen hintereinander nichts ergeben haben. Für die
+  // Einrichtungskarte: dauerhaft hohe Werte heißen, dass die Messung selbst
+  // klemmt — und nicht, dass niemand telefoniert.
+  let unknowns = 0;
 
   function classify(result) {
+    // myApps läuft nicht mehr. Das ist keine misslungene Messung, sondern eine
+    // Auskunft: ohne die App gibt es keine Sprachverbindung.
+    if (result && result.gone) return "idle";
     if (!result || !result.ok || !Array.isArray(result.sockets)) return "unknown";
     return result.sockets.some(isMediaSocket) ? "media" : "idle";
   }
 
   /** Einen beobachteten Zustand einsortieren. Gibt zurück, ob sich etwas geändert hat. */
   function settle(observed) {
+    // „unknown" ist KEIN Zustand, sondern das Ausbleiben einer Auskunft — und
+    // wird deshalb übersprungen, statt einsortiert.
+    //
+    // DAS WAR EIN ECHTER FEHLER: vorher galt unknown sofort als neuer Zustand
+    // und setzte den Zähler zurück. Läuft lsof gelegentlich ins Zeitlimit,
+    // wechseln sich unknown und idle ab — und die drei aufeinanderfolgenden
+    // idle-Messungen, die das Auflegen ausmachen, kommen nie zustande. Das
+    // Gespräch bliebe stehen, ohne dass irgendwo ein Fehler aufliefe. Eine
+    // misslungene Messung darf nichts auslösen, aber sie darf auch nicht
+    // vergessen machen, was vorher schon gemessen wurde.
+    if (observed === "unknown") {
+      unknowns++;
+      return false;
+    }
+    unknowns = 0;
+
     if (observed === reported) {
       candidate = null;
       candidateCount = 0;
@@ -160,10 +206,8 @@ function createMediaWatcher(deps) {
     } else {
       candidateCount++;
     }
-    // „unknown" gilt sofort: dass wir nichts wissen, wissen wir sofort – und es
-    // löst ohnehin nichts aus.
-    const needed = observed === "unknown" ? 1 : stableTicks;
-    if (candidateCount < needed) return false;
+    // „idle" muss länger anhalten als „media" – siehe IDLE_TICKS.
+    if (candidateCount < (observed === "idle" ? idleTicks : stableTicks)) return false;
 
     reported = observed;
     candidate = null;
@@ -187,17 +231,22 @@ function createMediaWatcher(deps) {
     settle,
     classify,
     state: () => reported,
+    unknownStreak: () => unknowns,
     reset: () => {
       reported = "unknown";
       candidate = null;
       candidateCount = 0;
+      unknowns = 0;
     },
-    STABLE_TICKS: stableTicks
+    STABLE_TICKS: stableTicks,
+    IDLE_TICKS: idleTicks
   };
 }
 
 module.exports = {
   STABLE_TICKS,
+  MEDIA_TICKS,
+  IDLE_TICKS,
   parseLsof,
   parseNetstat,
   localPort,

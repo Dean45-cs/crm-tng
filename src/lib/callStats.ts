@@ -403,3 +403,104 @@ export function callTimingStats(calls: Call[], agentKey?: string): CallTimingSta
     avgAhtS: avg(ahts),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Woran das Ende erkannt wurde — und was das für die Zahlen bedeutet
+// ---------------------------------------------------------------------------
+
+/**
+ * Wie belastbar die Dauer eines so beendeten Anrufs ist.
+ *
+ * Das ist keine Spitzfindigkeit: `naechster-anruf` heißt, der Anruf lief so
+ * lange weiter, bis jemand den nächsten wählte — die Dauer ist dann die Pause
+ * zwischen zwei Anrufen, nicht die Länge des Gesprächs. Steckt so etwas
+ * ungekennzeichnet im Durchschnitt, sieht die Zahl seriös aus und ist es nicht.
+ */
+export type EndReasonQuality = 'gemessen' | 'geschaetzt' | 'unbrauchbar' | 'nicht-verbunden';
+
+interface EndReasonInfo {
+  label: string;
+  quality: EndReasonQuality;
+}
+
+const END_REASONS: Record<string, EndReasonInfo> = {
+  // Der Medien-Socket verschwand — der Zeitpunkt stimmt auf Sekunden.
+  'aufgelegt-erkannt': { label: 'Auflegen erkannt', quality: 'gemessen' },
+  // ev=end aus der Anlage. Heute sendet das niemand, der Weg ist aber fertig.
+  anlage: { label: 'Von der Anlage gemeldet', quality: 'gemessen' },
+
+  // Es war nie eine Sprachverbindung zu sehen. Vorsicht mit der Deutung: seit
+  // der Messung vom 02.09.2026 ist bekannt, dass schon das Freizeichen eine
+  // Sprachverbindung erzeugt — „keine gesehen" heißt also nicht verlässlich
+  // „nicht abgenommen", sondern erst einmal nur, dass kein Medienweg sichtbar
+  // war. Deshalb hier bewusst als Schätzung eingeordnet.
+  'nicht-abgenommen': { label: 'Ohne sichtbare Verbindung beendet', quality: 'geschaetzt' },
+
+  // Der Zeitpunkt ist der Knopfdruck bzw. das Sperren — plausibel, aber vom
+  // Menschen abhängig.
+  'von-hand': { label: 'Von Hand beendet', quality: 'geschaetzt' },
+  gesperrt: { label: 'Bildschirm gesperrt', quality: 'geschaetzt' },
+  ruhezustand: { label: 'Rechner im Ruhezustand', quality: 'geschaetzt' },
+  herunterfahren: { label: 'Rechner heruntergefahren', quality: 'geschaetzt' },
+
+  // Hier ist die Dauer ein Artefakt und keine Messung.
+  'naechster-anruf': { label: 'Erst vom nächsten Anruf beendet', quality: 'unbrauchbar' },
+  grenze: { label: 'Zwangsende nach zwei Stunden', quality: 'unbrauchbar' },
+};
+
+export interface EndReasonRow {
+  reason: string;
+  label: string;
+  quality: EndReasonQuality;
+  count: number;
+  pct: number | null;
+}
+
+export interface EndReasonStats {
+  /** Anrufe, bei denen überhaupt ein Grund festgehalten wurde. */
+  withReason: number;
+  rows: EndReasonRow[];
+  /** Anteil der Anrufe mit auf die Sekunde gemessenem Ende, in %. */
+  measuredEndPct: number | null;
+  /** Anteil, dessen Dauer ein Artefakt ist — je höher, desto unbrauchbarer die Durchschnitte. */
+  unusablePct: number | null;
+}
+
+/**
+ * Wie die Gespräche geendet haben, gruppiert nach Verlässlichkeit.
+ *
+ * Der eigentliche Zweck: eine Durchschnittsdauer ohne Angabe darüber, woher
+ * ihre Ränder stammen, lädt dazu ein, ihr zu glauben. Diese Aufschlüsselung
+ * macht sichtbar, wann man das besser nicht tut.
+ */
+export function endReasonStats(calls: Call[], agentKey?: string): EndReasonStats {
+  const relevant = agentKey ? calls.filter((c) => c.agentId === agentKey) : calls;
+  const counts = new Map<string, number>();
+
+  for (const call of relevant) {
+    const reason = (call.endReason ?? '').trim();
+    if (!reason) continue;
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+
+  const withReason = [...counts.values()].reduce((s, n) => s + n, 0);
+  const rows: EndReasonRow[] = [...counts.entries()]
+    .map(([reason, count]) => {
+      // Ein unbekannter Grund wird angezeigt, statt verschluckt zu werden — ein
+      // neuer Wert soll auffallen. Verlässlich ist er aber nicht, also gilt er
+      // als geschätzt.
+      const info = END_REASONS[reason] ?? { label: reason, quality: 'geschaetzt' as EndReasonQuality };
+      return { reason, label: info.label, quality: info.quality, count, pct: share(count, withReason) };
+    })
+    .sort((a, b) => b.count - a.count);
+
+  const byQuality = (q: EndReasonQuality) =>
+    rows.filter((r) => r.quality === q).reduce((s, r) => s + r.count, 0);
+
+  return {
+    withReason,
+    rows,
+    measuredEndPct: share(byQuality('gemessen'), withReason),
+    unusablePct: share(byQuality('unbrauchbar'), withReason),
+  };
+}

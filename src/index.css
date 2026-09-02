@@ -1149,6 +1149,141 @@ table.schedule-table.is-compact .coverage-bar { max-width: 30px; height: 14px; }
 .staffing-row input { text-align: center; }
 .staffing-hint { margin-top: 12px; font-size: 12px; }
 
+/* Automatisch planen — Vorschau des Vorschlags.
+   Die Reihenfolge im Dialog ist die Reihenfolge der Fragen: womit wird
+   gerechnet (Einstellungen), was kommt heraus (Zahlen, Tage, Personen) und
+   was passt nicht (Warnungen, Lücken). */
+.autoplan { display: flex; flex-direction: column; gap: 14px; }
+
+.autoplan-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
+  align-items: start;
+}
+.autoplan-field { display: flex; flex-direction: column; gap: 6px; }
+.autoplan-field-num input { width: 84px; text-align: center; }
+.autoplan-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.autoplan-hint { display: block; font-size: 11.5px; color: var(--text-tertiary); line-height: 1.45; }
+.autoplan-modes { display: flex; gap: 6px; }
+.autoplan-mode {
+  flex: 1 1 0;
+  padding: 8px 6px;
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-card);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.autoplan-mode.is-active { border-color: var(--tng-blue); color: var(--tng-blue); }
+.autoplan-check { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; font-weight: 600; }
+.autoplan-check input { margin-top: 2px; }
+
+.autoplan-stats { display: flex; gap: 8px; }
+.autoplan-stat {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.autoplan-stat strong { font-size: 19px; font-variant-numeric: tabular-nums; }
+.autoplan-stat span { font-size: 11.5px; color: var(--text-tertiary); }
+.autoplan-stat.is-warn { background: var(--orange-bg); }
+.autoplan-stat.is-ok { background: var(--green-bg); }
+
+/* Ein Tag je Zeile: Besetzung gegen Sollwert. Fehlt etwas, ist genau die eine
+   Zahl markiert — nicht die ganze Zeile, sonst leuchtet der halbe Dialog. */
+.autoplan-days { display: flex; flex-direction: column; gap: 2px; }
+.autoplan-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  border-radius: var(--r-xs);
+  font-size: 12.5px;
+}
+.autoplan-day:nth-child(odd) { background: var(--surface-2); }
+.autoplan-day.is-idle { color: var(--text-tertiary); }
+.autoplan-day-name { flex: 1 1 auto; font-weight: 600; }
+.autoplan-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 62px;
+  font-variant-numeric: tabular-nums;
+}
+.autoplan-count.is-short { color: var(--orange); font-weight: 700; }
+.autoplan-target { color: var(--text-tertiary); }
+.autoplan-absent { font-size: 11px; color: var(--text-tertiary); }
+
+.autoplan-agents { display: flex; flex-wrap: wrap; gap: 6px; }
+.autoplan-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.autoplan-agent-avatar {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--tng-blue-50);
+  color: var(--tng-blue-dark);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+.autoplan-agent-name { color: var(--text-secondary); }
+.autoplan-agent-days { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.autoplan-warn {
+  display: flex;
+  gap: 8px;
+  padding: 10px 13px;
+  border-radius: var(--r-sm);
+  background: var(--orange-bg);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.autoplan-warn svg { flex: none; margin-top: 2px; color: #aa5f00; }
+.autoplan-warn ul { margin: 0; padding-left: 16px; }
+
+.autoplan-gaps { font-size: 12.5px; }
+.autoplan-gaps summary { cursor: pointer; font-weight: 600; color: var(--text-secondary); }
+.autoplan-gaps ul { margin: 8px 0 0; padding-left: 16px; line-height: 1.55; }
+
+.autoplan-ok {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  background: var(--green-bg);
+  font-size: 12.5px;
+}
+.autoplan-ok svg { flex: none; }
+
+@media (max-width: 640px) {
+  .autoplan-options { grid-template-columns: 1fr; }
+}
+
 /* Schicht-Auswahl im Detail-Formular */
 .shift-type-choice { display: flex; gap: 6px; flex-wrap: wrap; }
 .shift-type-btn {

@@ -39,6 +39,22 @@
   // groß, dass ein späterer Rückruf desselben Kunden noch darauf hereinfiele.
   const PENDING_DIAL_MS = 90000;
 
+  // So lange darf ein Anruf klingeln, ohne dass je eine Sprachverbindung
+  // entstand. Danach hat niemand abgenommen.
+  //
+  // WARUM ES DAS BRAUCHT: die Sicherung der Ende-Erkennung lautet „beende nie
+  // ein Gespräch, für das nie Medien da waren". Bei einem Anruf, den der Kunde
+  // gar nicht annimmt, sind aber NIE Medien da — der Anruf liefe damit bis zur
+  // Zwei-Stunden-Grenze weiter. Im Outbound ist das kein Randfall.
+  //
+  // Die Sicherung bleibt trotzdem: beendet wird nicht, WEIL nichts zu sehen
+  // war, sondern weil die Messung nachweislich gearbeitet hat (mediaWorked)
+  // und in einer Zeitspanne nichts fand, in der ein Telefon nicht mehr
+  // klingelt. Eine Minute ist großzügig — Anlagen und Mobilboxen greifen nach
+  // 20 bis 30 Sekunden. Und wer die Mobilbox abhört, erzeugt eine
+  // Sprachverbindung; solche Anrufe fallen gar nicht erst hierunter.
+  const RING_TIMEOUT_MS = 60000;
+
   /**
    * @param {object} deps
    * @param {() => number} deps.now Uhr. Injiziert, damit Tests nicht warten müssen.
@@ -107,11 +123,14 @@
 
     // --- Der Zustand als Nutzlast --------------------------------------------
 
-    function durationSeconds() {
+    function durationSeconds(endedAt) {
       if (!current) return null;
       const from = current.connectedAt || current.startedAt;
       if (!from) return null;
-      return Math.max(0, Math.round((now() - from) / 1000));
+      // Der Endzeitpunkt aus dem Protokoll ist genauer als die eigene Uhr:
+      // zwischen dem Auflegen und dem Eintreffen der Meldung liegt Zeit.
+      const to = typeof endedAt === "number" ? endedAt : now();
+      return Math.max(0, Math.round((to - from) / 1000));
     }
 
     /** Der Storage-Schlüssel activeCall in genau der Form, die ui.js erwartet. */
@@ -201,9 +220,14 @@
         // nicht hingesehen" — und er entscheidet, ob dieser Anruf in der
         // Erreichbarkeitsquote mitzählen darf.
         mediaWorked: false,
-        // Wann tatsächlich abgehoben wurde, beobachtet statt angenommen.
-        // startedAt ist das Klingeln; das hier ist das Gespräch.
-        connectedObservedAt: null
+        // Wann tatsächlich abgehoben wurde. NUR aus dem Protokoll von myApps —
+        // der Medien-Socket kann das nicht wissen (siehe main/call-trace.js).
+        connectedObservedAt: null,
+        // Ob für diesen Anruf je ein Protokoll-Ereignis kam. Solange nicht,
+        // gilt der alte Weg; sobald ja, hat das Protokoll das letzte Wort.
+        traceSeen: false,
+        // Dreiwertig: true abgehoben, false nachweislich nicht, null unbekannt.
+        answeredByTrace: null
       };
 
       if (dial) clearPendingDial();
@@ -262,27 +286,34 @@
      * werden — oder vom Panel, wenn jemand „Aufgelegt" drückt. Dann steht er
      * schon im Storage, und ein zweites Schreiben wäre nur Lärm.
      */
-    function closeRow(durationS, reason) {
+    function closeRow(durationS, reason, endedAt) {
       if (!current) return;
       const ending = current;
       current = null;
 
       if (endRow && ending.dbCallId && !ending.test) {
         Promise.resolve(endRow(ending.dbCallId, {
-          endedAt: new Date(now()).toISOString(),
+          endedAt: new Date(typeof endedAt === "number" ? endedAt : now()).toISOString(),
           durationS: typeof durationS === "number" ? durationS : null,
-          // Der beobachtete Verbindungszeitpunkt. Nur wenn er auch beobachtet
-          // wurde — geraten wird hier nichts, sonst stünde eine erfundene
-          // Gesprächsdauer in der Auswertung.
+          // BEIDE KOMMEN AUSSCHLIESSLICH AUS DEM PROTOKOLL von myApps
+          // (main/call-trace.js) — nie aus dem Medien-Socket.
+          //
+          // Am 02.09.2026 mit festgehaltener Bodenwahrheit gemessen: bei einem
+          // Anruf, der NIE angenommen wurde, erschienen dieselben
+          // Medien-Sockets wie bei einem angenommenen, und im Moment des
+          // Abhebens passierte am Socket gar nichts. Das Freizeichen ist selbst
+          // eine Sprachverbindung. Wer daraus Erreichbarkeit oder
+          // Gesprächsdauer ableitet, schreibt erfundene Zahlen in die
+          // Auswertung — und zwar solche, die seriös aussehen.
+          //
+          // Ohne Protokoll bleibt deshalb beides leer. Die Auswertung kommt
+          // damit zurecht und zeigt einen Strich statt einer Zahl; der Nenner
+          // jeder Erreichbarkeitsquote sind nur die Anrufe mit einem echten
+          // true/false (siehe Migration 028).
           connectedAt: ending.connectedObservedAt
             ? new Date(ending.connectedObservedAt).toISOString()
             : null,
-          // Dreiwertig, und das ist der ganze Punkt (siehe Migration 028):
-          // true = abgehoben, false = sicher nicht abgehoben, null = nicht
-          // gemessen. Ohne das dritte „weiß nicht" fiele jede
-          // Erreichbarkeitsquote genau in dem Maß zu schlecht aus, wie die
-          // Erkennung ausfällt.
-          answered: ending.sawMedia ? true : (ending.mediaWorked ? false : null),
+          answered: typeof ending.answeredByTrace === "boolean" ? ending.answeredByTrace : null,
           endReason: reason || ""
         })).catch(() => {});
       }
@@ -298,15 +329,32 @@
      * still selbst abschaltet, ist sonst nicht von einer kaputten zu
      * unterscheiden.
      */
-    function finish(reason) {
+    function finish(reason, endedAt) {
       if (!current) return null;
-      const seconds = durationSeconds();
+      const seconds = durationSeconds(endedAt);
       const why = reason || "von-hand";
       const sawMedia = current.sawMedia;
       publish("ended");
-      const ending = closeRow(seconds, why);
+      const ending = closeRow(seconds, why, endedAt);
       onEvent({ type: "call-end", at: now(), reason: why, sawMedia, durationS: seconds });
       return ending;
+    }
+
+    /**
+     * Es hat nie jemand abgenommen — siehe RING_TIMEOUT_MS.
+     *
+     * Steht im Herzschlag und nicht in mediaState(), weil der Wächter nur
+     * WECHSEL meldet: hat er einmal „idle" gemeldet, kommt nichts mehr, solange
+     * sich nichts ändert. Genau das ist bei einem nicht angenommenen Anruf der
+     * Fall — er würde sonst auf ein Ereignis warten, das es nicht gibt.
+     */
+    function expireUnanswered() {
+      if (!current || current.sawMedia) return false;
+      // Ohne arbeitende Messung wissen wir gar nichts und beenden nichts.
+      if (!current.mediaWorked) return false;
+      if (now() - current.startedAt < RING_TIMEOUT_MS) return false;
+      finish("nicht-abgenommen");
+      return true;
     }
 
     /** Zu lange offen – siehe MAX_CALL_MS. */
@@ -368,6 +416,7 @@
     function heartbeat() {
       if (!current) return false;
       if (expireIfStale()) return false;
+      if (expireUnanswered()) return false;
       publish(current.status);
       return true;
     }
@@ -406,6 +455,49 @@
     }
 
     /**
+     * Ein Ereignis aus dem Protokoll von myApps (main/call-trace.js).
+     *
+     * DIE MASSGEBLICHE QUELLE, sobald sie da ist. Anders als der Medien-Socket
+     * kennt myApps den Unterschied zwischen Klingeln und Sprechen: „connected"
+     * ist das Abheben, „ended" das Auflegen, und ein Anruf ohne „connected"
+     * wurde nachweislich nicht angenommen. Zugeordnet wird über die uuid, die
+     * dieselbe Conference-ID ist, die als $c in der Anruf-Adresse steht — nicht
+     * über zeitliche Nähe.
+     *
+     * @returns das beendete Gespräch — und nur dann etwas.
+     */
+    function traceEvent(event) {
+      if (!current || !event || !event.id) return null;
+      // Ein Ereignis zu einem anderen Anruf geht uns nichts an. Ohne diesen
+      // Vergleich beendete ein Auflegen auf einer zweiten Leitung das laufende
+      // Gespräch.
+      if (!current.externalId || current.externalId !== event.id) return null;
+
+      current.traceSeen = true;
+
+      if (event.kind === "connected") {
+        if (!current.connectedObservedAt) {
+          current.connectedObservedAt = event.at;
+          current.answeredByTrace = true;
+          current.status = "connected";
+          current.connectedAt = event.at;
+          publish(current.status);
+        }
+        return null;
+      }
+
+      if (event.kind === "ended") {
+        // Nie ein „connected" gesehen, aber ein Ende: nicht angenommen. Das ist
+        // eine Feststellung, keine Vermutung — genau dafür gibt es diesen Weg.
+        if (current.answeredByTrace === null) current.answeredByTrace = false;
+        return finish(current.answeredByTrace ? "aufgelegt" : "nicht-abgenommen", event.at);
+      }
+
+      // "alerting" bestätigt nur, dass das Protokoll mitläuft.
+      return null;
+    }
+
+    /**
      * Was am Medien-Socket von myApps beobachtet wurde (main/media-watch.js).
      *
      * DIE SICHERUNG: beendet wird ein Gespräch nur, wenn für genau dieses
@@ -440,20 +532,20 @@
 
       if (state === "media") {
         current.sawMedia = true;
-        // Der erste Medien-Socket IST das Abheben. Bei einem eingehenden Anruf
-        // liegt zwischen startedAt und hier die Klingelzeit; sie gehört nicht
-        // in die Gesprächsdauer.
-        if (!current.connectedObservedAt) {
-          current.connectedObservedAt = now();
-          if (current.status === "ringing") {
-            current.status = "connected";
-            current.connectedAt = current.connectedObservedAt;
-            publish(current.status);
-          }
-        }
+        // HIER STAND EINMAL, der erste Medien-Socket sei das Abheben, und er
+        // hat den Verbindungszeitpunkt gesetzt. Das war falsch, gemessen am
+        // 02.09.2026: bei einem nie angenommenen Anruf erschienen dieselben
+        // Sockets drei Sekunden nach dem Wählen — das Freizeichen ist selbst
+        // eine Sprachverbindung. Der Socket sagt nur „irgendein Medienweg
+        // steht", nicht „es wird gesprochen". Den Verbindungszeitpunkt setzt
+        // ausschließlich das Protokoll (traceEvent).
         return null;
       }
       if (state !== "idle" || !current.sawMedia) return null;
+      // Sobald das Protokoll für diesen Anruf spricht, hat es das letzte Wort.
+      // Der Socket weiß nicht, ob gerade noch geklingelt wird — er hat für
+      // einen nie angenommenen Anruf genauso ausgesehen wie für ein Gespräch.
+      if (current.traceSeen) return null;
       return finish("aufgelegt-erkannt");
     }
 
@@ -485,13 +577,15 @@
         dbCallId: current.dbCallId,
         sawMedia: current.sawMedia,
         mediaWorked: current.mediaWorked,
-        connectedObservedAt: current.connectedObservedAt
+        connectedObservedAt: current.connectedObservedAt,
+        traceSeen: current.traceSeen,
+        answeredByTrace: current.answeredByTrace
       };
     }
 
     return {
-      report, heartbeat, endedByPanel, assignCustomer, finish, mediaState, interrupted,
-      snapshot, MAX_CALL_MS, PENDING_DIAL_MS
+      report, heartbeat, endedByPanel, assignCustomer, finish, mediaState, traceEvent, interrupted,
+      snapshot, MAX_CALL_MS, PENDING_DIAL_MS, RING_TIMEOUT_MS
     };
   }
 

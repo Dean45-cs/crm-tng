@@ -9,7 +9,13 @@ export default defineConfig([
   // `dist` deckt nur den Vite-Build im Wurzelverzeichnis ab — desktop/dist ist
   // das gepackte Electron-Bundle und enthält eine vollständige Kopie von
   // extension/, die sonst doppelt (und veraltet) mitgeprüft würde.
-  globalIgnores(['dist', '**/dist/**']),
+  // `.claude/worktrees` enthält Git-Worktrees — vollständige Kopien des Repos
+  // samt eigener eslint.config.js. ESLint sucht die Config je Datei von unten
+  // nach oben und lädt dadurch auch die verschachtelte; typescript-eslint
+  // registriert deren Verzeichnis als zweite TSConfigRootDir-Kandidatin, was
+  // `npm run lint` mit "multiple candidate TSConfigRootDirs" für *jede* Datei
+  // scheitern lässt. Ohne das Ignore würde der Quelltext ohnehin doppelt geprüft.
+  globalIgnores(['dist', '**/dist/**', '**/.claude/worktrees/**']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -20,6 +26,12 @@ export default defineConfig([
     ],
     languageOptions: {
       globals: globals.browser,
+      parserOptions: {
+        // Explizit gesetzt, damit typescript-eslint die Wurzel nicht aus dem
+        // Aufruf-Stack erraten muss — das schlägt fehl, sobald mehrere Kopien
+        // des Repos sichtbar sind (Worktrees, gepackte Bundles).
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
   },
   // Die Extension (extension/) und die Desktop-App (desktop/) sind klassisches

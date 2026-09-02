@@ -281,6 +281,17 @@ myApps-Fassung, `lsof` fehlt – kommt nie ein „da war" an, und damit endet au
 nie etwas von selbst. Der Rückfall ist dann exakt das Verhalten von vorher.
 Deshalb ist eine misslungene Messung ausdrücklich kein Auflegen.
 
+**Wenn niemand abnimmt.** Die Sicherung hat eine Kehrseite, die im Outbound der
+halbe Alltag ist: bei einem Anruf, den der Kunde gar nicht annimmt, sind nie
+Medien da – er liefe also bis zur Zwei-Stunden-Grenze weiter. Deshalb endet ein
+Anruf zusätzlich, wenn die Messung **nachweislich gearbeitet** hat und in einer
+Minute (`RING_TIMEOUT_MS`) nie eine Sprachverbindung fand. Ein Telefon klingelt
+nicht eine Minute lang – Anlagen und Mobilboxen greifen nach 20 bis 30 Sekunden,
+und wer eine Mobilbox abhört, erzeugt eine Sprachverbindung und fällt gar nicht
+erst darunter. Die Sicherung bleibt trotzdem: ohne arbeitende Messung greift
+auch diese Grenze nicht. Solche Anrufe landen als `answered = false` in der
+Erreichbarkeitsquote – genau die Zahl, die es vorher nicht geben konnte.
+
 Dazu zwei Signale, die keinen Beweis brauchen: **gesperrter Bildschirm** und
 **Ruhezustand** (`powerMonitor` in `main/main.js`) beenden ein Gespräch immer –
 dort spricht niemand mehr.

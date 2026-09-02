@@ -411,6 +411,159 @@ async function run() {
       "ohne Angabe gilt das Gespräch als von Hand beendet");
   }
 
+  // --- Der Kunde geht nicht ran ---------------------------------------------
+  //
+  // DER FALL, den die Sicherung zuerst kaputt gemacht hat: „beende nie ein
+  // Gespräch, für das nie Medien da waren" heißt bei einem nicht angenommenen
+  // Anruf, dass er NIE endet — der Wächter meldet einmal „idle" und danach
+  // nichts mehr, weil sich nichts ändert. Der Anruf lief bis zur
+  // Zwei-Stunden-Grenze weiter.
+  {
+    const env = makeSession();
+    env.session.report({ id: "c-30", nr: "+4970310000000", name: "" });
+    await env.flush();
+
+    // Die Messung arbeitet und findet nichts: es klingelt.
+    env.session.mediaState("idle");
+    assert.strictEqual(env.last().status, "connected", "solange es klingeln kann, läuft der Anruf");
+
+    // Kurz vor der Grenze passiert noch nichts.
+    env.advance(env.session.RING_TIMEOUT_MS - 1000);
+    assert.strictEqual(env.session.heartbeat(), true, "eine Sekunde vorher läuft er noch");
+    assert.strictEqual(env.ended.length, 0);
+
+    // Danach steht fest: es hat niemand abgenommen.
+    env.advance(2000);
+    assert.strictEqual(env.session.heartbeat(), false, "der Herzschlag hört auf");
+    await env.flush();
+    assert.strictEqual(env.last().status, "ended", "und der Anruf ist beendet");
+    assert.strictEqual(env.ended.length, 1);
+
+    const ende = env.events.filter((e) => e.type === "call-end").pop();
+    assert.strictEqual(ende.reason, "nicht-abgenommen");
+    assert.strictEqual(ende.sawMedia, false);
+  }
+
+  // --- Ohne arbeitende Messung wird nichts beendet --------------------------
+  //
+  // Die Sicherung bleibt: auf einem Rechner, auf dem die Erkennung nicht
+  // greift, kommt nie ein „idle" an — und dann darf auch die Klingelgrenze
+  // nichts beenden, sonst verschwände mitten im Gespräch die Kundenakte.
+  {
+    const env = makeSession();
+    env.session.report({ id: "c-31", nr: "+4970310000000", name: "" });
+    await env.flush();
+
+    env.advance(env.session.RING_TIMEOUT_MS * 3);
+    assert.strictEqual(env.session.heartbeat(), true,
+      "ohne je gemessen zu haben, bleibt alles wie vorher");
+    assert.strictEqual(env.ended.length, 0);
+  }
+
+  // --- Wer abgenommen hat, fällt nicht unter die Klingelgrenze --------------
+  {
+    const env = makeSession();
+    env.session.report({ id: "c-32", nr: "+4970310000000", name: "" });
+    await env.flush();
+    env.session.mediaState("media");
+
+    env.advance(env.session.RING_TIMEOUT_MS * 2);
+    assert.strictEqual(env.session.heartbeat(), true,
+      "ein langes Gespräch ist kein nicht angenommener Anruf");
+    assert.strictEqual(env.ended.length, 0);
+  }
+
+  // --- Das Protokoll von myApps: die beiden echten Anrufe vom 02.09.2026 ----
+  //
+  // Nachgestellt mit den Zeitabständen aus der Messung. Das ist der Fall, den
+  // der Medien-Socket NICHT unterscheiden konnte: beide Anrufe sahen dort
+  // gleich aus.
+  {
+    // Anruf B: geklingelt 5 s, abgehoben, 19 s gesprochen.
+    const env = makeSession();
+    env.session.report({ id: "d42162673e0f438f8284941b75dec414", nr: "+4917645874682", name: "" });
+    await env.flush();
+
+    env.advance(5000);
+    env.session.traceEvent({ kind: "connected", id: "d42162673e0f438f8284941b75dec414", at: T0 + 5000 });
+    assert.strictEqual(env.last().status, "connected");
+
+    env.advance(19000);
+    assert.ok(env.session.traceEvent({ kind: "ended", id: "d42162673e0f438f8284941b75dec414", at: T0 + 24000 }));
+    await env.flush();
+
+    assert.strictEqual(env.ended[0].durationS, 19,
+      "die Dauer zählt ab dem Abheben – die fünf Sekunden Klingeln gehören nicht dazu");
+    assert.strictEqual(env.ended[0].answered, true, "abgehoben, und das ist eine Feststellung");
+    assert.ok(env.ended[0].connectedAt, "der Verbindungszeitpunkt wird festgehalten");
+    assert.strictEqual(env.events.filter((e) => e.type === "call-end").pop().reason, "aufgelegt");
+  }
+
+  {
+    // Anruf A: geklingelt 10 s, NIE abgenommen.
+    const env = makeSession();
+    env.session.report({ id: "cb3282c88358461888c4247a905412a8", nr: "+4917645874682", name: "" });
+    await env.flush();
+
+    env.advance(10000);
+    assert.ok(env.session.traceEvent({ kind: "ended", id: "cb3282c88358461888c4247a905412a8", at: T0 + 10000 }));
+    await env.flush();
+
+    assert.strictEqual(env.ended[0].answered, false,
+      "ohne 'connected' wurde nachweislich nicht abgenommen");
+    assert.strictEqual(env.ended[0].connectedAt, null, "und es gibt keinen Verbindungszeitpunkt");
+    assert.strictEqual(env.events.filter((e) => e.type === "call-end").pop().reason, "nicht-abgenommen");
+  }
+
+  // --- Ein Ereignis zu einem ANDEREN Anruf geht uns nichts an ---------------
+  //
+  // Ohne den Vergleich der Conference-ID beendete ein Auflegen auf einer
+  // zweiten Leitung das laufende Gespräch.
+  {
+    const env = makeSession();
+    env.session.report({ id: "aaaa1111", nr: "+4970310000000", name: "" });
+    await env.flush();
+    assert.strictEqual(env.session.traceEvent({ kind: "ended", id: "bbbb2222", at: T0 + 5000 }), null);
+    assert.strictEqual(env.ended.length, 0, "der fremde Anruf lässt unseren in Ruhe");
+    assert.strictEqual(env.last().status, "connected");
+  }
+
+  // --- Spricht das Protokoll, schweigt der Socket ---------------------------
+  //
+  // Beide Quellen gleichzeitig wirken zu lassen, hieße dem Socket zu erlauben,
+  // ein noch klingelndes Gespräch zu beenden – genau das, was er nicht kann.
+  {
+    const env = makeSession();
+    env.session.report({ id: "cccc3333", nr: "+4970310000000", name: "" });
+    await env.flush();
+
+    env.session.mediaState("media");
+    env.session.traceEvent({ kind: "alerting", id: "cccc3333", at: T0 });
+
+    assert.strictEqual(env.session.mediaState("idle"), null,
+      "der Socket beendet nichts mehr, sobald das Protokoll für diesen Anruf spricht");
+    assert.strictEqual(env.ended.length, 0);
+
+    // Das Protokoll beendet es dann sauber.
+    env.advance(8000);
+    assert.ok(env.session.traceEvent({ kind: "ended", id: "cccc3333", at: T0 + 8000 }));
+  }
+
+  // --- Ohne Protokoll bleibt die Erreichbarkeit ausdrücklich unbekannt ------
+  {
+    const env = makeSession();
+    env.session.report({ id: "dddd4444", nr: "+4970310000000", name: "" });
+    await env.flush();
+    env.session.mediaState("media");
+    env.advance(20000);
+    env.session.mediaState("idle");
+    await env.flush();
+
+    assert.strictEqual(env.ended[0].answered, null,
+      "ohne Protokoll wird nichts behauptet – null heißt nicht gemessen, nicht 'nicht abgenommen'");
+    assert.strictEqual(env.ended[0].connectedAt, null);
+  }
+
   console.log("call-session.test.js: alle Prüfungen bestanden");
 }
 

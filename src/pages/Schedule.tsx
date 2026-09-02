@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Phone,
   FileSignature,
+  Wand2,
 } from 'lucide-react';
 import { useRouter } from '../router';
 import { useAuth } from '../store/useAuth';
@@ -28,8 +29,8 @@ import { useSwaps, swapForCell } from '../store/useSwaps';
 import { notify } from '../store/useNotifications';
 import {
   fetchShiftsForWeek,
-  upsertShift,
-  deleteShiftRow,
+  upsertShifts,
+  deleteShiftRows,
   fetchCallsBetween,
   upsertStaffingTarget,
 } from '../lib/supabaseApi';
@@ -69,6 +70,8 @@ import { toast } from '../store/useToast';
 import { SkeletonTable } from '../components/Skeleton';
 import { Modal } from '../components/Modal';
 import { SwapActions } from '../components/SwapActions';
+import { AutoPlanDialog } from '../components/AutoPlanDialog';
+import type { PlanCell } from '../lib/autoSchedule';
 import type { Call, Campaign, Shift, ShiftType, ShiftSwapRequest, StaffingTarget } from '../types';
 
 const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -188,6 +191,7 @@ export function Schedule() {
   const [busy, setBusy] = useState(false);
   const [copyAsk, setCopyAsk] = useState(false);
   const [targetsOpen, setTargetsOpen] = useState(false);
+  const [autoOpen, setAutoOpen] = useState(false);
 
   // Werkzeugleiste (nur für Chefs relevant).
   const [tool, setTool] = useState<Tool>('edit');
@@ -330,21 +334,25 @@ export function Schedule() {
     });
 
     try {
-      await Promise.all(
-        ops.map((op) => {
-          if (op.clear) {
-            const existing = before.get(`${op.userId}|${op.dateKey}`);
-            return existing && !existing.id.startsWith('tmp-')
-              ? deleteShiftRow(existing.id)
-              : Promise.resolve();
-          }
-          return upsertShift({
+      // Gebündelt statt eine Anfrage je Zelle: ein automatisch erzeugter
+      // Monatsplan wären sonst mehrere hundert parallele Schreibvorgänge — und
+      // bei einem Fehler mittendrin ein halb geschriebener Plan.
+      const removeIds: string[] = [];
+      for (const op of ops) {
+        if (!op.clear) continue;
+        const existing = before.get(`${op.userId}|${op.dateKey}`);
+        if (existing && !existing.id.startsWith('tmp-')) removeIds.push(existing.id);
+      }
+      await deleteShiftRows(removeIds);
+      await upsertShifts(
+        ops
+          .filter((op) => !op.clear)
+          .map((op) => ({
             userId: op.userId,
             shiftDate: op.dateKey,
             shiftType: op.shiftType as ShiftType,
             campaignId: op.campaignId || null,
-          });
-        }),
+          })),
       );
       await reload();
       notifyAffected(ops);
@@ -536,15 +544,13 @@ export function Schedule() {
         d.setDate(d.getDate() + 7);
         return { userId: s.userId, dateKey: dateKey(d), shiftType: s.shiftType, campaignId: s.campaignId ?? '' };
       });
-      await Promise.all(
-        ops.map((op) =>
-          upsertShift({
-            userId: op.userId,
-            shiftDate: op.dateKey,
-            shiftType: op.shiftType as ShiftType,
-            campaignId: op.campaignId || null,
-          }),
-        ),
+      await upsertShifts(
+        ops.map((op) => ({
+          userId: op.userId,
+          shiftDate: op.dateKey,
+          shiftType: op.shiftType as ShiftType,
+          campaignId: op.campaignId || null,
+        })),
       );
       await reload();
       toast.success('Vorwoche übernommen.');
@@ -555,6 +561,37 @@ export function Schedule() {
       setBusy(false);
       setWriting(false);
     }
+  };
+
+  // ---- Automatisch planen -------------------------------------------------
+  // Der Vorschlag selbst entsteht in src/lib/autoSchedule.ts; hier steht nur,
+  // was die Seite dazu beisteuert: welche Zellen tabu sind und wie ein
+  // angenommener Vorschlag denselben Weg geht wie jede andere Änderung —
+  // gebündelt, mit Benachrichtigung und mit „Rückgängig".
+  const lockedCells = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of swaps) {
+      set.add(`${r.requesterId}|${r.requesterDate}`);
+      set.add(`${r.partnerId}|${r.partnerDate}`);
+    }
+    return set;
+  }, [swaps]);
+
+  const applyAutoPlan = async (cells: PlanCell[]) => {
+    setAutoOpen(false);
+    await persistCells(
+      cells.map((c) =>
+        c.shiftType === null
+          ? { userId: c.userId, dateKey: c.dateKey, clear: true }
+          : {
+              userId: c.userId,
+              dateKey: c.dateKey,
+              shiftType: c.shiftType,
+              campaignId: c.campaignId ?? '',
+            },
+      ),
+      true,
+    );
   };
 
   // ---- Ableitungen für die Übersicht -------------------------------------
@@ -769,6 +806,14 @@ export function Schedule() {
 
           <button
             className="btn btn-sm"
+            onClick={() => setAutoOpen(true)}
+            disabled={busy || shifts === null}
+            title="Aus Soll-Besetzung, Abwesenheiten und Schulungsstand einen Vorschlag rechnen — erst ansehen, dann übernehmen"
+          >
+            <Wand2 size={13} /> Automatisch planen
+          </button>
+          <button
+            className="btn btn-sm"
             onClick={() => setTargetsOpen(true)}
             title="Wie viele Personen sollen je Wochentag eingeteilt sein?"
           >
@@ -971,6 +1016,22 @@ export function Schedule() {
             durch den Plan der Vorwoche überschrieben.
           </p>
         </Modal>
+      )}
+
+      {autoOpen && (
+        <AutoPlanDialog
+          days={days.map((d) => dateKey(d))}
+          agents={allAgents.map((u) => ({ userId: u.key, name: u.displayName }))}
+          shifts={shifts ?? []}
+          targets={targets}
+          campaigns={activeCampaigns}
+          competencies={competencies}
+          locked={lockedCells}
+          rangeTitle={rangeTitle}
+          busy={busy}
+          onClose={() => setAutoOpen(false)}
+          onApply={(cells) => void applyAutoPlan(cells)}
+        />
       )}
 
       {targetsOpen && (

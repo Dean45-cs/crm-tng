@@ -58,6 +58,7 @@ const MIN_OPACITY = 0.35;
 // an der sich wiederholte Aufrufe als derselbe Anruf erkennen lassen.
 const { PROTOCOL: CALL_PROTOCOL, parseCallUrl, callUrlFromArgv } = require("./call-url");
 const { parseLsof, parseNetstat, isMediaSocket, createMediaWatcher } = require("./media-watch");
+const { createTraceCursor } = require("./call-trace");
 
 // Nur eine Instanz: zwei HUDs würden sich um den Port und um die
 // Extension-Verbindung streiten.
@@ -555,7 +556,10 @@ const PHONE_STATS_DEFAULT = {
   // gezaehlt wie die Anrufe selbst: eine Erkennung, die sich bei Unklarheit
   // still selbst abschaltet, ist sonst nicht von einer kaputten zu
   // unterscheiden.
-  mediaSeen: 0, autoEnds: 0, lastMediaAt: 0, lastEndReason: ""
+  mediaSeen: 0, autoEnds: 0, lastMediaAt: 0, lastEndReason: "",
+  // Ereignisse aus dem Protokoll von myApps – zeigt, ob die Protokollierung
+  // dort eingeschaltet ist. Ohne sie kommt hier nie etwas an.
+  traceEvents: 0
 };
 
 // Meldungen, die eintreffen, bevor es den Store gibt. Das ist kein Randfall,
@@ -615,6 +619,7 @@ function recordCallSeen(event) {
   // Einrichtungskarte: eine Erkennung, die sich bei Unklarheit selbst
   // abschaltet, ist sonst nicht von einer kaputten zu unterscheiden.
   if (event.type === "call-end") {
+    logLine(`call-end: ${event.reason} (Medien gesehen: ${event.sawMedia ? "ja" : "nein"}, ${event.durationS}s)`);
     updatePhoneStats((stats) => {
       stats.lastEndReason = String(event.reason || "");
       if (event.reason === "aufgelegt-erkannt") stats.autoEnds += 1;
@@ -685,7 +690,10 @@ function phoneState() {
     platform: process.platform,
     // Die letzte Messung am Medien-Socket, für den Prüfknopf. null heißt: noch
     // nie gemessen – nicht „nichts gefunden".
-    mediaProbe: mediaProbeResult
+    mediaProbe: mediaProbeResult,
+    // Ob das Protokoll von myApps gefunden wird. Ohne eingeschaltete
+    // Protokollierung existiert es zwar, wächst aber nicht.
+    trace: traceState()
   };
 }
 
@@ -717,6 +725,150 @@ function dial(number) {
   return true;
 }
 
+/**
+ * Eine Zeile in die Protokolldatei im Benutzerprofil (hud-debug.log) — dieselbe
+ * Datei, in der auch die Andock-Versuche der Extension landen.
+ *
+ * Wird vor `app.whenReady()` aufgerufen, gibt es noch keinen userData-Pfad;
+ * dann fällt die Zeile weg. Diagnose ist verzichtbar, die App nicht.
+ */
+function logLine(line) {
+  try {
+    fs.appendFileSync(
+      path.join(app.getPath("userData"), "hud-debug.log"),
+      `${new Date().toISOString()}  ${line}\n`
+    );
+  } catch (error) { /* nicht schreibbar oder noch kein Pfad */ }
+}
+
+// --- Das Protokoll von myApps mitlesen ---------------------------------------
+//
+// Die maßgebliche Quelle für Klingeln, Abheben und Auflegen — siehe
+// main/call-trace.js für die Messung, die belegt, warum der Medien-Socket dafür
+// nicht ausreicht. Gelesen wird nur, was seit dem letzten Blick dazugekommen
+// ist; die Vergangenheit der Datei geht uns nichts an.
+
+const TRACE_PATHS = [
+  // macOS: myApps läuft in einem Sandbox-Container. Lesbar ist die Datei
+  // trotzdem – sie gehört demselben Benutzer.
+  () => path.join(app.getPath("home"), "Library/Containers/com.innovaphone.myapps/Data/Documents/trace.txt"),
+  // Windows: NICHT geprüft. Findet sich nichts, bleibt die Erkennung schlicht
+  // aus, statt an einem geratenen Pfad zu scheitern.
+  () => path.join(process.env.APPDATA || "", "innovaphone", "myApps", "trace.txt"),
+  () => path.join(process.env.LOCALAPPDATA || "", "innovaphone", "myApps", "trace.txt")
+];
+
+const TRACE_POLL_MS = 1000;
+// Mehr als das lesen wir pro Runde nicht nach. Schreibt myApps mit allen
+// Kennzeichen, wächst die Datei schnell – und ein Rückstand darf nicht dazu
+// führen, dass wir Megabytes in den Hauptprozess ziehen.
+const TRACE_MAX_CHUNK = 512 * 1024;
+
+let tracePath = null;
+let traceTimer = null;
+// Rotation, Blockgrenzen und halbe Zeilen stecken im Lesezeiger — dort sind sie
+// ohne laufendes Fenster prüfbar (test/call-trace.test.js). Hier bleibt nur die
+// Datei-Ein-/Ausgabe.
+const traceCursor = createTraceCursor({ maxChunk: TRACE_MAX_CHUNK });
+
+function resolveTracePath() {
+  if (tracePath && fs.existsSync(tracePath)) return tracePath;
+  tracePath = null;
+  for (const build of TRACE_PATHS) {
+    try {
+      const candidate = build();
+      if (candidate && fs.existsSync(candidate)) { tracePath = candidate; break; }
+    } catch (error) { /* nächster Kandidat */ }
+  }
+  return tracePath;
+}
+
+function traceSize() {
+  const file = resolveTracePath();
+  if (!file) return null;
+  try {
+    return fs.statSync(file).size;
+  } catch (error) {
+    return null;
+  }
+}
+
+/** Nachlesen, was seit dem letzten Mal dazugekommen ist. */
+function readTraceDelta() {
+  const file = resolveTracePath();
+  if (!file) return [];
+
+  const size = traceSize();
+  if (size === null) return [];
+
+  const range = traceCursor.plan(size);
+  if (!range) return [];
+
+  let text;
+  try {
+    const fd = fs.openSync(file, "r");
+    try {
+      const buffer = Buffer.alloc(range.to - range.from);
+      fs.readSync(fd, buffer, 0, buffer.length, range.from);
+      text = buffer.toString("utf8");
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (error) {
+    // Nicht lesbar: der Lesezeiger bleibt stehen, damit beim nächsten Versuch
+    // genau dieselbe Stelle noch einmal drankommt statt übersprungen zu werden.
+    return [];
+  }
+
+  return traceCursor.accept(text, range.to);
+}
+
+/**
+ * Mitgelesen wird NUR während eines Gesprächs — dasselbe Fenster wie beim
+ * Medien-Socket. Beim Einschalten setzen wir den Lesezeiger ans Ende: was vor
+ * diesem Anruf im Protokoll stand, ist Vergangenheit.
+ */
+function setTraceWatch(on) {
+  if (!on) {
+    if (traceTimer) clearInterval(traceTimer);
+    traceTimer = null;
+    return;
+  }
+  if (traceTimer) return;
+
+  traceCursor.reset(traceSize() || 0);
+
+  // Der ganze Takt in einem try: ein einziger unerwarteter Fehler — eine kaputte
+  // Zeile, eine Datei, die verschwindet — darf den Wächter nicht für immer
+  // anhalten. Er würde sonst mitten in der Schicht verstummen, ohne dass
+  // irgendwo etwas aufliefe, und die Anrufe liefen wieder ins Nichts.
+  traceTimer = setInterval(() => {
+    try {
+      const events = readTraceDelta();
+      if (!events.length) return;
+      updatePhoneStats((stats) => { stats.traceEvents += events.length; });
+      events.forEach((event) => {
+        logLine(`trace: ${event.kind} ${event.id}${event.reason ? ` reason=${event.reason}` : ""}`);
+        if (win && !win.isDestroyed()) win.webContents.send("hud:call-trace", event);
+      });
+    } catch (error) {
+      logLine(`trace: Takt fehlgeschlagen – ${String((error && error.message) || error)}`);
+    }
+  }, TRACE_POLL_MS);
+}
+
+/** Für die Einrichtungskarte: ist das Protokoll überhaupt da und wächst es? */
+function traceState() {
+  const file = resolveTracePath();
+  if (!file) return { found: false, path: "", size: 0, mtime: 0 };
+  try {
+    const stat = fs.statSync(file);
+    return { found: true, path: file, size: stat.size, mtime: stat.mtimeMs };
+  } catch (error) {
+    return { found: false, path: file, size: 0, mtime: 0 };
+  }
+}
+
 // --- Das Gesprächsende erkennen ---------------------------------------------
 //
 // myApps meldet einen Anruf genau einmal und beim Auflegen gar nicht (der Beleg
@@ -738,7 +890,10 @@ const { execFile } = require("child_process");
 const MYAPPS_PROCESS_NAMES = ["myapps", "myApps", "myapps.exe", "myApps.exe"];
 
 const MEDIA_POLL_MS = 1000;
-const PROBE_TIMEOUT_MS = 2000;
+// Großzügig: lsof muss alle Dateideskriptoren des Prozesses durchgehen und
+// braucht unter Last spürbar länger. Ein Zeitlimit erzeugt eine Messung ohne
+// Ergebnis — und davon will man möglichst wenige.
+const PROBE_TIMEOUT_MS = 5000;
 
 let myAppsPid = 0;
 let mediaTimer = null;
@@ -809,7 +964,9 @@ async function resolveMyAppsPid() {
 async function probeMedia() {
   const pid = await resolveMyAppsPid();
   if (!Number.isInteger(pid) || pid <= 0) {
-    return { ok: false, pid: 0, sockets: [], error: "myApps nicht gefunden" };
+    // Kein Messfehler, sondern eine Auskunft: ohne myApps gibt es keine
+    // Sprachverbindung, das laufende Gespräch ist vorbei.
+    return { ok: false, gone: true, pid: 0, sockets: [], error: "myApps läuft nicht" };
   }
 
   const result = process.platform === "win32"
@@ -854,6 +1011,11 @@ function describeProbe(result) {
 }
 
 function sendMedia(state) {
+  // In die Protokolldatei, nicht nur ins Fenster: wenn das Auflegen einmal
+  // nicht erkannt wird, ist hinterher sonst nicht zu unterscheiden, ob die
+  // Messung ausblieb, etwas anderes meldete, oder ob das Panel sie ignoriert
+  // hat. hud-debug.log liegt in userData.
+  logLine(`media: ${state}`);
   // Gezählt wird nur das Auftauchen. Ein „idle" heißt für sich genommen gar
   // nichts – es steht auch vor dem Abheben und nach jedem Gespräch. Ob daraus
   // ein Ende wurde, weiß nur call-session.js, und das meldet es als Ereignis.
@@ -881,12 +1043,20 @@ function setMediaWatch(on) {
     probe: async () => {
       const result = await probeMedia();
       mediaProbeResult = describeProbe(result);
+      // Nur den Fehlerfall protokollieren, nicht jede der ~60 Messungen pro
+      // Gespräch: eine Protokolldatei, die im Sekundentakt wächst, liest
+      // hinterher niemand.
+      if (!result.ok && !result.gone) logLine(`media-probe fehlgeschlagen: ${result.error}`);
       return result;
     },
     onChange: sendMedia
   });
 
-  const tick = () => { mediaWatcher.tick().catch(() => {}); };
+  const tick = () => {
+    try {
+      mediaWatcher.tick().catch(() => {});
+    } catch (error) { /* s. o.: ein Takt darf nie den Wächter mitnehmen */ }
+  };
   tick();
   mediaTimer = setInterval(tick, MEDIA_POLL_MS);
 }
@@ -1072,6 +1242,7 @@ function registerIpc() {
       case "call-media-watch":
         // Das Panel sagt, ob gerade ein Gespräch läuft. Nur dann wird gemessen.
         setMediaWatch(!!(args && args.on));
+        setTraceWatch(!!(args && args.on));
         return;
       case "media-probe":
         probeMediaOnce();

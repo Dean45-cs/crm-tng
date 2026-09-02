@@ -32,7 +32,11 @@
 //     Aufbau des Gesprächsfensters, und beim Auflegen räumt dieselbe Datei nur
 //     ihre Knöpfe weg.
 //
-//     Erkannt wird es trotzdem, nur eben nicht gemeldet, sondern beobachtet:
+//     Erkannt wird es trotzdem — inzwischen sogar zuverlässig, weil myApps
+//     seinen Gesprächsverlauf selbst protokolliert (main/call-trace.js):
+//     „connected" ist das Abheben, „ended" das Auflegen, und ein Anruf ohne
+//     „connected" wurde nachweislich nicht angenommen. Das ist die maßgebliche
+//     Quelle. Nur wenn sie fehlt (Protokollierung aus), greift der Rückfall:
 //     main/media-watch.js sieht dem Medien-Socket von myApps zu (gemessen:
 //     0 UDP im Leerlauf UND beim Klingeln, 6 beim Abgehobenen, 0 nach dem
 //     Auflegen). Beendet wird ein Gespräch nur, wenn für genau dieses Gespräch
@@ -202,6 +206,15 @@
       // verwaist weg. Genau das ist einmal passiert; die Regel steht in
       // call-session.js und wird dort geprüft.
       if (session.mediaState(msg.state)) stopHeartbeat();
+    });
+  }
+
+  // Das Protokoll von myApps — die maßgebliche Quelle, sobald sie da ist.
+  // Zugeordnet wird über die Conference-ID, nicht über zeitliche Nähe; die
+  // Entscheidung darüber steht in call-session.js.
+  if (typeof window.hud.onCallTrace === "function") {
+    window.hud.onCallTrace((event) => {
+      if (session.traceEvent(event)) stopHeartbeat();
     });
   }
 

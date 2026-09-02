@@ -609,6 +609,23 @@ export function Reports() {
               ({report.calls.timing.measuredPct} %) — nur bei diesen wurde das
               Gesprächsende tatsächlich gemessen. Die übrigen fließen bewusst weder
               positiv noch negativ ein.
+              {report.calls.endReasons.withReason > 0 && (
+                <>
+                  {' '}Davon endeten{' '}
+                  <strong>{report.calls.endReasons.measuredEndPct} %</strong> auf die
+                  Sekunde genau
+                  {report.calls.endReasons.unusablePct !== null &&
+                    report.calls.endReasons.unusablePct > 0 && (
+                      <>
+                        ; bei{' '}
+                        <strong>{report.calls.endReasons.unusablePct} %</strong> ist die
+                        Dauer ein Artefakt (Zwangsende oder erst vom nächsten Anruf
+                        beendet) und taugt nicht als Gesprächslänge
+                      </>
+                    )}
+                  .
+                </>
+              )}
             </>
           )}
         </div>
@@ -650,33 +667,6 @@ export function Reports() {
           label="Anrufe"
           value={report.calls.total}
           sub={deltaSub(report.calls.total, previous.calls.total, (n) => String(n))}
-        />
-        <KpiTile
-          icon={<ShieldCheck size={15} />}
-          accent={
-            report.calls.saveRatePct !== null && report.calls.saveRatePct >= 50 ? 'green' : 'orange'
-          }
-          label="Save-Rate"
-          value={report.calls.saveRatePct === null ? '–' : `${report.calls.saveRatePct} %`}
-          sub={`${report.calls.saved} gehalten · ${report.calls.cancelled} gekündigt`}
-        />
-        <KpiTile
-          icon={<Clock size={15} />}
-          accent="orange"
-          label="Gesprächszeit"
-          value={formatDuration(report.calls.talkTimeS)}
-          sub={`Ø ${formatDuration(report.calls.avgDurationS)} ab Klingeln · ${report.calls.callsPerActiveDay} Anrufe/Tag`}
-        />
-        <KpiTile
-          icon={<Percent size={15} />}
-          accent="purple"
-          label="Anruf → Abschluss"
-          value={report.calls.conversionPct === null ? '–' : `${report.calls.conversionPct} %`}
-          sub={
-            report.calls.avgMinutesToOutcome === null
-              ? `${report.calls.linkedCount} verknüpfte Anrufe`
-              : `${report.calls.linkedCount} verknüpft · Ø ${report.calls.avgMinutesToOutcome} min danach`
-          }
         />
         {report.calls.timing.measured > 0 && (
           <>
@@ -744,6 +734,41 @@ export function Reports() {
             />
           </>
         )}
+        <KpiTile
+          icon={<ShieldCheck size={15} />}
+          accent={
+            report.calls.saveRatePct !== null && report.calls.saveRatePct >= 50 ? 'green' : 'orange'
+          }
+          label="Save-Rate"
+          value={report.calls.saveRatePct === null ? '–' : `${report.calls.saveRatePct} %`}
+          sub={`${report.calls.saved} gehalten · ${report.calls.cancelled} gekündigt`}
+        />
+        <KpiTile
+          icon={<Clock size={15} />}
+          accent="orange"
+          label="Gesprächszeit"
+          value={formatDuration(report.calls.talkTimeS)}
+          // Sobald es eine gemessene Durchschnittsdauer gibt, verschwindet die
+          // alte hier: zwei Ø nebeneinander, die dasselbe zu heißen scheinen
+          // und Verschiedenes bedeuten, sind schlimmer als eines. Die Summe
+          // bleibt, weil sie die Arbeitslast zeigt und alle Anrufe umfasst.
+          sub={
+            report.calls.timing.avgTalkS !== null
+              ? `alle Anrufe, ab Klingeln gerechnet · ${report.calls.callsPerActiveDay} Anrufe/Tag`
+              : `Ø ${formatDuration(report.calls.avgDurationS)} ab Klingeln · ${report.calls.callsPerActiveDay} Anrufe/Tag`
+          }
+        />
+        <KpiTile
+          icon={<Percent size={15} />}
+          accent="purple"
+          label="Anruf → Abschluss"
+          value={report.calls.conversionPct === null ? '–' : `${report.calls.conversionPct} %`}
+          sub={
+            report.calls.avgMinutesToOutcome === null
+              ? `${report.calls.linkedCount} verknüpfte Anrufe`
+              : `${report.calls.linkedCount} verknüpft · Ø ${report.calls.avgMinutesToOutcome} min danach`
+          }
+        />
       </div>
 
       {/* ── Verlauf ── */}

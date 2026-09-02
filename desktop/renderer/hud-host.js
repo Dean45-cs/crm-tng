@@ -210,6 +210,26 @@
         : `Zuletzt geprüft: myApps läuft, ${probe.media} Medien-Verbindung${probe.media === 1 ? "" : "en"} offen${probe.media ? "" : " – richtig, solange kein Gespräch läuft"}.`);
     // Erst warnen, wenn es etwas zu warnen gibt: nach ein paar Gesprächen ohne
     // ein einziges erkanntes Ende.
+    // Das Protokoll von myApps ist die maßgebliche Quelle (main/call-trace.js).
+    // Ob es wirklich gelesen wird, muss hier stehen: ohne eingeschaltete
+    // Protokollierung existiert die Datei zwar, wächst aber nicht — die
+    // Erkennung fiele still auf den ungenaueren Weg zurück, und niemand merkte
+    // es. Genau solche Ausfälle sind die schlimmen.
+    const trace = p.trace || {};
+    const traceOk = p.traceEvents > 0;
+    const traceText = traceOk
+      ? `${p.traceEvents} Ereignisse gelesen — Klingeln, Abheben und Auflegen kommen von der Anlage`
+      : (trace.found
+        ? "Datei gefunden, aber noch nichts gelesen"
+        : "Protokolldatei von myApps nicht gefunden");
+    const traceWarn = !traceOk && p.calls > 2
+      ? `<p class="sc-input-hint sc-hint-warn">Ohne das Protokoll von myApps ist nicht zu unterscheiden, ob abgehoben wurde — Erreichbarkeit und echte Gesprächsdauer bleiben dann leer, und das Auflegen wird nur geschätzt. ${
+        trace.found
+          ? "Die Datei ist da, aber die Protokollierung ist offenbar aus: in myApps die Trace-Kennzeichen einschalten (Maske <code>0x856000001</code>, enthält Signaling)."
+          : "Läuft myApps auf diesem Rechner?"
+      }</p>`
+      : "";
+
     const endeWarn = p.calls > 2 && p.autoEnds === 0 && p.mediaSeen === 0
       ? `<p class="sc-input-hint sc-hint-warn">Das Auflegen wurde noch nie von selbst erkannt – auf diesem Rechner greift die Beobachtung offenbar nicht. Es bleibt beim Knopf „Aufgelegt“; kaputt ist dadurch nichts.</p>`
       : "";
@@ -241,6 +261,9 @@
             <strong>Wählen:</strong> ${p.telHandler ? `tel:-Adressen gehen an „${escapeHtml(p.telHandler)}“` : "kein Programm für tel:-Adressen gefunden"}
             ${telOk ? "" : "<small>Damit der Anrufen-Knopf wirkt, muss myApps sie bekommen: FaceTime öffnen → Menü „FaceTime“ → „Einstellungen…“ → „Standard für Telefonate“ auf myApps. Einmalig, Apple bietet das nirgends sonst an.</small>"}
           </li>
+          <li class="${traceOk ? "is-ok" : ""}">
+            <strong>Protokoll von myApps:</strong> ${escapeHtml(traceText)}
+          </li>
           <li class="${endeOk ? "is-ok" : ""}">
             <strong>Gesprächsende:</strong> ${escapeHtml(ende)}
             ${probeText ? `<small>${probeText}</small>` : ""}
@@ -252,6 +275,7 @@
         ${stuck}
         ${unrecognized}
         ${endeWarn}
+        ${traceWarn}
 
         <p class="sc-input-hint">Zwei Dinge meldet myApps nicht, und das ist keine Einstellungssache. <strong>Das Gesprächsende:</strong> die Adresse wird beim Anruf geöffnet, beim Auflegen passiert nichts. Erkannt wird es trotzdem – die App sieht nach, ob myApps noch eine Sprachverbindung offen hat. Klappt das auf einem Rechner nicht, bleibt es beim Knopf „Aufgelegt“, und es endet nichts von selbst. <strong>Die Richtung:</strong> dieselbe Adresse wird für ankommende wie abgehende Anrufe geöffnet.</p>
 

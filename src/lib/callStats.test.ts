@@ -8,6 +8,7 @@ import {
   campaignPerformance,
   dispositionBreakdown,
   callTimingStats,
+  endReasonStats,
   SHORT_CALL_S,
 } from './callStats';
 import { makeCall, makeContract, makeTariff, makeLead, makeNote } from '../test/fixtures';
@@ -422,5 +423,49 @@ describe('callTimingStats', () => {
     );
     expect(s.withTalkTime).toBe(1);
     expect(s.avgTalkS).toBe(100);
+  });
+});
+
+describe('endReasonStats', () => {
+  it('trennt gemessene Enden von Artefakten', () => {
+    const s = endReasonStats([
+      makeCall({ endReason: 'aufgelegt-erkannt' }),
+      makeCall({ endReason: 'aufgelegt-erkannt' }),
+      makeCall({ endReason: 'von-hand' }),
+      makeCall({ endReason: 'naechster-anruf' }),
+      // Altbestand ohne Grund zählt nirgends mit.
+      makeCall({}),
+    ]);
+    expect(s.withReason).toBe(4);
+    expect(s.measuredEndPct).toBe(50);
+    expect(s.unusablePct).toBe(25);
+    expect(s.rows[0].reason).toBe('aufgelegt-erkannt');
+    expect(s.rows[0].count).toBe(2);
+  });
+
+  it('behauptet bei einem Anruf ohne sichtbare Verbindung nicht zu viel', () => {
+    // Ursprünglich als 'nicht-verbunden' eingeordnet – also „sauber gemessen,
+    // es kam nur kein Gespräch zustande". Die Messung vom 02.09.2026 hat das
+    // widerlegt: schon das Freizeichen erzeugt eine Sprachverbindung, „keine
+    // gesehen" heißt also nicht verlässlich „nicht abgenommen". Der Wert gilt
+    // deshalb als Schätzung – und zählt weder als saubere Messung noch als
+    // unbrauchbares Artefakt.
+    const s = endReasonStats([makeCall({ endReason: 'nicht-abgenommen' })]);
+    expect(s.rows[0].quality).toBe('geschaetzt');
+    expect(s.unusablePct).toBe(0);
+    expect(s.measuredEndPct).toBe(0);
+  });
+
+  it('zeigt einen unbekannten Grund an, statt ihn zu verschlucken', () => {
+    const s = endReasonStats([makeCall({ endReason: 'irgendwas-neues' })]);
+    expect(s.rows[0].label).toBe('irgendwas-neues');
+    expect(s.rows[0].quality).toBe('geschaetzt');
+  });
+
+  it('gibt ohne Gründe keine Prozente aus', () => {
+    const s = endReasonStats([makeCall({}), makeCall({})]);
+    expect(s.withReason).toBe(0);
+    expect(s.measuredEndPct).toBeNull();
+    expect(s.rows).toEqual([]);
   });
 });

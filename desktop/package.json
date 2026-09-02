@@ -1,6 +1,6 @@
 {
   "name": "stadtnetz-crm-hud",
-  "version": "0.2.0",
+  "version": "0.6.0",
   "private": true,
   "description": "Stadtnetz CRM Copilot als eigenständige Desktop-App (Mac & Windows). Zeigt das Cockpit in einem eigenen Fenster statt als Overlay in der Jira-Seite; die Chrome-Extension bleibt die Datenquelle und der KI-Motor.",
   "main": "main/main.js",

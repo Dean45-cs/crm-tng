@@ -918,6 +918,44 @@ export async function deleteShiftRow(id: string): Promise<void> {
 }
 
 /**
+ * Viele Zellen in einem Zug — für das Malen über ganze Zeilen und den
+ * automatischen Planer (src/lib/autoSchedule.ts).
+ *
+ * Warum nicht einfach upsertShift() in einer Schleife: ein Monatsplan sind bei
+ * elf Personen über 300 Zeilen. Als einzelne Anfragen ist das nicht nur
+ * langsam, sondern auch halb geschrieben, wenn eine davon scheitert. Ein
+ * Aufruf ist eine Transaktion — entweder steht der Plan oder er steht nicht.
+ */
+export async function upsertShifts(
+  rows: { userId: string; shiftDate: string; shiftType: ShiftType; campaignId?: string | null }[],
+): Promise<Shift[]> {
+  if (rows.length === 0) return [];
+  const now = new Date().toISOString();
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .upsert(
+      rows.map((s) => ({
+        user_id: s.userId,
+        shift_date: s.shiftDate,
+        shift_type: s.shiftType,
+        campaign_id: s.campaignId ?? null,
+        updated_at: now,
+      })),
+      { onConflict: 'user_id,shift_date' },
+    )
+    .select();
+  if (error) throw error;
+  return (data as ShiftRow[]).map(mapShift);
+}
+
+/** Gegenstück zu upsertShifts fürs Leeren mehrerer Zellen. */
+export async function deleteShiftRows(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const { error } = await getSupabase().from('shifts').delete().in('id', ids);
+  if (error) throw error;
+}
+
+/**
  * Die Schicht eines einzelnen Users an einem Tag — Grundlage des „aktuellen
  * Kontexts" (welche Kampagne/welchen Call-Typ fahre ich gerade). Spiegelt
  * fetchCurrentShift() aus extension/src/supabase.js, damit CRM und Extension
